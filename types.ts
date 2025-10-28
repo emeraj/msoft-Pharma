@@ -1,5 +1,6 @@
 export interface Batch {
   id: string;
+  key?: string; // Firebase key
   batchNumber: string;
   expiryDate: string; // YYYY-MM format
   stock: number;
@@ -9,6 +10,7 @@ export interface Batch {
 
 export interface Product {
   id: string;
+  key?: string; // Firebase key
   name: string;
   company: string;
   hsnCode: string;
@@ -18,8 +20,10 @@ export interface Product {
 
 export interface CartItem {
   productId: string;
+  productKey: string; // Firebase key for product
   productName: string;
   batchId: string;
+  batchKey: string; // Firebase key for batch
   batchNumber: string;
   expiryDate: string;
   hsnCode: string;
@@ -31,6 +35,7 @@ export interface CartItem {
 
 export interface Bill {
   id: string;
+  key?: string; // Firebase key
   billNumber: string;
   date: string; // ISO string
   customerName: string;
@@ -47,7 +52,8 @@ export interface PurchaseLineItem {
   company: string;
   hsnCode: string;
   gst: number;
-  productId?: string; // ID of existing product if not new
+  productId?: string;
+  productKey?: string; // Firebase key of existing product
   
   // New batch details
   batchNumber: string;
@@ -59,6 +65,7 @@ export interface PurchaseLineItem {
 
 export interface Purchase {
   id: string;
+  key?: string; // Firebase key
   invoiceNumber: string;
   invoiceDate: string; // ISO String
   supplier: string;

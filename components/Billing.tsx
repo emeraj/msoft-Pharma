@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
@@ -8,7 +8,7 @@ import PrintableBill from './PrintableBill';
 interface BillingProps {
   products: Product[];
   companyProfile: CompanyProfile;
-  onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Bill;
+  onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
@@ -94,8 +94,10 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     } else {
       const newItem: CartItem = {
         productId: product.id,
+        productKey: product.key!,
         productName: product.name,
         batchId: batch.id,
+        batchKey: batch.key!,
         batchNumber: batch.batchNumber,
         expiryDate: batch.expiryDate,
         hsnCode: product.hsnCode,
@@ -138,24 +140,29 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const handleFinalizeBill = useCallback(() => {
+  const handleFinalizeBill = async () => {
     if (cart.length === 0) {
-        alert("Cart is empty!");
-        return;
+      alert("Cart is empty!");
+      return;
     }
-    const newBill = onGenerateBill({
-        date: new Date().toISOString(),
-        customerName: customerName || 'Walk-in',
-        items: cart,
-        subTotal,
-        totalGst,
-        grandTotal
+    const newBill = await onGenerateBill({
+      date: new Date().toISOString(),
+      customerName: customerName || 'Walk-in',
+      items: cart,
+      subTotal,
+      totalGst,
+      grandTotal
     });
 
-    setLastBill(newBill); // Show print modal
-    setCart([]);
-    setCustomerName('');
-  }, [cart, customerName, subTotal, totalGst, grandTotal, onGenerateBill]);
+    if (newBill) {
+      setLastBill(newBill); // Show print modal
+      setCart([]);
+      setCustomerName('');
+    } else {
+      console.error("onGenerateBill did not return a valid bill object.");
+      alert("There was an error generating the bill. Please try again.");
+    }
+  };
 
 
   return (

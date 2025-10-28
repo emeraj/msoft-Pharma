@@ -178,8 +178,16 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
     }, [currentItems]);
     
     const handleSavePurchase = () => {
-        if (!supplier || !invoiceNumber || !invoiceDate || currentItems.length === 0) {
-            alert('Please fill all invoice details and add at least one item.');
+        if (!supplier || !invoiceDate || currentItems.length === 0) {
+            alert('Please fill supplier, date, and add at least one item.');
+            return;
+        }
+        if (!invoiceNumber.trim()) {
+            alert('Invoice Number is required.');
+            return;
+        }
+        if (invoiceNumber.trim().length < 3) {
+            alert('Invoice Number must be at least 3 characters long.');
             return;
         }
         onAddPurchase({ supplier, invoiceNumber, invoiceDate, items: currentItems });

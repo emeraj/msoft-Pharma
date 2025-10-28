@@ -6,200 +6,237 @@ import Inventory from './components/Inventory';
 import DayBook from './components/DayBook';
 import Purchases from './components/Purchases';
 import SettingsModal from './components/SettingsModal';
-
-// Mock Data
-const initialProducts: Product[] = [
-  {
-    id: 'prod_1', name: 'Paracetamol 500mg', company: 'Cipla', hsnCode: '3004', gst: 12,
-    batches: [
-      { id: 'b1_1', batchNumber: 'P500A', expiryDate: '2025-12', stock: 150, mrp: 25.50, purchasePrice: 18.00 },
-      { id: 'b1_2', batchNumber: 'P500B', expiryDate: '2026-06', stock: 200, mrp: 26.00, purchasePrice: 18.50 },
-    ]
-  },
-  {
-    id: 'prod_2', name: 'Aspirin 75mg', company: 'Sun Pharma', hsnCode: '3004', gst: 12,
-    batches: [
-      { id: 'b2_1', batchNumber: 'ASP75X', expiryDate: '2024-10', stock: 80, mrp: 15.00, purchasePrice: 10.20 },
-    ]
-  },
-  {
-    id: 'prod_3', name: 'Vitamin C 1000mg', company: 'Abbott', hsnCode: '3004', gst: 18,
-    batches: [
-      { id: 'b3_1', batchNumber: 'VTC1K', expiryDate: '2025-08', stock: 300, mrp: 99.00, purchasePrice: 75.00 },
-    ]
-  },
-   {
-    id: 'prod_4', name: 'Cetirizine 10mg', company: 'Dr. Reddy\'s', hsnCode: '3004', gst: 5,
-    batches: [
-      { id: 'b4_1', batchNumber: 'CET10-R', expiryDate: '2026-02', stock: 250, mrp: 32.00, purchasePrice: 24.50 },
-    ]
-  },
-];
-
+import Auth from './components/Auth';
+import { database, auth } from './firebase';
+import { ref, onValue, set, push, update, get, off } from "firebase/database";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 
 const App: React.FC = () => {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [activeView, setActiveView] = useState<AppView>('billing');
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [dataLoading, setDataLoading] = useState(true);
   
-  // Settings State
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
-    try {
-      const savedProfile = localStorage.getItem('companyProfile');
-      return savedProfile ? JSON.parse(savedProfile) : { name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' };
-    } catch (error) {
-      return { name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' };
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ'});
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      setCurrentUser(user);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+  
+  useEffect(() => {
+    if (!currentUser) {
+      // Clear data when user logs out
+      setProducts([]);
+      setBills([]);
+      setPurchases([]);
+      setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' });
+      setDataLoading(true); // Reset loading state for next login
+      return;
     }
-  });
+
+    setDataLoading(true);
+    const uid = currentUser.uid;
+
+    const onDataFetch = (snapshot: any, setter: Function) => {
+        const data = snapshot.val();
+        if (data) {
+            const list = Object.entries(data).map(([key, value]: [string, any]) => ({
+                ...value,
+                key,
+                batches: value.batches ? Object.entries(value.batches).map(([batchKey, batchValue]: [string, any]) => ({...batchValue, key: batchKey})) : []
+            }));
+            setter(list);
+        } else {
+            setter([]);
+        }
+    };
+
+    const productsRef = ref(database, `users/${uid}/products`);
+    const billsRef = ref(database, `users/${uid}/bills`);
+    const purchasesRef = ref(database, `users/${uid}/purchases`);
+    const profileRef = ref(database, `users/${uid}/companyProfile`);
+
+    const unsubscribeProducts = onValue(productsRef, (snapshot) => onDataFetch(snapshot, setProducts));
+    const unsubscribeBills = onValue(billsRef, (snapshot) => onDataFetch(snapshot, setBills));
+    const unsubscribePurchases = onValue(purchasesRef, (snapshot) => onDataFetch(snapshot, setPurchases));
+    const unsubscribeProfile = onValue(profileRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) setCompanyProfile(data);
+    });
+
+    Promise.all([get(productsRef), get(billsRef), get(purchasesRef), get(profileRef)])
+      .then(() => setDataLoading(false))
+      .catch(error => {
+        console.error("Error fetching initial data:", error);
+        alert("Could not connect to the database. Please check your connection and Firebase security rules.");
+        setDataLoading(false);
+      });
+
+    return () => {
+      // Detach listeners
+      off(productsRef);
+      off(billsRef);
+      off(purchasesRef);
+      off(profileRef);
+    };
+  }, [currentUser]);
+
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+  
+  const handleLogout = () => {
+    signOut(auth);
+  };
 
-  useEffect(() => {
-    localStorage.setItem('companyProfile', JSON.stringify(companyProfile));
-  }, [companyProfile]);
-
+  const handleProfileChange = (profile: CompanyProfile) => {
+    if (!currentUser) return;
+    set(ref(database, `users/${currentUser.uid}/companyProfile`), profile);
+    setCompanyProfile(profile);
+  };
 
   const handleAddProduct = (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
-    const newProduct: Product = {
-      ...productData,
-      id: `prod_${Date.now()}`,
-      batches: [{ ...firstBatchData, id: `batch_${Date.now()}` }],
-    };
-    setProducts([...products, newProduct]);
+    if (!currentUser) return;
+    const productListRef = ref(database, `users/${currentUser.uid}/products`);
+    const newProductRef = push(productListRef);
+    const newBatchRef = push(ref(database, `users/${currentUser.uid}/products/${newProductRef.key}/batches`));
+    
+    set(newProductRef, {
+        ...productData,
+        id: `prod_${Date.now()}`,
+        batches: {
+            [newBatchRef.key!]: { ...firstBatchData, id: `batch_${Date.now()}` }
+        }
+    });
   };
 
   const handleAddBatch = (productId: string, batchData: Omit<Batch, 'id'>) => {
-    setProducts(products.map(p => {
-      if (p.id === productId) {
-        return {
-          ...p,
-          batches: [...p.batches, { ...batchData, id: `batch_${Date.now()}` }],
-        };
-      }
-      return p;
-    }));
+    if (!currentUser) return;
+    const product = products.find(p => p.id === productId);
+    if (!product || !product.key) return;
+    
+    const batchesRef = ref(database, `users/${currentUser.uid}/products/${product.key}/batches`);
+    const newBatchRef = push(batchesRef);
+    set(newBatchRef, { ...batchData, id: `batch_${Date.now()}` });
   };
   
-  const handleGenerateBill = (billData: Omit<Bill, 'id' | 'billNumber'>): Bill => {
-    const newBill: Bill = {
-        ...billData,
-        id: `bill_${Date.now()}`,
-        billNumber: `B${(bills.length + 1).toString().padStart(4, '0')}`
-    };
-    setBills(prevBills => [...prevBills, newBill]);
+  const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
+    if (!currentUser) return null;
+    const uid = currentUser.uid;
+    const billListRef = ref(database, `users/${uid}/bills`);
+    const newBillRef = push(billListRef);
+    
+    const newBillNumber = `B${(bills.length + 1).toString().padStart(4, '0')}`;
+    const newBill: Bill = { ...billData, id: `bill_${newBillRef.key}`, billNumber: newBillNumber };
+    
+    const updates: { [key: string]: any } = {};
+    updates[`/users/${uid}/bills/${newBillRef.key}`] = newBill;
 
-    const updatedProducts = products.map(product => {
-        const relevantItems = billData.items.filter(item => item.productId === product.id);
-        if (relevantItems.length === 0) return product;
-
-        const updatedBatches = product.batches.map(batch => {
-            const itemInBill = relevantItems.find(item => item.batchId === batch.id);
-            if (itemInBill) {
-                return { ...batch, stock: batch.stock - itemInBill.quantity };
-            }
-            return batch;
-        });
-
-        return { ...product, batches: updatedBatches };
+    billData.items.forEach(item => {
+        const product = products.find(p => p.id === item.productId);
+        const batch = product?.batches.find(b => b.id === item.batchId);
+        if (product && batch) {
+            updates[`/users/${uid}/products/${item.productKey}/batches/${item.batchKey}/stock`] = batch.stock - item.quantity;
+        }
     });
-    setProducts(updatedProducts);
-    return newBill;
+
+    try {
+        await update(ref(database), updates);
+        return newBill;
+    } catch (error) {
+        console.error("Failed to generate bill: ", error);
+        return null;
+    }
   };
 
-  const handlePurchaseEntry = (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
-    let updatedProducts = [...products];
+  const handlePurchaseEntry = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const updates: { [key: string]: any } = {};
+    const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
     purchaseData.items.forEach(item => {
-      const uniqueIdSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      
-      const newBatch: Omit<Batch, 'id'> = {
-        batchNumber: item.batchNumber,
-        expiryDate: item.expiryDate,
-        stock: item.quantity,
-        mrp: item.mrp,
-        purchasePrice: item.purchasePrice,
-      };
-
-      if (item.isNewProduct) {
-        const newProduct: Product = {
-          id: `prod_${uniqueIdSuffix}`,
-          name: item.productName,
-          company: item.company,
-          hsnCode: item.hsnCode,
-          gst: item.gst,
-          batches: [{ ...newBatch, id: `batch_${uniqueIdSuffix}` }],
+        const newBatchData = {
+            id: `batch_${uniqueIdSuffix()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+            stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
         };
-        updatedProducts.push(newProduct);
-      } else {
-        const productIndex = updatedProducts.findIndex(p => p.id === item.productId);
-        if (productIndex !== -1) {
-          const existingProduct = updatedProducts[productIndex];
-          updatedProducts[productIndex] = {
-            ...existingProduct,
-            batches: [
-              ...existingProduct.batches,
-              { ...newBatch, id: `batch_${uniqueIdSuffix}` },
-            ],
-          };
+        if (item.isNewProduct) {
+            const newProductRef = push(ref(database, `users/${uid}/products`));
+            const newBatchRef = push(ref(database, `users/${uid}/products/${newProductRef.key}/batches`));
+            updates[`/users/${uid}/products/${newProductRef.key}`] = {
+                id: `prod_${uniqueIdSuffix()}`, name: item.productName, company: item.company,
+                hsnCode: item.hsnCode, gst: item.gst,
+                batches: { [newBatchRef.key!]: newBatchData }
+            };
+        } else if (item.productKey) {
+            const newBatchRef = push(ref(database, `users/${uid}/products/${item.productKey}/batches`));
+            updates[`/users/${uid}/products/${item.productKey}/batches/${newBatchRef.key}`] = newBatchData;
         }
-      }
     });
-    setProducts(updatedProducts);
-
+    
     const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    const newPurchase: Purchase = {
-        ...purchaseData,
-        id: `purch_${Date.now()}`,
-        totalAmount,
-    };
-    setPurchases(prev => [newPurchase, ...prev]);
+    const newPurchaseRef = push(ref(database, `users/${uid}/purchases`));
+    updates[`/users/${uid}/purchases/${newPurchaseRef.key}`] = { ...purchaseData, id: `purch_${newPurchaseRef.key}`, totalAmount };
+    await update(ref(database), updates);
   };
 
   const renderView = () => {
+    if (authLoading || (currentUser && dataLoading)) {
+      return <div className="flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
+    }
+    if (!currentUser) {
+        return <Auth />;
+    }
     switch (activeView) {
-      case 'billing':
-        return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
-      case 'purchases':
-        return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} />;
-      case 'inventory':
-        return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} />;
-      case 'daybook':
-        return <DayBook bills={bills} />;
-      default:
-        return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;
+      case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
+      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} />;
+      case 'daybook': return <DayBook bills={bills} />;
+      default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900">
-      <Header 
-        activeView={activeView} 
-        setActiveView={setActiveView} 
-        onOpenSettings={() => setSettingsModalOpen(true)} 
-      />
-      <main className="flex-grow">
+    <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900`}>
+      {currentUser && (
+        <Header 
+          user={currentUser}
+          onLogout={handleLogout}
+          activeView={activeView} 
+          setActiveView={setActiveView} 
+          onOpenSettings={() => setSettingsModalOpen(true)} 
+        />
+      )}
+      <main className="flex-grow flex flex-col">
         {renderView()}
       </main>
-      <footer className="bg-white dark:bg-slate-800 text-center p-4 text-sm text-slate-600 dark:text-slate-400 border-t dark:border-slate-700">
-        Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">webs.msoftindia.com</a>
-      </footer>
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setSettingsModalOpen(false)}
-        theme={theme}
-        onThemeChange={setTheme}
-        companyProfile={companyProfile}
-        onProfileChange={setCompanyProfile}
-      />
+      {currentUser && (
+        <footer className="bg-white dark:bg-slate-800 text-center p-4 text-sm text-slate-600 dark:text-slate-400 border-t dark:border-slate-700">
+          Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">webs.msoftindia.com</a>
+        </footer>
+      )}
+      {currentUser && (
+        <SettingsModal
+          isOpen={isSettingsModalOpen}
+          onClose={() => setSettingsModalOpen(false)}
+          theme={theme}
+          onThemeChange={setTheme}
+          companyProfile={companyProfile}
+          onProfileChange={handleProfileChange}
+        />
+      )}
     </div>
   );
 };

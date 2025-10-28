@@ -1,11 +1,14 @@
 import React from 'react';
 import type { AppView } from '../types';
 import { ReceiptIcon, ArchiveIcon, BookOpenIcon, CubeIcon, SettingsIcon, PillIcon } from './icons/Icons';
+import { User } from 'firebase/auth';
 
 interface HeaderProps {
   activeView: AppView;
   setActiveView: (view: AppView) => void;
   onOpenSettings: () => void;
+  user: User;
+  onLogout: () => void;
 }
 
 const NavButton: React.FC<{
@@ -31,7 +34,7 @@ const NavButton: React.FC<{
   );
 };
 
-const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings }) => {
+const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout }) => {
   return (
     <header className="bg-white dark:bg-slate-800 shadow-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -43,35 +46,14 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             </h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
-            <nav className="flex space-x-2 sm:space-x-4">
-              <NavButton
-                label="Billing"
-                view="billing"
-                activeView={activeView}
-                onClick={setActiveView}
-                icon={<ReceiptIcon className="h-5 w-5" />}
-              />
-              <NavButton
-                label="Purchases"
-                view="purchases"
-                activeView={activeView}
-                onClick={setActiveView}
-                icon={<CubeIcon className="h-5 w-5" />}
-              />
-              <NavButton
-                label="Inventory"
-                view="inventory"
-                activeView={activeView}
-                onClick={setActiveView}
-                icon={<ArchiveIcon className="h-5 w-5" />}
-              />
-              <NavButton
-                label="Day Book"
-                view="daybook"
-                activeView={activeView}
-                onClick={setActiveView}
-                icon={<BookOpenIcon className="h-5 w-5" />}
-              />
+            <span className="hidden md:inline text-sm text-slate-600 dark:text-slate-400">
+              Welcome, {user.displayName || user.email}
+            </span>
+             <nav className="hidden sm:flex space-x-2">
+              <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
+              <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
+              <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
+              <NavButton label="Day Book" view="daybook" activeView={activeView} onClick={setActiveView} icon={<BookOpenIcon className="h-5 w-5" />} />
             </nav>
              <button
               onClick={onOpenSettings}
@@ -80,8 +62,20 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             >
               <SettingsIcon className="h-6 w-6" />
             </button>
+            <button
+              onClick={onLogout}
+              className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+            >
+             Logout
+            </button>
           </div>
         </div>
+         <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
+            <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
+            <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
+            <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
+            <NavButton label="Day Book" view="daybook" activeView={activeView} onClick={setActiveView} icon={<BookOpenIcon className="h-5 w-5" />} />
+        </nav>
       </div>
     </header>
   );
