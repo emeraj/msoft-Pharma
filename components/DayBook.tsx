@@ -2,6 +2,43 @@ import React, { useState, useMemo } from 'react';
 import type { Bill } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
+import { DownloadIcon } from './icons/Icons';
+
+// --- Utility function to export data to CSV ---
+const exportToCsv = (filename: string, data: any[]) => {
+  if (data.length === 0) {
+    alert("No data to export.");
+    return;
+  }
+
+  const headers = Object.keys(data[0]);
+  const csvContent = [
+    headers.join(','), // header row
+    ...data.map(row => 
+      headers.map(header => {
+        let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
+        // handle commas, quotes, and newlines in data
+        if (/[",\n]/.test(cell)) {
+          cell = `"${cell.replace(/"/g, '""')}"`;
+        }
+        return cell;
+      }).join(',')
+    )
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+};
+
 
 interface DayBookProps {
   bills: Bill[];
@@ -20,10 +57,26 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
     return todaysBills.reduce((total, bill) => total + bill.grandTotal, 0);
   }, [todaysBills]);
 
+  const handleExport = () => {
+    const exportData = todaysBills.map(bill => ({
+        'Bill No.': bill.billNumber,
+        'Time': new Date(bill.date).toLocaleTimeString(),
+        'Customer': bill.customerName,
+        'Items': bill.items.length,
+        'Amount': bill.grandTotal.toFixed(2),
+    }));
+    exportToCsv(`day_book_${today}`, exportData);
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-6">
         <Card>
-            <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Day Book - {new Date().toLocaleDateString()}</h1>
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Day Book - {new Date().toLocaleDateString()}</h1>
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                    <DownloadIcon className="h-5 w-5" /> Export to Excel
+                </button>
+            </div>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                 <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-lg">
                     <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills Today</p>

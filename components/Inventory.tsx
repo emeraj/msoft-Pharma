@@ -2,7 +2,43 @@ import React, { useState, useMemo } from 'react';
 import type { Product, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon } from './icons/Icons';
+
+// --- Utility function to export data to CSV ---
+const exportToCsv = (filename: string, data: any[]) => {
+  if (data.length === 0) {
+    alert("No data to export.");
+    return;
+  }
+
+  const headers = Object.keys(data[0]);
+  const csvContent = [
+    headers.join(','), // header row
+    ...data.map(row => 
+      headers.map(header => {
+        let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
+        // handle commas, quotes, and newlines in data
+        if (/[",\n]/.test(cell)) {
+          cell = `"${cell.replace(/"/g, '""')}"`;
+        }
+        return cell;
+      }).join(',')
+    )
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+};
+
 
 interface InventoryProps {
   products: Product[];
@@ -114,10 +150,20 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
         (companyFilter === '' || product.company === companyFilter)
         );
     }, [products, searchTerm, companyFilter]);
+    
+    const handleExport = () => {
+        const exportData = filteredProducts.map(product => ({
+            'Product Name': product.name,
+            'Company': product.company,
+            'Total Stock': product.batches.reduce((sum, batch) => sum + batch.stock, 0),
+            'Batches': product.batches.length,
+        }));
+        exportToCsv('all_item_stock', exportData);
+    };
 
     return (
         <Card>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <input
                     type="text"
                     placeholder="Search by product name..."
@@ -133,6 +179,11 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                     <option value="">All Companies</option>
                     {companies.map(company => <option key={company} value={company}>{company}</option>)}
                 </select>
+            </div>
+            <div className="mb-6">
+                 <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                    <DownloadIcon className="h-5 w-5" /> Export to Excel
+                </button>
             </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
@@ -232,8 +283,22 @@ const CompanyWiseStockView: React.FC<{products: Product[]}> = ({ products }) => 
         }, {});
     }, [products]);
 
+    const handleExport = () => {
+        const exportData = products.map(product => ({
+            'Company': product.company,
+            'Product Name': product.name,
+            'Total Stock': product.batches.reduce((sum, b) => sum + b.stock, 0),
+        })).sort((a, b) => a.Company.localeCompare(b.Company));
+        exportToCsv('company_wise_stock', exportData);
+    };
+
     return (
         <Card title="Company-wise Stock">
+            <div className="mb-4">
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                    <DownloadIcon className="h-5 w-5" /> Export All to Excel
+                </button>
+            </div>
             <div className="space-y-4">
                 {Object.entries(productsByCompany).map(([company, companyProducts]) => {
                     const totalStock = companyProducts.flatMap(p => p.batches).reduce((sum, b) => sum + b.stock, 0);
@@ -322,16 +387,42 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
     today.setHours(0, 0, 0, 0);
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(today.getDate() + 30);
+    
+    const handleExport = () => {
+        const exportData = filteredBatches.map(batch => {
+            const baseData = {
+                'Batch No.': batch.batchNumber,
+                'Expiry': batch.expiryDate,
+                'Stock': batch.stock,
+                'MRP': batch.mrp.toFixed(2),
+            };
+            if (showProductInfo) {
+                return {
+                    'Product': batch.productName,
+                    'Company': batch.company,
+                    ...baseData
+                };
+            }
+            return baseData;
+        });
+        exportToCsv(title.toLowerCase().replace(/ /g, '_'), exportData);
+    };
 
     return (
         <Card title={title}>
-            <input
-                type="text"
-                placeholder="Search by product or batch..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className={`${inputStyle} sm:w-1/2 mb-4`}
-            />
+            <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <input
+                    type="text"
+                    placeholder="Search by product or batch..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className={`${inputStyle} flex-grow`}
+                />
+                <button onClick={handleExport} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                    <DownloadIcon className="h-5 w-5" /> 
+                    <span className="hidden sm:inline">Export</span>
+                </button>
+            </div>
             <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
                     <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
