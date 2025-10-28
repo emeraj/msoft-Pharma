@@ -180,15 +180,18 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
+    <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900">
       <Header 
         activeView={activeView} 
         setActiveView={setActiveView} 
         onOpenSettings={() => setSettingsModalOpen(true)} 
       />
-      <main>
+      <main className="flex-grow">
         {renderView()}
       </main>
+      <footer className="bg-white dark:bg-slate-800 text-center p-4 text-sm text-slate-600 dark:text-slate-400 border-t dark:border-slate-700">
+        Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">webs.msoftindia.com</a>
+      </footer>
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setSettingsModalOpen(false)}
