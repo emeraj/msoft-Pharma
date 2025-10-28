@@ -65,10 +65,15 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             alert('Product Name is required for a new product.');
             return;
         }
+        if (!isNewProduct && !selectedProduct) {
+            alert('Please select an existing product or switch to add a new one.');
+            return;
+        }
 
         const item: PurchaseLineItem = {
             isNewProduct,
             productId: selectedProduct?.id,
+            productKey: selectedProduct?.key,
             productName: isNewProduct ? productName : selectedProduct!.name,
             company: isNewProduct ? company : selectedProduct!.company,
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,

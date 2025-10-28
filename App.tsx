@@ -47,7 +47,7 @@ const App: React.FC = () => {
     setDataLoading(true);
     const uid = currentUser.uid;
 
-    const onDataFetch = (snapshot: any, setter: Function) => {
+    const parseProductsSnapshot = (snapshot: any, setter: Function) => {
         const data = snapshot.val();
         if (data) {
             const list = Object.entries(data).map(([key, value]: [string, any]) => ({
@@ -61,14 +61,27 @@ const App: React.FC = () => {
         }
     };
 
+    const parseGenericListSnapshot = (snapshot: any, setter: Function) => {
+        const data = snapshot.val();
+        if (data) {
+            const list = Object.entries(data).map(([key, value]: [string, any]) => ({
+                ...value,
+                key,
+            }));
+            setter(list);
+        } else {
+            setter([]);
+        }
+    };
+
     const productsRef = ref(database, `users/${uid}/products`);
     const billsRef = ref(database, `users/${uid}/bills`);
     const purchasesRef = ref(database, `users/${uid}/purchases`);
     const profileRef = ref(database, `users/${uid}/companyProfile`);
 
-    const unsubscribeProducts = onValue(productsRef, (snapshot) => onDataFetch(snapshot, setProducts));
-    const unsubscribeBills = onValue(billsRef, (snapshot) => onDataFetch(snapshot, setBills));
-    const unsubscribePurchases = onValue(purchasesRef, (snapshot) => onDataFetch(snapshot, setPurchases));
+    const unsubscribeProducts = onValue(productsRef, (snapshot) => parseProductsSnapshot(snapshot, setProducts));
+    const unsubscribeBills = onValue(billsRef, (snapshot) => parseGenericListSnapshot(snapshot, setBills));
+    const unsubscribePurchases = onValue(purchasesRef, (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
     const unsubscribeProfile = onValue(profileRef, (snapshot) => {
       const data = snapshot.val();
       if (data) setCompanyProfile(data);

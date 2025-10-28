@@ -1,6 +1,6 @@
 import React from 'react';
 import type { AppView } from '../types';
-import { ReceiptIcon, ArchiveIcon, BookOpenIcon, CubeIcon, SettingsIcon, PillIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, BookOpenIcon, CubeIcon, SettingsIcon } from './icons/Icons';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -40,7 +40,6 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
-            <PillIcon className="h-8 w-8 text-indigo-600 dark:text-indigo-400 mr-2" />
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200">
               Pharma<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span>
             </h1>

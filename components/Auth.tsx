@@ -7,7 +7,6 @@ import {
   AuthError
 } from 'firebase/auth';
 import Card from './common/Card';
-import { PillIcon } from './icons/Icons';
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -59,7 +58,6 @@ const Auth: React.FC = () => {
     <div className="flex-grow flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-            <PillIcon className="h-12 w-12 mx-auto text-indigo-600 dark:text-indigo-400" />
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2">
                 Pharma - Retail
             </h1>

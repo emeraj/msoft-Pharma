@@ -1,6 +1,5 @@
 import React from 'react';
 import type { Bill, CompanyProfile } from '../types';
-import { PillIcon } from './icons/Icons';
 
 interface PrintableBillProps {
   bill: Bill;
@@ -14,7 +13,6 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) =
   return (
     <div className="text-black text-xs font-sans">
       <header className="text-center mb-4">
-        <PillIcon className="h-16 w-16 mx-auto mb-2 text-slate-800" />
         <h1 className="text-xl font-bold">{companyProfile.name}</h1>
         <p>{companyProfile.address}</p>
         <p>GSTIN: {companyProfile.gstin}</p>
