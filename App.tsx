@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -7,6 +7,7 @@ import DayBook from './components/DayBook';
 import Purchases from './components/Purchases';
 import SettingsModal from './components/SettingsModal';
 import Auth from './components/Auth';
+import Card from './components/common/Card';
 import { database, auth } from './firebase';
 // Fix: Import firebase compat for types and v8 API
 import firebase from 'firebase/compat/app';
@@ -22,7 +23,9 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
@@ -43,12 +46,15 @@ const App: React.FC = () => {
       setProducts([]);
       setBills([]);
       setPurchases([]);
+      setCompanies([]);
       setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' });
       setDataLoading(true); // Reset loading state for next login
+      setPermissionError(null); // Clear any existing errors
       return;
     }
 
     setDataLoading(true);
+    setPermissionError(null);
     const uid = currentUser.uid;
 
     const parseProductsSnapshot = (snapshot: firebase.database.DataSnapshot, setter: Function) => {
@@ -82,21 +88,27 @@ const App: React.FC = () => {
     const productsRef = database.ref(`users/${uid}/products`);
     const billsRef = database.ref(`users/${uid}/bills`);
     const purchasesRef = database.ref(`users/${uid}/purchases`);
+    const companiesRef = database.ref(`users/${uid}/companies`);
     const profileRef = database.ref(`users/${uid}/companyProfile`);
 
     productsRef.on('value', (snapshot) => parseProductsSnapshot(snapshot, setProducts));
     billsRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setBills));
     purchasesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
+    companiesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setCompanies));
     profileRef.on('value', (snapshot) => {
       const data = snapshot.val();
       if (data) setCompanyProfile(data);
     });
 
-    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get()])
+    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get(), companiesRef.get()])
       .then(() => setDataLoading(false))
-      .catch(error => {
+      .catch((error: any) => {
         console.error("Error fetching initial data:", error);
-        alert("Could not connect to the database. Please check your connection and Firebase security rules.");
+        if (error.code === 'PERMISSION_DENIED') {
+          setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firebase security rules.");
+        } else {
+           setPermissionError(`Could not connect to the database. Error: ${error.message}`);
+        }
         setDataLoading(false);
       });
 
@@ -106,6 +118,7 @@ const App: React.FC = () => {
       billsRef.off();
       purchasesRef.off();
       profileRef.off();
+      companiesRef.off();
     };
   }, [currentUser]);
 
@@ -120,6 +133,51 @@ const App: React.FC = () => {
     auth.signOut();
   };
 
+  const PermissionErrorComponent: React.FC = () => (
+    <div className="flex-grow flex items-center justify-center p-4">
+        <Card title="Database Permission Error" className="max-w-2xl w-full text-center border-2 border-red-500/50">
+            <p className="text-red-600 dark:text-red-400 mb-4">{permissionError}</p>
+            <div className="text-left bg-slate-100 dark:bg-slate-800 p-4 rounded-lg my-4">
+                <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200 mb-2">How to Fix</h3>
+                <p className="mb-4 text-slate-700 dark:text-slate-300">
+                    This application requires specific security rules to be set in your Firebase project to protect your data.
+                </p>
+                <ol className="list-decimal list-inside space-y-2 text-slate-700 dark:text-slate-300">
+                    <li>Open your Firebase project console.</li>
+                    <li>Navigate to <strong>Realtime Database</strong> &gt; <strong>Rules</strong> tab.</li>
+                    <li>Replace the content of the editor with the following:</li>
+                </ol>
+                <pre className="bg-black text-white p-3 rounded-md text-sm mt-3 overflow-x-auto">
+                    <code>
+{`{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    }
+  }
+}`}
+                    </code>
+                </pre>
+                 <p className="mt-4 text-sm text-slate-500">
+                    After applying these rules, please <strong>refresh this page</strong>.
+                </p>
+                 <p className="mt-2 text-xs text-slate-500">
+                    (This information is also available in the <code className="bg-slate-200 dark:bg-slate-700 p-1 rounded">firebase.ts</code> file.)
+                </p>
+            </div>
+            <button
+                onClick={handleLogout}
+                className="mt-4 px-6 py-2 bg-slate-600 text-white font-semibold rounded-lg shadow hover:bg-slate-700 transition-colors"
+            >
+                Logout
+            </button>
+        </Card>
+    </div>
+  );
+
   const handleProfileChange = (profile: CompanyProfile) => {
     if (!currentUser) return;
     // Fix: Use v8 compat API for set
@@ -129,18 +187,31 @@ const App: React.FC = () => {
 
   const handleAddProduct = (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
     if (!currentUser) return;
-    // Fix: Use v8 compat API for push and set
-    const productListRef = database.ref(`users/${currentUser.uid}/products`);
-    const newProductRef = productListRef.push();
-    const newBatchRef = database.ref(`users/${currentUser.uid}/products/${newProductRef.key}/batches`).push();
+    const uid = currentUser.uid;
+    const updates: { [key: string]: any } = {};
+
+    // Ensure company exists
+    const companyName = productData.company.trim();
+    if (companyName && !companies.some(c => c.name.toLowerCase() === companyName.toLowerCase())) {
+        const newCompanyRef = database.ref(`users/${uid}/companies`).push();
+        updates[`/users/${uid}/companies/${newCompanyRef.key}`] = {
+            id: `comp_${Date.now()}`,
+            name: companyName
+        };
+    }
+
+    const newProductRef = database.ref(`users/${uid}/products`).push();
+    const newBatchRef = database.ref(`users/${uid}/products/${newProductRef.key}/batches`).push();
     
-    newProductRef.set({
+    updates[`/users/${uid}/products/${newProductRef.key}`] = {
         ...productData,
         id: `prod_${Date.now()}`,
         batches: {
             [newBatchRef.key!]: { ...firstBatchData, id: `batch_${Date.now()}` }
         }
-    });
+    };
+    
+    database.ref().update(updates);
   };
 
   const handleAddBatch = (productId: string, batchData: Omit<Batch, 'id'>) => {
@@ -191,6 +262,25 @@ const App: React.FC = () => {
     const updates: { [key: string]: any } = {};
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
+    // Collect and create new companies if necessary
+    const newCompanies = new Set<string>();
+    purchaseData.items.forEach(item => {
+        if (item.isNewProduct) {
+            const companyName = item.company.trim();
+            if (companyName && !companies.some(c => c.name.toLowerCase() === companyName.toLowerCase())) {
+                newCompanies.add(companyName);
+            }
+        }
+    });
+
+    for (const companyName of newCompanies) {
+        const newCompanyRef = database.ref(`users/${uid}/companies`).push();
+        updates[`/users/${uid}/companies/${newCompanyRef.key}`] = {
+            id: `comp_${uniqueIdSuffix()}`,
+            name: companyName,
+        };
+    }
+
     purchaseData.items.forEach(item => {
         const newBatchData = {
             id: `batch_${uniqueIdSuffix()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
@@ -220,15 +310,18 @@ const App: React.FC = () => {
 
   const renderView = () => {
     if (authLoading || (currentUser && dataLoading)) {
-      return <div className="flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
+      return <div className="flex-grow flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
     }
     if (!currentUser) {
         return <Auth />;
     }
+    if (permissionError) {
+        return <PermissionErrorComponent />;
+    }
     switch (activeView) {
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
-      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} />;
+      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} companies={companies} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;
       default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;
     }

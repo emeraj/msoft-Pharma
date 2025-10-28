@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Product, Batch } from '../types';
+import type { Product, Batch, Company } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, DownloadIcon } from './icons/Icons';
@@ -42,6 +42,7 @@ const exportToCsv = (filename: string, data: any[]) => {
 
 interface InventoryProps {
   products: Product[];
+  companies: Company[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
 }
@@ -49,7 +50,7 @@ interface InventoryProps {
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onAddBatch }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct, onAddBatch }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedProductForBatch, setSelectedProductForBatch] = useState<Product | null>(null);
@@ -120,6 +121,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onAddBatc
         isOpen={isProductModalOpen}
         onClose={() => setProductModalOpen(false)}
         onAddProduct={onAddProduct}
+        companies={companies}
       />
 
       {selectedProductForBatch && (
@@ -474,11 +476,29 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
 const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; }> = ({ isOpen, onClose, onAddProduct }) => {
+const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[] }> = ({ isOpen, onClose, onAddProduct, companies }) => {
   const [formState, setFormState] = useState({
     name: '', company: '', hsnCode: '', gst: '12',
     batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
   });
+  const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
+
+  const companySuggestions = useMemo(() => {
+    if (!formState.company) {
+        return companies.slice(0, 5);
+    }
+    return companies.filter(c => c.name.toLowerCase().includes(formState.company.toLowerCase()));
+  }, [formState.company, companies]);
+
+  const companyExists = useMemo(() => {
+    return companies.some(c => c.name.toLowerCase() === formState.company.trim().toLowerCase());
+  }, [formState.company, companies]);
+
+  const handleSelectCompany = (companyName: string) => {
+    setFormState({ ...formState, company: companyName });
+    setShowCompanySuggestions(false);
+  };
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormState({ ...formState, [e.target.name]: e.target.value });
@@ -506,7 +526,33 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         <h4 className="font-semibold text-slate-700 dark:text-slate-300">Product Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
-          <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
+          <div className="relative">
+            <input 
+              name="company" 
+              value={formState.company} 
+              onChange={handleChange}
+              onFocus={() => setShowCompanySuggestions(true)}
+              onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)}
+              placeholder="Company" 
+              className={formInputStyle} 
+              required 
+              autoComplete="off"
+            />
+            {showCompanySuggestions && (
+              <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {companySuggestions.map(c => (
+                      <li key={c.key} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
+                          {c.name}
+                      </li>
+                  ))}
+                  {!companyExists && formState.company.trim().length > 0 && (
+                      <li onClick={() => handleSelectCompany(formState.company.trim())} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
+                          Create new company: "{formState.company.trim()}"
+                      </li>
+                  )}
+              </ul>
+            )}
+          </div>
           <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
           <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
             <option value="5">GST 5%</option>

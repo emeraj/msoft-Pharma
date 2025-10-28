@@ -20,4 +20,26 @@ if (!firebase.apps.length) {
 const database = firebase.database();
 const auth = firebase.auth();
 
+/*
+TROUBLESHOOTING: If you are seeing a "PERMISSION_DENIED" error, it's because your
+Firebase Realtime Database security rules are not configured correctly. The application
+is designed to store data for each user under their own unique ID.
+
+To fix this, go to your Firebase project > Realtime Database > Rules tab and
+replace the contents with the following:
+
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    }
+  }
+}
+
+This ensures that only a logged-in user can read or write to their own data.
+*/
+
 export { database, auth };

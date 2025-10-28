@@ -73,6 +73,12 @@ export interface Purchase {
   totalAmount: number;
 }
 
+export interface Company {
+  id: string;
+  key?: string; // Firebase key
+  name: string;
+}
+
 export type AppView = 'billing' | 'inventory' | 'daybook' | 'purchases';
 
 // New Types for Settings
