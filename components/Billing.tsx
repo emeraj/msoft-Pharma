@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon } from './icons/Icons';
 import PrintableBill from './PrintableBill';
+import ThermalPrintableBill from './ThermalPrintableBill';
 
 interface BillingProps {
   products: Product[];
@@ -22,26 +23,50 @@ const getExpiryDate = (expiryString: string): Date => {
 
 // --- Helper Component for Printing ---
 const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; companyProfile: CompanyProfile; }> = ({ isOpen, onClose, bill, companyProfile }) => {
+    const [printFormat, setPrintFormat] = useState<'laser' | 'thermal'>('laser');
+
     const handlePrint = () => {
+        const body = document.body;
+        const printClass = `print-${printFormat}`;
+        
+        body.classList.add(printClass);
+
+        const handleAfterPrint = () => {
+            body.classList.remove(printClass);
+            window.removeEventListener('afterprint', handleAfterPrint);
+        };
+
+        window.addEventListener('afterprint', handleAfterPrint);
+        
         window.print();
     };
 
+    // Reset format to laser when modal is opened, to have a consistent default
+    useEffect(() => {
+        if (isOpen) {
+            setPrintFormat('laser');
+        }
+    }, [isOpen]);
+
     return (
-         <Modal isOpen={isOpen} onClose={onClose} title="Bill Generated">
+         <Modal isOpen={isOpen} onClose={onClose} title="Print Bill">
             <style>{`
                 @media print {
                     body * {
                         visibility: hidden;
                     }
                     #printable-area, #printable-area * {
-                        visibility: visible;
+                        visibility: visible !important; /* Use important to override tailwind 'hidden' */
                     }
                     #printable-area {
                         position: absolute;
                         left: 0;
                         top: 0;
                         width: 100%;
-                        height: 100%;
+                        height: auto;
+                    }
+                    .modal-actions, .print-preview-border, .print-format-tabs { 
+                        display: none !important; 
                     }
                     .print-preview-container {
                         max-height: none !important;
@@ -50,28 +75,51 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         padding: 0 !important;
                         background-color: white !important;
                     }
-                    .modal-actions {
-                        display: none;
-                    }
-                    @page {
-                        size: A5 landscape;
-                        margin: 0;
-                    }
+                    
+                    /* Laser Print Mode */
+                    body.print-laser .laser-content { display: block !important; }
+                    body.print-laser .thermal-content { display: none !important; }
+                    
+                    /* Thermal Print Mode */
+                    body.print-thermal .laser-content { display: none !important; }
+                    body.print-thermal .thermal-content { display: block !important; }
+                    body.print-thermal #printable-area { width: 72mm; }
                 }
             `}</style>
+            
+            <div className="print-format-tabs flex border-b dark:border-slate-600 mb-2">
+                <button
+                    onClick={() => setPrintFormat('laser')}
+                    className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${printFormat === 'laser' ? 'border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                >
+                    Laser Printer (A5)
+                </button>
+                <button
+                    onClick={() => setPrintFormat('thermal')}
+                    className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${printFormat === 'thermal' ? 'border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                >
+                    Thermal Receipt (3 Inch)
+                </button>
+            </div>
+
 
             <div id="printable-area">
-                <div className="print-preview-container p-4 border rounded-lg bg-slate-50 dark:bg-slate-700 max-h-96 overflow-y-auto">
-                    <PrintableBill bill={bill} companyProfile={companyProfile} />
+                <div className="print-preview-container print-preview-border p-4 border rounded-b-lg rounded-tr-lg bg-slate-50 dark:bg-slate-700 max-h-96 overflow-y-auto">
+                    <div className={`laser-content ${printFormat !== 'laser' ? 'hidden' : ''}`}>
+                        <PrintableBill bill={bill} companyProfile={companyProfile} />
+                    </div>
+                    <div className={`thermal-content ${printFormat !== 'thermal' ? 'hidden' : ''}`}>
+                        <ThermalPrintableBill bill={bill} companyProfile={companyProfile} />
+                    </div>
                 </div>
             </div>
 
-            <div className="modal-actions flex justify-end gap-4 mt-6">
-                 <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors">
+            <div className="modal-actions flex flex-col sm:flex-row justify-end items-center gap-4 mt-6">
+                <button onClick={onClose} className="w-full sm:w-auto px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors font-semibold">
                     Close
                 </button>
-                <button onClick={handlePrint} className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold">
-                    Print Bill
+                <button onClick={handlePrint} className="w-full sm:w-auto px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold">
+                    Print
                 </button>
             </div>
         </Modal>
