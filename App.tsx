@@ -8,11 +8,14 @@ import Purchases from './components/Purchases';
 import SettingsModal from './components/SettingsModal';
 import Auth from './components/Auth';
 import { database, auth } from './firebase';
-import { ref, onValue, set, push, update, get, off } from "firebase/database";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
+// Fix: Import firebase compat for types and v8 API
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/database';
+
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // Fix: Use firebase.User type from compat import
+  const [currentUser, setCurrentUser] = useState<firebase.User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const [activeView, setActiveView] = useState<AppView>('billing');
@@ -26,7 +29,8 @@ const App: React.FC = () => {
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ'});
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
+    // Fix: Use v8 compat API for onAuthStateChanged
+    const unsubscribe = auth.onAuthStateChanged(user => {
       setCurrentUser(user);
       setAuthLoading(false);
     });
@@ -47,7 +51,7 @@ const App: React.FC = () => {
     setDataLoading(true);
     const uid = currentUser.uid;
 
-    const parseProductsSnapshot = (snapshot: any, setter: Function) => {
+    const parseProductsSnapshot = (snapshot: firebase.database.DataSnapshot, setter: Function) => {
         const data = snapshot.val();
         if (data) {
             const list = Object.entries(data).map(([key, value]: [string, any]) => ({
@@ -61,7 +65,7 @@ const App: React.FC = () => {
         }
     };
 
-    const parseGenericListSnapshot = (snapshot: any, setter: Function) => {
+    const parseGenericListSnapshot = (snapshot: firebase.database.DataSnapshot, setter: Function) => {
         const data = snapshot.val();
         if (data) {
             const list = Object.entries(data).map(([key, value]: [string, any]) => ({
@@ -74,20 +78,21 @@ const App: React.FC = () => {
         }
     };
 
-    const productsRef = ref(database, `users/${uid}/products`);
-    const billsRef = ref(database, `users/${uid}/bills`);
-    const purchasesRef = ref(database, `users/${uid}/purchases`);
-    const profileRef = ref(database, `users/${uid}/companyProfile`);
+    // Fix: Use v8 compat API for database references and listeners
+    const productsRef = database.ref(`users/${uid}/products`);
+    const billsRef = database.ref(`users/${uid}/bills`);
+    const purchasesRef = database.ref(`users/${uid}/purchases`);
+    const profileRef = database.ref(`users/${uid}/companyProfile`);
 
-    const unsubscribeProducts = onValue(productsRef, (snapshot) => parseProductsSnapshot(snapshot, setProducts));
-    const unsubscribeBills = onValue(billsRef, (snapshot) => parseGenericListSnapshot(snapshot, setBills));
-    const unsubscribePurchases = onValue(purchasesRef, (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
-    const unsubscribeProfile = onValue(profileRef, (snapshot) => {
+    productsRef.on('value', (snapshot) => parseProductsSnapshot(snapshot, setProducts));
+    billsRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setBills));
+    purchasesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
+    profileRef.on('value', (snapshot) => {
       const data = snapshot.val();
       if (data) setCompanyProfile(data);
     });
 
-    Promise.all([get(productsRef), get(billsRef), get(purchasesRef), get(profileRef)])
+    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get()])
       .then(() => setDataLoading(false))
       .catch(error => {
         console.error("Error fetching initial data:", error);
@@ -97,10 +102,10 @@ const App: React.FC = () => {
 
     return () => {
       // Detach listeners
-      off(productsRef);
-      off(billsRef);
-      off(purchasesRef);
-      off(profileRef);
+      productsRef.off();
+      billsRef.off();
+      purchasesRef.off();
+      profileRef.off();
     };
   }, [currentUser]);
 
@@ -111,22 +116,25 @@ const App: React.FC = () => {
   }, [theme]);
   
   const handleLogout = () => {
-    signOut(auth);
+    // Fix: Use v8 compat API for signOut
+    auth.signOut();
   };
 
   const handleProfileChange = (profile: CompanyProfile) => {
     if (!currentUser) return;
-    set(ref(database, `users/${currentUser.uid}/companyProfile`), profile);
+    // Fix: Use v8 compat API for set
+    database.ref(`users/${currentUser.uid}/companyProfile`).set(profile);
     setCompanyProfile(profile);
   };
 
   const handleAddProduct = (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
     if (!currentUser) return;
-    const productListRef = ref(database, `users/${currentUser.uid}/products`);
-    const newProductRef = push(productListRef);
-    const newBatchRef = push(ref(database, `users/${currentUser.uid}/products/${newProductRef.key}/batches`));
+    // Fix: Use v8 compat API for push and set
+    const productListRef = database.ref(`users/${currentUser.uid}/products`);
+    const newProductRef = productListRef.push();
+    const newBatchRef = database.ref(`users/${currentUser.uid}/products/${newProductRef.key}/batches`).push();
     
-    set(newProductRef, {
+    newProductRef.set({
         ...productData,
         id: `prod_${Date.now()}`,
         batches: {
@@ -140,16 +148,18 @@ const App: React.FC = () => {
     const product = products.find(p => p.id === productId);
     if (!product || !product.key) return;
     
-    const batchesRef = ref(database, `users/${currentUser.uid}/products/${product.key}/batches`);
-    const newBatchRef = push(batchesRef);
-    set(newBatchRef, { ...batchData, id: `batch_${Date.now()}` });
+    // Fix: Use v8 compat API for push and set
+    const batchesRef = database.ref(`users/${currentUser.uid}/products/${product.key}/batches`);
+    const newBatchRef = batchesRef.push();
+    newBatchRef.set({ ...batchData, id: `batch_${Date.now()}` });
   };
   
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    const billListRef = ref(database, `users/${uid}/bills`);
-    const newBillRef = push(billListRef);
+    // Fix: Use v8 compat API for push
+    const billListRef = database.ref(`users/${uid}/bills`);
+    const newBillRef = billListRef.push();
     
     const newBillNumber = `B${(bills.length + 1).toString().padStart(4, '0')}`;
     const newBill: Bill = { ...billData, id: `bill_${newBillRef.key}`, billNumber: newBillNumber };
@@ -166,7 +176,8 @@ const App: React.FC = () => {
     });
 
     try {
-        await update(ref(database), updates);
+        // Fix: Use v8 compat API for update
+        await database.ref().update(updates);
         return newBill;
     } catch (error) {
         console.error("Failed to generate bill: ", error);
@@ -186,23 +197,25 @@ const App: React.FC = () => {
             stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
         };
         if (item.isNewProduct) {
-            const newProductRef = push(ref(database, `users/${uid}/products`));
-            const newBatchRef = push(ref(database, `users/${uid}/products/${newProductRef.key}/batches`));
+            // Fix: Use v8 compat API for push
+            const newProductRef = database.ref(`users/${uid}/products`).push();
+            const newBatchRef = database.ref(`users/${uid}/products/${newProductRef.key}/batches`).push();
             updates[`/users/${uid}/products/${newProductRef.key}`] = {
                 id: `prod_${uniqueIdSuffix()}`, name: item.productName, company: item.company,
                 hsnCode: item.hsnCode, gst: item.gst,
                 batches: { [newBatchRef.key!]: newBatchData }
             };
         } else if (item.productKey) {
-            const newBatchRef = push(ref(database, `users/${uid}/products/${item.productKey}/batches`));
+            const newBatchRef = database.ref(`users/${uid}/products/${item.productKey}/batches`).push();
             updates[`/users/${uid}/products/${item.productKey}/batches/${newBatchRef.key}`] = newBatchData;
         }
     });
     
     const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    const newPurchaseRef = push(ref(database, `users/${uid}/purchases`));
+    const newPurchaseRef = database.ref(`users/${uid}/purchases`).push();
     updates[`/users/${uid}/purchases/${newPurchaseRef.key}`] = { ...purchaseData, id: `purch_${newPurchaseRef.key}`, totalAmount };
-    await update(ref(database), updates);
+    // Fix: Use v8 compat API for update
+    await database.ref().update(updates);
   };
 
   const renderView = () => {

@@ -13,7 +13,14 @@ interface BillingProps {
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 
-// --- Helper Component for Printing (Moved outside Billing component) ---
+// --- Helper Functions ---
+const getExpiryDate = (expiryString: string): Date => {
+    if (!expiryString) return new Date('9999-12-31');
+    const [year, month] = expiryString.split('-').map(Number);
+    return new Date(year, month, 0); // Last day of the expiry month
+};
+
+// --- Helper Component for Printing ---
 const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; companyProfile: CompanyProfile; }> = ({ isOpen, onClose, bill, companyProfile }) => {
     const handlePrint = () => {
         window.print();
@@ -77,15 +84,29 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   const [customerName, setCustomerName] = useState('');
   const [lastBill, setLastBill] = useState<Bill | null>(null);
 
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   const searchResults = useMemo(() => {
     if (!searchTerm) return [];
     return products
-      .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) && p.batches.some(b => b.stock > 0))
+      .filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
+        p.batches.some(b => b.stock > 0 && getExpiryDate(b.expiryDate) >= today)
+      )
       .slice(0, 5);
-  }, [searchTerm, products]);
+  }, [searchTerm, products, today]);
   
   const handleAddToCart = (product: Product, batch: Batch) => {
+    const expiry = getExpiryDate(batch.expiryDate);
+    if (expiry < today) {
+      alert(`Cannot add expired batch.\nProduct: ${product.name}\nBatch: ${batch.batchNumber}\nExpired on: ${expiry.toLocaleDateString()}`);
+      return;
+    }
+
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id);
     if (existingItem) {
       if (existingItem.quantity < batch.stock) {
@@ -184,20 +205,34 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                     <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                       <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200">{product.name}</div>
                       <ul className="pl-4">
-                        {product.batches.filter(b => b.stock > 0).map(batch => (
-                           <li key={batch.id} 
-                               className="px-4 py-2 flex justify-between items-center hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer"
-                               onClick={() => handleAddToCart(product, batch)}>
-                                <div>
-                                    <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                    <span className="text-sm text-slate-600 dark:text-slate-400 ml-3">Exp: {batch.expiryDate}</span>
-                                </div>
-                                <div>
-                                    <span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                    <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
-                                </div>
-                           </li>
-                        ))}
+                        {product.batches
+                          .filter(b => b.stock > 0)
+                          .sort((a, b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime())
+                          .map(batch => {
+                            const expiry = getExpiryDate(batch.expiryDate);
+                            const isExpired = expiry < today;
+                            
+                            return (
+                               <li key={batch.id} 
+                                   className={`px-4 py-2 flex justify-between items-center transition-colors ${
+                                       isExpired 
+                                           ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 cursor-not-allowed' 
+                                           : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'
+                                   }`}
+                                   onClick={() => handleAddToCart(product, batch)}
+                                   title={isExpired ? `This batch expired on ${expiry.toLocaleDateString()}` : ''}>
+                                    <div>
+                                        <span className={isExpired ? '' : 'text-slate-800 dark:text-slate-200'}>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                        <span className={`text-sm ml-3 ${isExpired ? '' : 'text-slate-600 dark:text-slate-400'}`}>Exp: {batch.expiryDate}</span>
+                                        {isExpired && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>}
+                                    </div>
+                                    <div>
+                                        <span className={isExpired ? '' : 'text-slate-800 dark:text-slate-200'}>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
+                                        <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
+                                    </div>
+                               </li>
+                            );
+                        })}
                       </ul>
                     </li>
                   ))}

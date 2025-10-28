@@ -149,7 +149,7 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                         {filteredProducts.map(product => {
                             const totalStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
                             return (
-                                <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                                <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
                                     <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{product.name}</th>
                                     <td className="px-6 py-4">{product.company}</td>
                                     <td className="px-6 py-4 font-bold">{totalStock}</td>
@@ -318,6 +318,11 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
         ).sort((a,b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()),
     [batches, searchTerm]);
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(today.getDate() + 30);
+
     return (
         <Card title={title}>
             <input
@@ -340,16 +345,33 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredBatches.map(batch => (
-                            <tr key={batch.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                                {showProductInfo && <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{batch.productName}</td>}
+                        {filteredBatches.map(batch => {
+                            const expiry = getExpiryDate(batch.expiryDate);
+                            let rowClass = 'bg-white dark:bg-slate-800';
+                            let expiryBadge = null;
+                            let rowTitle = '';
+
+                            if (expiry < today) {
+                                rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-900 dark:text-red-100 hover:bg-red-200 dark:hover:bg-red-900/70';
+                                expiryBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
+                                rowTitle = `This batch expired on ${expiry.toLocaleDateString()}`;
+                            } else if (expiry <= thirtyDaysFromNow) {
+                                rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-100 hover:bg-yellow-200 dark:hover:bg-yellow-900/70';
+                                expiryBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
+                                rowTitle = `This batch expires on ${expiry.toLocaleDateString()}`;
+                            }
+                            
+                            return (
+                            <tr key={batch.id} className={`${rowClass} border-b dark:border-slate-700`} title={rowTitle}>
+                                {showProductInfo && <td className="px-6 py-4 font-medium">{batch.productName}</td>}
                                 {showProductInfo && <td className="px-6 py-4">{batch.company}</td>}
                                 <td className="px-6 py-4">{batch.batchNumber}</td>
-                                <td className="px-6 py-4">{batch.expiryDate}</td>
+                                <td className="px-6 py-4 flex items-center">{batch.expiryDate} {expiryBadge}</td>
                                 <td className="px-6 py-4 font-bold">{batch.stock}</td>
                                 <td className="px-6 py-4">₹{batch.mrp.toFixed(2)}</td>
                             </tr>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
                 {filteredBatches.length === 0 && <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No batches found.</p></div>}
@@ -438,23 +460,46 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
     setFormState({ batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: '' });
   };
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const thirtyDaysFromNow = new Date();
+  thirtyDaysFromNow.setDate(today.getDate() + 30);
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Batches for ${product.name}`}>
       <div className="mb-6 max-h-48 overflow-y-auto">
           <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Existing Batches</h4>
           <ul className="space-y-2">
-            {product.batches.map(batch => (
-                <li key={batch.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded">
-                    <div>
-                        <span className="font-medium text-slate-800 dark:text-slate-200">Batch: {batch.batchNumber}</span>
-                        <span className="text-sm text-slate-600 dark:text-slate-400 ml-4">Exp: {batch.expiryDate}</span>
-                    </div>
-                     <div>
-                        <span className="text-sm text-slate-600 dark:text-slate-400 mr-4">MRP: ₹{batch.mrp.toFixed(2)}</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {batch.stock}</span>
-                    </div>
-                </li>
-            ))}
+            {product.batches.map(batch => {
+                const expiry = getExpiryDate(batch.expiryDate);
+                let liClass = 'bg-slate-50 dark:bg-slate-700';
+                let statusBadge = null;
+                let liTitle = '';
+
+                if (expiry < today) {
+                    liClass = 'bg-red-100 dark:bg-red-900/50';
+                    statusBadge = <span className="px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
+                    liTitle = `This batch expired on ${expiry.toLocaleDateString()}`;
+                } else if (expiry <= thirtyDaysFromNow) {
+                    liClass = 'bg-yellow-100 dark:bg-yellow-900/50';
+                    statusBadge = <span className="px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
+                    liTitle = `This batch expires on ${expiry.toLocaleDateString()}`;
+                }
+
+                return (
+                    <li key={batch.id} className={`flex justify-between items-center p-2 rounded ${liClass}`} title={liTitle}>
+                        <div>
+                            <span className="font-medium text-slate-800 dark:text-slate-200">Batch: {batch.batchNumber}</span>
+                            <span className="text-sm text-slate-600 dark:text-slate-400 ml-4">Exp: {batch.expiryDate}</span>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            {statusBadge}
+                            <span className="text-sm text-slate-600 dark:text-slate-400">MRP: ₹{batch.mrp.toFixed(2)}</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {batch.stock}</span>
+                        </div>
+                    </li>
+                );
+            })}
           </ul>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4 pt-4 border-t dark:border-slate-700">

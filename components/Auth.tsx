@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
 import { auth } from '../firebase';
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword,
-  updateProfile,
-  AuthError
-} from 'firebase/auth';
+// Fix: Removed v9 modular imports, as compat API is now used.
 import Card from './common/Card';
 
 const Auth: React.FC = () => {
@@ -23,13 +18,17 @@ const Auth: React.FC = () => {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        // Fix: Use v8 compat API for signing in
+        await auth.signInWithEmailAndPassword(email, password);
       } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName: name });
+        // Fix: Use v8 compat API for creating user and updating profile
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        if (userCredential.user) {
+          await userCredential.user.updateProfile({ displayName: name });
+        }
       }
-    } catch (err) {
-      const authError = err as AuthError;
+    } catch (err: any) { // Fix: Use 'any' type for error as v9 AuthError is not available
+      const authError = err;
       switch (authError.code) {
         case 'auth/user-not-found':
           setError('No account found with this email.');

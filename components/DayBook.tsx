@@ -87,6 +87,18 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
 
 // --- Helper Component ---
 const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; }> = ({ isOpen, onClose, bill }) => {
+    
+    const getExpiryDate = (expiryString: string): Date => {
+        if (!expiryString) return new Date('9999-12-31');
+        const [year, month] = expiryString.split('-').map(Number);
+        return new Date(year, month, 0); // Last day of the expiry month
+    };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const thirtyDaysFromNow = new Date();
+    thirtyDaysFromNow.setDate(today.getDate() + 30);
+    
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Bill Details: ${bill.billNumber}`}>
             <div className="space-y-4 text-slate-800 dark:text-slate-300">
@@ -108,14 +120,36 @@ const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: B
                                 </tr>
                             </thead>
                             <tbody>
-                                {bill.items.map(item => (
-                                    <tr key={item.batchId} className="border-b dark:border-slate-700">
-                                        <td className="py-2">{item.productName} <span className="text-slate-500 dark:text-slate-400">({item.batchNumber})</span></td>
-                                        <td className="py-2 text-center">{item.quantity}</td>
-                                        <td className="py-2 text-right">₹{item.mrp.toFixed(2)}</td>
-                                        <td className="py-2 text-right">₹{item.total.toFixed(2)}</td>
-                                    </tr>
-                                ))}
+                                {bill.items.map(item => {
+                                    const expiry = getExpiryDate(item.expiryDate);
+                                    let rowClass = '';
+                                    let statusBadge = null;
+                                    let rowTitle = '';
+
+                                    if (expiry < today) {
+                                        rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
+                                        statusBadge = <span className="ml-1 font-semibold">(Expired)</span>;
+                                        rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
+                                    } else if (expiry <= thirtyDaysFromNow) {
+                                        rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
+                                        statusBadge = <span className="ml-1 font-semibold">(Expires Soon)</span>;
+                                        rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
+                                    }
+
+                                    return (
+                                        <tr key={item.batchId} className={`border-b dark:border-slate-700 ${rowClass}`} title={rowTitle}>
+                                            <td className="py-2">
+                                                {item.productName}
+                                                <div className="text-slate-500 dark:text-slate-400">
+                                                  Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
+                                                </div>
+                                            </td>
+                                            <td className="py-2 text-center">{item.quantity}</td>
+                                            <td className="py-2 text-right">₹{item.mrp.toFixed(2)}</td>
+                                            <td className="py-2 text-right">₹{item.total.toFixed(2)}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
