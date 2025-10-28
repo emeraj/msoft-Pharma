@@ -72,8 +72,6 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
         const item: PurchaseLineItem = {
             isNewProduct,
-            productId: selectedProduct?.id,
-            productKey: selectedProduct?.key,
             productName: isNewProduct ? productName : selectedProduct!.name,
             company: isNewProduct ? company : selectedProduct!.company,
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
@@ -84,6 +82,11 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
         };
+
+        if (!isNewProduct && selectedProduct) {
+            item.productId = selectedProduct.id;
+            item.productKey = selectedProduct.key;
+        }
 
         onAddItem(item);
         setFormState(initialFormState); // Reset form
@@ -271,7 +274,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
                             </tr>
                         </thead>
                         <tbody>
-                            {purchases.map(p => (
+                            {purchases.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()).map(p => (
                                 <tr key={p.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-6 py-4">{new Date(p.invoiceDate).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{p.invoiceNumber}</td>
