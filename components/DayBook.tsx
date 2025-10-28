@@ -181,11 +181,11 @@ const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: B
 
                                     if (expiry < today) {
                                         rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
-                                        statusBadge = <span className="ml-1 font-semibold">(Expired)</span>;
+                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
                                         rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
                                     } else if (expiry <= thirtyDaysFromNow) {
                                         rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
-                                        statusBadge = <span className="ml-1 font-semibold">(Expires Soon)</span>;
+                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
                                         rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
                                     }
 
