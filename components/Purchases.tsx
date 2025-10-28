@@ -9,6 +9,10 @@ interface PurchasesProps {
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
 }
 
+const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formSelectStyle = `${formInputStyle} appearance-none`;
+
+
 const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void }> = ({ products, onAddItem }) => {
     const initialFormState = {
         isNewProduct: false,
@@ -81,43 +85,43 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     };
 
     return (
-        <form onSubmit={handleAddItem} className="p-4 my-4 space-y-4 bg-slate-50 rounded-lg border">
+        <form onSubmit={handleAddItem} className="p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="md:col-span-2 relative">
-                    <label className="block text-sm font-medium text-slate-800">Search Existing Product</label>
+                    <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">Search Existing Product</label>
                     <input
                         type="text"
                         name="productSearch"
                         value={formState.productSearch}
                         onChange={handleChange}
                         placeholder="Type to search..."
-                        className="mt-1 w-full p-2 border rounded-md"
+                        className={`mt-1 w-full ${formInputStyle}`}
                         disabled={formState.isNewProduct}
                         autoComplete="off"
                     />
                     {searchResults.length > 0 && formState.productSearch && !formState.selectedProduct && (
-                        <ul className="absolute z-20 w-full mt-1 bg-white border shadow-lg rounded max-h-48 overflow-y-auto">
+                        <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-lg rounded max-h-48 overflow-y-auto">
                             {searchResults.map(p => (
-                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 hover:bg-indigo-100 cursor-pointer">{p.name} ({p.company})</li>
+                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 text-slate-800 dark:text-slate-200 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer">{p.name} ({p.company})</li>
                             ))}
                         </ul>
                     )}
                 </div>
                 <div>
-                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200 transition-colors">
+                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-900 transition-colors">
                         Or, Add New Product
                     </button>
                 </div>
             </div>
 
             {formState.isNewProduct && (
-                 <div className="p-3 bg-green-50 rounded border border-green-200 animate-fade-in">
-                    <h4 className="font-semibold text-green-800 mb-2">New Product Details</h4>
+                 <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 animate-fade-in">
+                    <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">New Product Details</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <input name="productName" value={formState.productName} onChange={handleChange} placeholder="Product Name*" className="p-2 border rounded-md" required />
-                        <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className="p-2 border rounded-md" />
-                        <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className="p-2 border rounded-md" />
-                        <select name="gst" value={formState.gst} onChange={handleChange} className="p-2 border rounded-md bg-white">
+                        <input name="productName" value={formState.productName} onChange={handleChange} placeholder="Product Name*" className={formInputStyle} required />
+                        <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} />
+                        <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
+                        <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
                             <option value="5">GST 5%</option>
                             <option value="12">GST 12%</option>
                             <option value="18">GST 18%</option>
@@ -128,13 +132,13 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
             {(formState.selectedProduct || formState.isNewProduct) && (
                 <div className="animate-fade-in">
-                     <h4 className="font-semibold text-slate-700 mb-2 pt-2 border-t">Batch Details</h4>
+                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 pt-2 border-t dark:border-slate-600">Batch Details</h4>
                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                         <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className="p-2 border rounded-md" required />
-                         <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className="p-2 border rounded-md" required />
-                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder="Quantity*" className="p-2 border rounded-md" required min="1" />
-                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price*" className="p-2 border rounded-md" required min="0" step="0.01" />
-                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP*" className="p-2 border rounded-md" required min="0" step="0.01" />
+                         <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />
+                         <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />
+                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder="Quantity*" className={formInputStyle} required min="1" />
+                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price*" className={formInputStyle} required min="0" step="0.01" />
+                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP*" className={formInputStyle} required min="0" step="0.01" />
                      </div>
                      <div className="flex justify-end mt-4">
                         <button type="submit" className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors">
@@ -190,19 +194,19 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
         <div className="p-4 sm:p-6 space-y-6">
             <Card title="New Purchase Entry">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Supplier Name*" className="p-2 border rounded-md" required/>
-                    <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Invoice Number*" className="p-2 border rounded-md" required/>
-                    <input value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} type="date" className="p-2 border rounded-md" required/>
+                    <input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Supplier Name*" className={formInputStyle} required/>
+                    <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Invoice Number*" className={formInputStyle} required/>
+                    <input value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} type="date" className={formInputStyle} required/>
                 </div>
 
                 <AddItemForm products={products} onAddItem={handleAddItem} />
                 
                 {currentItems.length > 0 && (
                     <div className="mt-4">
-                         <h3 className="font-semibold text-slate-800 mb-2">Items in Current Purchase</h3>
+                         <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Items in Current Purchase</h3>
                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-slate-800">
-                                <thead className="text-xs text-slate-800 uppercase bg-slate-100">
+                            <table className="w-full text-sm text-slate-800 dark:text-slate-300">
+                                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
                                     <tr>
                                         <th className="px-4 py-2 text-left">Product</th>
                                         <th className="px-4 py-2 text-left">Batch</th>
@@ -214,8 +218,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
                                 </thead>
                                 <tbody>
                                     {currentItems.map((item, index) => (
-                                        <tr key={index} className="border-b">
-                                            <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 font-semibold">(New)</span>}</td>
+                                        <tr key={index} className="border-b dark:border-slate-700">
+                                            <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 dark:text-green-400 font-semibold">(New)</span>}</td>
                                             <td className="px-4 py-2">{item.batchNumber}</td>
                                             <td className="px-4 py-2 text-center">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
@@ -229,7 +233,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
                             </table>
                          </div>
                          <div className="flex flex-col sm:flex-row justify-end items-center mt-4 gap-4">
-                            <div className="text-xl font-bold text-slate-800">
+                            <div className="text-xl font-bold text-slate-800 dark:text-slate-200">
                                 <span>Total Amount: </span>
                                 <span>₹{totalAmount.toFixed(2)}</span>
                             </div>
@@ -243,8 +247,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
 
             <Card title="Purchase History">
                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800">
-                        <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                        <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                             <tr>
                                 <th className="px-6 py-3">Date</th>
                                 <th className="px-6 py-3">Invoice #</th>
@@ -255,9 +259,9 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
                         </thead>
                         <tbody>
                             {purchases.map(p => (
-                                <tr key={p.id} className="bg-white border-b hover:bg-slate-50">
+                                <tr key={p.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-6 py-4">{new Date(p.invoiceDate).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 font-medium text-slate-900">{p.invoiceNumber}</td>
+                                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{p.invoiceNumber}</td>
                                     <td className="px-6 py-4">{p.supplier}</td>
                                     <td className="px-6 py-4 text-center">{p.items.length}</td>
                                     <td className="px-6 py-4 font-semibold text-right">₹{p.totalAmount.toFixed(2)}</td>
@@ -265,7 +269,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, onAddPurchas
                             ))}
                         </tbody>
                     </table>
-                    {purchases.length === 0 && <p className="text-center py-6 text-slate-600">No purchase history found.</p>}
+                    {purchases.length === 0 && <p className="text-center py-6 text-slate-600 dark:text-slate-400">No purchase history found.</p>}
                  </div>
             </Card>
         </div>

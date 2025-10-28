@@ -49,7 +49,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onAddBatc
         className={`px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
             activeSubView === view
                 ? 'bg-indigo-600 text-white shadow'
-                : 'text-slate-700 hover:bg-slate-200'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
         }`}
     >
         {label}
@@ -60,7 +60,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onAddBatc
     <div className="p-4 sm:p-6 space-y-6">
       <Card>
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <h1 className="text-2xl font-bold text-slate-800">Inventory Management</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Inventory Management</h1>
           <button 
             onClick={() => setProductModalOpen(true)}
             className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors duration-200"
@@ -68,7 +68,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onAddBatc
             <PlusIcon className="h-5 w-5" /> Add New Product
           </button>
         </div>
-        <div className="flex flex-wrap gap-2 border-t mt-4 pt-4">
+        <div className="flex flex-wrap gap-2 border-t dark:border-slate-700 mt-4 pt-4">
             <SubNavButton view="all" label="All Item Stock" />
             <SubNavButton view="selected" label="Selected Item Stock" />
             <SubNavButton view="batch" label="Batch Wise Stock" />
@@ -98,6 +98,9 @@ const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onAddBatc
   );
 };
 
+const inputStyle = "w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+const selectStyle = `${inputStyle} appearance-none`;
+
 // --- Sub View Components ---
 
 const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (product: Product) => void}> = ({ products, onOpenBatchModal }) => {
@@ -120,20 +123,20 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                     placeholder="Search by product name..."
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className={inputStyle}
                 />
                 <select
                     value={companyFilter}
                     onChange={e => setCompanyFilter(e.target.value)}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                    className={selectStyle}
                 >
                     <option value="">All Companies</option>
                     {companies.map(company => <option key={company} value={company}>{company}</option>)}
                 </select>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-slate-800">
-                    <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
                             <th scope="col" className="px-6 py-3">Company</th>
@@ -146,13 +149,13 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                         {filteredProducts.map(product => {
                             const totalStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
                             return (
-                                <tr key={product.id} className="bg-white border-b hover:bg-slate-50">
-                                    <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{product.name}</th>
+                                <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                                    <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{product.name}</th>
                                     <td className="px-6 py-4">{product.company}</td>
                                     <td className="px-6 py-4 font-bold">{totalStock}</td>
                                     <td className="px-6 py-4">{product.batches.length}</td>
                                     <td className="px-6 py-4">
-                                        <button onClick={() => onOpenBatchModal(product)} className="font-medium text-indigo-600 hover:underline">View/Add Batch</button>
+                                        <button onClick={() => onOpenBatchModal(product)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">View/Add Batch</button>
                                     </td>
                                 </tr>
                             );
@@ -160,7 +163,7 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                     </tbody>
                 </table>
                 {filteredProducts.length === 0 && (
-                    <div className="text-center py-10 text-slate-600"><p>No products found.</p></div>
+                    <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No products found.</p></div>
                 )}
             </div>
         </Card>
@@ -192,22 +195,22 @@ const SelectedItemStockView: React.FC<{products: Product[]}> = ({ products }) =>
                         setSearchTerm(e.target.value);
                         if (selectedProduct) setSelectedProduct(null);
                     }}
-                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className={inputStyle}
                 />
                 {searchResults.length > 0 && (
-                    <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                         {searchResults.map(p => (
-                            <li key={p.id} onClick={() => handleSelect(p)} className="px-4 py-2 hover:bg-indigo-50 cursor-pointer">{p.name}</li>
+                            <li key={p.id} onClick={() => handleSelect(p)} className="px-4 py-2 text-slate-800 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-900 cursor-pointer">{p.name}</li>
                         ))}
                     </ul>
                 )}
             </div>
             {selectedProduct && (
                  <div className="animate-fade-in">
-                    <div className="p-4 bg-slate-50 rounded-lg border mb-4">
-                        <h3 className="text-lg font-bold text-slate-800">{selectedProduct.name}</h3>
-                        <p className="text-sm text-slate-700">{selectedProduct.company}</p>
-                        <div className="flex gap-4 mt-2 text-sm text-slate-800">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-lg border dark:border-slate-600 mb-4">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">{selectedProduct.company}</p>
+                        <div className="flex gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
                            <span>HSN: {selectedProduct.hsnCode}</span>
                            <span>GST: {selectedProduct.gst}%</span>
                            <span className="font-semibold">Total Stock: {selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0)}</span>
@@ -235,22 +238,22 @@ const CompanyWiseStockView: React.FC<{products: Product[]}> = ({ products }) => 
                 {Object.entries(productsByCompany).map(([company, companyProducts]) => {
                     const totalStock = companyProducts.flatMap(p => p.batches).reduce((sum, b) => sum + b.stock, 0);
                     return (
-                    <div key={company} className="border rounded-lg overflow-hidden">
-                        <button onClick={() => setOpenCompany(openCompany === company ? null : company)} className="w-full flex justify-between items-center p-4 bg-slate-50 hover:bg-slate-100">
-                            <h3 className="font-semibold text-slate-800">{company}</h3>
+                    <div key={company} className="border dark:border-slate-700 rounded-lg overflow-hidden">
+                        <button onClick={() => setOpenCompany(openCompany === company ? null : company)} className="w-full flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600">
+                            <h3 className="font-semibold text-slate-800 dark:text-slate-200">{company}</h3>
                             <div className="flex items-center gap-4">
-                                <span className="text-sm text-slate-600">Products: {companyProducts.length}</span>
-                                <span className="text-sm font-bold text-slate-800">Total Stock: {totalStock}</span>
-                                <svg className={`h-5 w-5 transition-transform ${openCompany === company ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                <span className="text-sm text-slate-600 dark:text-slate-400">Products: {companyProducts.length}</span>
+                                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Total Stock: {totalStock}</span>
+                                <svg className={`h-5 w-5 text-slate-600 dark:text-slate-400 transition-transform ${openCompany === company ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                             </div>
                         </button>
                         {openCompany === company && (
-                            <div className="p-4 border-t">
-                                <table className="w-full text-sm text-slate-800">
-                                    <thead className="text-xs text-slate-800 bg-white"><tr><th className="py-2 text-left">Product</th><th className="py-2 text-right">Total Stock</th></tr></thead>
+                            <div className="p-4 border-t dark:border-slate-700">
+                                <table className="w-full text-sm text-slate-800 dark:text-slate-300">
+                                    <thead className="text-xs text-slate-800 dark:text-slate-300 bg-white dark:bg-slate-800"><tr><th className="py-2 text-left">Product</th><th className="py-2 text-right">Total Stock</th></tr></thead>
                                     <tbody>
                                         {companyProducts.map(p => (
-                                            <tr key={p.id} className="border-b">
+                                            <tr key={p.id} className="border-b dark:border-slate-700">
                                                 <td className="py-2">{p.name}</td>
                                                 <td className="py-2 text-right font-medium">{p.batches.reduce((s, b) => s + b.stock, 0)}</td>
                                             </tr>
@@ -322,11 +325,11 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                 placeholder="Search by product or batch..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                className="w-full sm:w-1/2 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 mb-4"
+                className={`${inputStyle} sm:w-1/2 mb-4`}
             />
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-slate-800">
-                    <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                         <tr>
                             {showProductInfo && <th className="px-6 py-3">Product</th>}
                             {showProductInfo && <th className="px-6 py-3">Company</th>}
@@ -338,8 +341,8 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                     </thead>
                     <tbody>
                         {filteredBatches.map(batch => (
-                            <tr key={batch.id} className="bg-white border-b hover:bg-slate-50">
-                                {showProductInfo && <td className="px-6 py-4 font-medium text-slate-900">{batch.productName}</td>}
+                            <tr key={batch.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                                {showProductInfo && <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{batch.productName}</td>}
                                 {showProductInfo && <td className="px-6 py-4">{batch.company}</td>}
                                 <td className="px-6 py-4">{batch.batchNumber}</td>
                                 <td className="px-6 py-4">{batch.expiryDate}</td>
@@ -349,11 +352,14 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                         ))}
                     </tbody>
                 </table>
-                {filteredBatches.length === 0 && <div className="text-center py-10 text-slate-600"><p>No batches found.</p></div>}
+                {filteredBatches.length === 0 && <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No batches found.</p></div>}
             </div>
         </Card>
     );
 };
+
+const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-indigo-500";
+const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; }> = ({ isOpen, onClose, onAddProduct }) => {
   const [formState, setFormState] = useState({
@@ -384,27 +390,27 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add New Product">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <h4 className="font-semibold text-slate-700">Product Details</h4>
+        <h4 className="font-semibold text-slate-700 dark:text-slate-300">Product Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className="p-2 border rounded" required />
-          <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className="p-2 border rounded" required />
-          <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className="p-2 border rounded" />
-          <select name="gst" value={formState.gst} onChange={handleChange} className="p-2 border rounded bg-white">
+          <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
+          <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
+          <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
+          <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
             <option value="5">GST 5%</option>
             <option value="12">GST 12%</option>
             <option value="18">GST 18%</option>
           </select>
         </div>
-        <h4 className="font-semibold text-slate-700 pt-2 border-t mt-4">First Batch Details</h4>
+        <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">First Batch Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className="p-2 border rounded" required />
-            <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className="p-2 border rounded" required />
-            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty" className="p-2 border rounded" required min="0"/>
-            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className="p-2 border rounded" required min="0" step="0.01"/>
-            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className="p-2 border rounded" min="0" step="0.01"/>
+            <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />
+            <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />
+            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty" className={formInputStyle} required min="0"/>
+            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} required min="0" step="0.01"/>
+            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01"/>
         </div>
         <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Product</button>
         </div>
       </form>
@@ -435,33 +441,33 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Batches for ${product.name}`}>
       <div className="mb-6 max-h-48 overflow-y-auto">
-          <h4 className="font-semibold text-slate-700 mb-2">Existing Batches</h4>
+          <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Existing Batches</h4>
           <ul className="space-y-2">
             {product.batches.map(batch => (
-                <li key={batch.id} className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                <li key={batch.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-700 p-2 rounded">
                     <div>
-                        <span className="font-medium text-slate-800">Batch: {batch.batchNumber}</span>
-                        <span className="text-sm text-slate-600 ml-4">Exp: {batch.expiryDate}</span>
+                        <span className="font-medium text-slate-800 dark:text-slate-200">Batch: {batch.batchNumber}</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-400 ml-4">Exp: {batch.expiryDate}</span>
                     </div>
                      <div>
-                        <span className="text-sm text-slate-600 mr-4">MRP: ₹{batch.mrp.toFixed(2)}</span>
-                        <span className="font-bold text-slate-800">Stock: {batch.stock}</span>
+                        <span className="text-sm text-slate-600 dark:text-slate-400 mr-4">MRP: ₹{batch.mrp.toFixed(2)}</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {batch.stock}</span>
                     </div>
                 </li>
             ))}
           </ul>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4 pt-4 border-t">
-        <h4 className="font-semibold text-slate-700">Add New Batch</h4>
+      <form onSubmit={handleSubmit} className="space-y-4 pt-4 border-t dark:border-slate-700">
+        <h4 className="font-semibold text-slate-700 dark:text-slate-300">Add New Batch</h4>
          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className="p-2 border rounded" required />
-            <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className="p-2 border rounded" required />
-            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty" className="p-2 border rounded" required min="0"/>
-            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className="p-2 border rounded" required min="0" step="0.01"/>
-            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className="p-2 border rounded" min="0" step="0.01"/>
+            <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />
+            <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />
+            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty" className={formInputStyle} required min="0"/>
+            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} required min="0" step="0.01"/>
+            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01"/>
         </div>
         <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Batch</button>
         </div>
       </form>

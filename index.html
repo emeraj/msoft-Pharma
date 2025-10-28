@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PharmaTrack Pro</title>
+  <title>Pharma - Retail</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* Custom scrollbar for a cleaner look */
@@ -13,6 +12,9 @@
     }
     ::-webkit-scrollbar-track {
       background: #f1f1f1;
+    }
+    .dark ::-webkit-scrollbar-track {
+      background: #2d3748; /* slate-800 */
     }
     ::-webkit-scrollbar-thumb {
       background: #888;
@@ -32,7 +34,7 @@
 }
 </script>
 </head>
-<body class="bg-slate-100 antialiased">
+<body class="antialiased">
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

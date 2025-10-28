@@ -1,11 +1,11 @@
-
-import React, { useState } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem } from './types';
+import React, { useState, useEffect } from 'react';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
 import DayBook from './components/DayBook';
 import Purchases from './components/Purchases';
+import SettingsModal from './components/SettingsModal';
 
 // Mock Data
 const initialProducts: Product[] = [
@@ -42,6 +42,32 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  
+  // Settings State
+  const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
+    try {
+      const savedProfile = localStorage.getItem('companyProfile');
+      return savedProfile ? JSON.parse(savedProfile) : { name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' };
+    } catch (error) {
+      return { name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' };
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('companyProfile', JSON.stringify(companyProfile));
+  }, [companyProfile]);
+
 
   const handleAddProduct = (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
     const newProduct: Product = {
@@ -65,7 +91,6 @@ const App: React.FC = () => {
   };
   
   const handleGenerateBill = (billData: Omit<Bill, 'id' | 'billNumber'>): Bill => {
-    // 1. Create the new bill
     const newBill: Bill = {
         ...billData,
         id: `bill_${Date.now()}`,
@@ -73,7 +98,6 @@ const App: React.FC = () => {
     };
     setBills(prevBills => [...prevBills, newBill]);
 
-    // 2. Update inventory stock
     const updatedProducts = products.map(product => {
         const relevantItems = billData.items.filter(item => item.productId === product.id);
         if (relevantItems.length === 0) return product;
@@ -89,16 +113,12 @@ const App: React.FC = () => {
         return { ...product, batches: updatedBatches };
     });
     setProducts(updatedProducts);
-
-    // 3. Return the new bill so the billing component can use it
     return newBill;
   };
 
   const handlePurchaseEntry = (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     let updatedProducts = [...products];
-
     purchaseData.items.forEach(item => {
-      // Use a more unique ID
       const uniqueIdSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       
       const newBatch: Omit<Batch, 'id'> = {
@@ -133,7 +153,6 @@ const App: React.FC = () => {
         }
       }
     });
-
     setProducts(updatedProducts);
 
     const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
@@ -148,7 +167,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (activeView) {
       case 'billing':
-        return <Billing products={products} onGenerateBill={handleGenerateBill}/>;
+        return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
       case 'purchases':
         return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} />;
       case 'inventory':
@@ -156,16 +175,28 @@ const App: React.FC = () => {
       case 'daybook':
         return <DayBook bills={bills} />;
       default:
-        return <Billing products={products} onGenerateBill={handleGenerateBill} />;
+        return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <Header activeView={activeView} setActiveView={setActiveView} />
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-900">
+      <Header 
+        activeView={activeView} 
+        setActiveView={setActiveView} 
+        onOpenSettings={() => setSettingsModalOpen(true)} 
+      />
       <main>
         {renderView()}
       </main>
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        theme={theme}
+        onThemeChange={setTheme}
+        companyProfile={companyProfile}
+        onProfileChange={setCompanyProfile}
+      />
     </div>
   );
 };

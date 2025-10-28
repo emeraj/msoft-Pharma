@@ -1,4 +1,3 @@
-
 export interface Batch {
   id: string;
   batchNumber: string;
@@ -68,3 +67,12 @@ export interface Purchase {
 }
 
 export type AppView = 'billing' | 'inventory' | 'daybook' | 'purchases';
+
+// New Types for Settings
+export type Theme = 'light' | 'dark';
+
+export interface CompanyProfile {
+  name: string;
+  address: string;
+  gstin: string;
+}

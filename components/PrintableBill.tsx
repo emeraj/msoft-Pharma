@@ -1,20 +1,23 @@
 import React from 'react';
-import type { Bill } from '../types';
+import type { Bill, CompanyProfile } from '../types';
+import { PillIcon } from './icons/Icons';
 
 interface PrintableBillProps {
   bill: Bill;
+  companyProfile: CompanyProfile;
 }
 
-const PrintableBill: React.FC<PrintableBillProps> = ({ bill }) => {
+const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) => {
   // Defensive check for items array
   const items = bill?.items || [];
 
   return (
     <div className="text-black text-xs font-sans">
       <header className="text-center mb-4">
-        <h1 className="text-xl font-bold">PharmaTrack Pro</h1>
-        <p>123 Health St, Wellness City</p>
-        <p>GSTIN: ABCDE12345FGHIJ</p>
+        <PillIcon className="h-16 w-16 mx-auto mb-2 text-slate-800" />
+        <h1 className="text-xl font-bold">{companyProfile.name}</h1>
+        <p>{companyProfile.address}</p>
+        <p>GSTIN: {companyProfile.gstin}</p>
         <h2 className="text-lg font-semibold mt-2 border-y-2 border-black py-1">TAX INVOICE</h2>
       </header>
 
