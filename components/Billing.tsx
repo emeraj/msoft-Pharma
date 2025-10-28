@@ -41,6 +41,7 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         left: 0;
                         top: 0;
                         width: 100%;
+                        height: 100%;
                     }
                     .print-preview-container {
                         max-height: none !important;
@@ -53,8 +54,8 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         display: none;
                     }
                     @page {
-                        size: A5;
-                        margin: 10mm;
+                        size: A5 landscape;
+                        margin: 0;
                     }
                 }
             `}</style>
