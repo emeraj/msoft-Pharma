@@ -289,6 +289,19 @@ const App: React.FC = () => {
     return newSupplier;
   };
 
+  const handleUpdateSupplier = async (supplierKey: string, supplierData: Omit<Supplier, 'id' | 'key'>) => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const supplierRef = database.ref(`users/${uid}/suppliers/${supplierKey}`);
+    try {
+        await supplierRef.update(supplierData);
+        alert('Supplier updated successfully.');
+    } catch (error) {
+        console.error("Error updating supplier:", error);
+        alert('Failed to update supplier.');
+    }
+  };
+
   const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
@@ -455,15 +468,25 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const uid = currentUser.uid;
     const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
-    await paymentRef.update(paymentData);
+    try {
+        await paymentRef.update(paymentData);
+    } catch(err) {
+        console.error("Failed to update payment", err);
+        alert("Error: Could not update the payment record.");
+    }
   };
 
   const handleDeletePayment = async (paymentKey: string) => {
-    if (!currentUser) return;
+    if (!currentUser || !paymentKey) return;
     if (window.confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) {
-      const uid = currentUser.uid;
-      const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
-      await paymentRef.remove();
+        try {
+            const uid = currentUser.uid;
+            const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
+            await paymentRef.remove();
+        } catch(err) {
+            console.error("Failed to delete payment", err);
+            alert("Error: Could not delete the payment record.");
+        }
     }
   };
 
@@ -483,7 +506,7 @@ const App: React.FC = () => {
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;
-      case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} />;
+      case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
       default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;

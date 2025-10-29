@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Supplier, Purchase, Payment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, PrinterIcon } from './icons/Icons';
+import { DownloadIcon, PrinterIcon, PencilIcon } from './icons/Icons';
 import PrintableSupplierLedger from './PrintableSupplierLedger';
 
 // --- Utility function to export data to CSV ---
@@ -44,6 +44,7 @@ interface SuppliersLedgerProps {
   purchases: Purchase[];
   payments: Payment[];
   companyProfile: CompanyProfile;
+  onUpdateSupplier: (key: string, data: Omit<Supplier, 'id' | 'key'>) => void;
 }
 
 interface SupplierLedgerEntry extends Supplier {
@@ -53,11 +54,92 @@ interface SupplierLedgerEntry extends Supplier {
     outstandingBalance: number;
 }
 
-const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile }) => {
+interface EditSupplierModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    supplier: Supplier;
+    onUpdate: (key: string, data: Omit<Supplier, 'id' | 'key'>) => void;
+}
+
+const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, supplier, onUpdate }) => {
+    const [formState, setFormState] = useState({
+        address: '', phone: '', gstin: '', openingBalance: ''
+    });
+
+    useEffect(() => {
+        if (supplier) {
+            setFormState({
+                address: supplier.address || '',
+                phone: supplier.phone || '',
+                gstin: supplier.gstin || '',
+                openingBalance: String(supplier.openingBalance || 0)
+            });
+        }
+    }, [supplier]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormState({ ...formState, [e.target.name]: e.target.value });
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!supplier.key) {
+            alert("Cannot update supplier: missing key.");
+            return;
+        }
+        onUpdate(supplier.key, {
+            name: supplier.name, // name is not editable
+            address: formState.address,
+            phone: formState.phone,
+            gstin: formState.gstin,
+            openingBalance: parseFloat(formState.openingBalance) || 0
+        });
+        onClose();
+    };
+
+    const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+    
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Edit Supplier: ${supplier.name}`}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
+                    <input value={supplier.name} className={`${formInputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} readOnly />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
+                    <input name="address" value={formState.address} onChange={handleChange} className={formInputStyle} />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone</label>
+                        <input name="phone" value={formState.phone} onChange={handleChange} className={formInputStyle} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
+                        <input name="gstin" value={formState.gstin} onChange={handleChange} className={formInputStyle} />
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
+                    <input name="openingBalance" value={formState.openingBalance} onChange={handleChange} type="number" step="0.01" className={formInputStyle} required />
+                </div>
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Supplier</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, onUpdateSupplier }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedSupplier, setSelectedSupplier] = useState<SupplierLedgerEntry | null>(null);
+    const [isEditModalOpen, setEditModalOpen] = useState(false);
+    const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
     const supplierLedgerData = useMemo<SupplierLedgerEntry[]>(() => {
         const startDate = fromDate ? new Date(fromDate) : null;
@@ -72,18 +154,16 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
 
             // Calculate Opening Balance for the period
             let openingBalanceForPeriod = supplier.openingBalance || 0;
-            if (startDate) {
-                supplierPurchases.forEach(p => {
-                    if (new Date(p.invoiceDate) < startDate) {
-                        openingBalanceForPeriod += p.totalAmount;
-                    }
-                });
-                supplierPayments.forEach(p => {
-                    if (new Date(p.date) < startDate) {
-                        openingBalanceForPeriod -= p.amount;
-                    }
-                });
-            }
+            const prePeriodPurchases = supplierPurchases.filter(p => startDate && new Date(p.invoiceDate) < startDate);
+            const prePeriodPayments = supplierPayments.filter(p => startDate && new Date(p.date) < startDate);
+
+            prePeriodPurchases.forEach(p => {
+                openingBalanceForPeriod += p.totalAmount;
+            });
+            prePeriodPayments.forEach(p => {
+                openingBalanceForPeriod -= p.amount;
+            });
+
 
             // Calculate transactions within the period
             const purchasesInPeriod = supplierPurchases.reduce((sum, p) => {
@@ -120,6 +200,16 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
         if (!searchTerm) return supplierLedgerData;
         return supplierLedgerData.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [supplierLedgerData, searchTerm]);
+
+    const handleOpenEditModal = (supplier: Supplier) => {
+        setEditingSupplier(supplier);
+        setEditModalOpen(true);
+    };
+
+    const handleCloseEditModal = () => {
+        setEditingSupplier(null);
+        setEditModalOpen(false);
+    };
 
     const handleExport = () => {
         const exportData = filteredLedger.map(s => ({
@@ -171,7 +261,7 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                                 <th scope="col" className="px-6 py-3 text-right">Purchases (Period)</th>
                                 <th scope="col" className="px-6 py-3 text-right">Payments (Period)</th>
                                 <th scope="col" className="px-6 py-3 text-right">Outstanding Balance</th>
-                                <th scope="col" className="px-6 py-3">Action</th>
+                                <th scope="col" className="px-6 py-3">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -183,9 +273,14 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                                     <td className="px-6 py-4 text-right">₹{supplier.paymentsInPeriod.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right font-bold">₹{supplier.outstandingBalance.toFixed(2)}</td>
                                     <td className="px-6 py-4">
-                                        <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
-                                            View Details
-                                        </button>
+                                        <div className="flex items-center gap-4">
+                                            <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                                                View Details
+                                            </button>
+                                            <button onClick={() => handleOpenEditModal(supplier)} title="Edit Supplier" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                                <PencilIcon className="h-5 w-5" />
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
@@ -208,6 +303,15 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                     payments={payments}
                     companyProfile={companyProfile}
                     dateRange={{ from: fromDate, to: toDate }}
+                />
+            )}
+            
+            {editingSupplier && (
+                <EditSupplierModal
+                    isOpen={isEditModalOpen}
+                    onClose={handleCloseEditModal}
+                    supplier={editingSupplier}
+                    onUpdate={onUpdateSupplier}
                 />
             )}
         </div>
