@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
@@ -24,82 +25,78 @@ const getExpiryDate = (expiryString: string): Date => {
 // --- Helper Component for Printing ---
 const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; companyProfile: CompanyProfile; }> = ({ isOpen, onClose, bill, companyProfile }) => {
     const [printFormat, setPrintFormat] = useState<'laser' | 'thermal'>('laser');
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const [iframeBody, setIframeBody] = useState<HTMLElement | null>(null);
+    const [iframeKey, setIframeKey] = useState(0);
 
     const handlePrint = () => {
-        const body = document.body;
-        const printClass = `print-${printFormat}`;
-        
-        body.classList.add(printClass);
+        const iframe = iframeRef.current;
+        if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.focus(); // Focus is needed for some browsers to work correctly
+            iframe.contentWindow.print();
+        }
+    };
+    
+    const onIframeLoad = () => {
+        if (!iframeRef.current) return;
+        const iframeDoc = iframeRef.current.contentDocument;
+        if (iframeDoc) {
+            iframeDoc.head.innerHTML = ''; // Clear head
 
-        const handleAfterPrint = () => {
-            body.classList.remove(printClass);
-            window.removeEventListener('afterprint', handleAfterPrint);
-        };
-
-        window.addEventListener('afterprint', handleAfterPrint);
-        
-        window.print();
+            // Inject Tailwind CSS for component styling
+            const tailwind = iframeDoc.createElement('script');
+            tailwind.src = 'https://cdn.tailwindcss.com';
+            iframeDoc.head.appendChild(tailwind);
+            
+            // Inject print-specific styles
+            const styleEl = iframeDoc.createElement('style');
+            if (printFormat === 'thermal') {
+                styleEl.textContent = `
+                    @page {
+                       size: 72mm auto;
+                       margin: 2mm;
+                    }
+                    body {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                `;
+            } else { // laser
+                styleEl.textContent = `
+         
+                    @page {
+                        size: A5;
+                        margin: 10mm;
+                    }
+                    body {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                `;
+            }
+            iframeDoc.head.appendChild(styleEl);
+            
+            setIframeBody(iframeDoc.body);
+        }
     };
 
-    // Reset format to laser when modal is opened, to have a consistent default
+    // Reset format and iframe key when modal opens/closes or format changes
     useEffect(() => {
         if (isOpen) {
-            setPrintFormat('laser');
+            setPrintFormat('laser'); // Default to laser
+            setIframeKey(key => key + 1); // Force iframe remount on open
         }
     }, [isOpen]);
+    
+    useEffect(() => {
+        if (isOpen) {
+           setIframeKey(key => key + 1); // Force iframe remount on format change
+        }
+    }, [printFormat]);
+
 
     return (
          <Modal isOpen={isOpen} onClose={onClose} title="Print Bill">
-            <style>{`
-                /* Define A5 landscape page size and remove margins for printing */
-                @page {
-                    size: A5 landscape;
-                    margin: 0;
-                }
-                @media print {
-                    body {
-                        -webkit-print-color-adjust: exact;
-                        print-color-adjust: exact;
-                    }
-                    /* Hide everything on the page by default */
-                    body * {
-                        visibility: hidden;
-                    }
-                    /* Make only the printable area and its contents visible */
-                    #printable-area, #printable-area * {
-                        visibility: visible !important;
-                    }
-                    /* Position the printable area to fill the page */
-                    #printable-area {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                        height: auto;
-                    }
-                    /* Hide modal UI elements during printing */
-                    .modal-actions, .print-format-tabs { 
-                        display: none !important; 
-                    }
-                    /* Ensure the preview container has no extra styles affecting print */
-                    .print-preview-container {
-                        max-height: none !important;
-                        overflow: visible !important;
-                        border: none !important;
-                        padding: 0 !important;
-                        background-color: white !important;
-                    }
-                    
-                    /* Conditional display for different print formats */
-                    body.print-laser .laser-content { display: block !important; }
-                    body.print-laser .thermal-content { display: none !important; }
-                    
-                    body.print-thermal .laser-content { display: none !important; }
-                    body.print-thermal .thermal-content { display: block !important; }
-                    body.print-thermal #printable-area { width: 72mm; }
-                }
-            `}</style>
-            
             <div className="print-format-tabs flex border-b dark:border-slate-600 mb-2">
                 <button
                     onClick={() => setPrintFormat('laser')}
@@ -116,15 +113,24 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
             </div>
 
 
-            <div id="printable-area">
-                <div className="print-preview-container p-4 border rounded-b-lg rounded-tr-lg bg-slate-50 dark:bg-slate-700 max-h-96 overflow-y-auto">
-                    <div className={`laser-content ${printFormat !== 'laser' ? 'hidden' : ''}`}>
-                        <PrintableBill bill={bill} companyProfile={companyProfile} />
-                    </div>
-                    <div className={`thermal-content ${printFormat !== 'thermal' ? 'hidden' : ''}`}>
-                        <ThermalPrintableBill bill={bill} companyProfile={companyProfile} />
-                    </div>
-                </div>
+            <div className="print-preview-container p-1 border rounded-b-lg rounded-tr-lg bg-slate-200 dark:bg-slate-700">
+                {isOpen && (
+                    <iframe
+                        key={iframeKey}
+                        ref={iframeRef}
+                        onLoad={onIframeLoad}
+                        title="Print Preview"
+                        className="w-full h-96 bg-white"
+                        frameBorder="0"
+                        src="about:blank"
+                    />
+                )}
+                {iframeBody && createPortal(
+                    printFormat === 'laser' 
+                        ? <PrintableBill bill={bill} companyProfile={companyProfile} />
+                        : <ThermalPrintableBill bill={bill} companyProfile={companyProfile} />,
+                    iframeBody
+                )}
             </div>
 
             <div className="modal-actions flex flex-col sm:flex-row justify-end items-center gap-4 mt-6">
