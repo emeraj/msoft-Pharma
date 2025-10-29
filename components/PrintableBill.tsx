@@ -7,99 +7,121 @@ interface PrintableBillProps {
 }
 
 const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) => {
-  // Defensive check for items array
   const items = bill?.items || [];
 
   return (
-    <div className="bg-white text-black font-sans" style={{ width: '210mm', height: '148mm', boxSizing: 'border-box', fontSize: '9pt' }}>
-      <div className="flex flex-col h-full" style={{ padding: '8mm' }}>
+    <div style={{
+      width: '210mm',
+      height: '148.5mm',
+      boxSizing: 'border-box',
+      backgroundColor: 'white',
+      color: 'black',
+      fontFamily: 'Arial, sans-serif',
+      fontSize: '9pt',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '8mm' }}>
         
-        {/* Header Section */}
-        <header className="flex justify-between items-start border-b-2" style={{ borderColor: '#333', paddingBottom: '2mm' }}>
-          <div className="w-2/3">
-            <h1 className="font-bold uppercase" style={{ fontSize: '14pt', color: '#1a202c' }}>{companyProfile.name}</h1>
-            <p style={{ color: '#4a5568' }}>{companyProfile.address}</p>
-            <p style={{ color: '#4a5568' }}><strong>GSTIN:</strong> {companyProfile.gstin}</p>
+        {/* Header */}
+        <header style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          borderBottom: '1.5pt solid #333',
+          paddingBottom: '2mm',
+        }}>
+          <div style={{ width: '65%' }}>
+            <h1 style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '14pt', margin: 0, color: '#1a202c' }}>
+              {companyProfile.name}
+            </h1>
+            <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
+            <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>
+              <strong style={{ fontWeight: 'bold' }}>GSTIN:</strong> {companyProfile.gstin}
+            </p>
           </div>
-          <div className="w-1/3 text-right">
-            <h2 className="font-bold" style={{ fontSize: '12pt', color: '#1a202c' }}>TAX INVOICE</h2>
-            <p className="mt-1"><strong>Bill No:</strong> {bill.billNumber}</p>
-            <p><strong>Date:</strong> {new Date(bill.date).toLocaleString()}</p>
+          <div style={{ width: '35%', textAlign: 'right' }}>
+            <h2 style={{ fontWeight: 'bold', fontSize: '12pt', margin: 0, color: '#1a202c' }}>TAX INVOICE</h2>
+            <p style={{ margin: '1.5mm 0 0 0' }}><strong style={{ fontWeight: 'bold' }}>Bill No:</strong> {bill.billNumber}</p>
+            <p style={{ margin: '1mm 0 0 0' }}><strong style={{ fontWeight: 'bold' }}>Date:</strong> {new Date(bill.date).toLocaleString()}</p>
           </div>
         </header>
 
         {/* Customer Details */}
-        <section className="flex justify-between border-b" style={{ borderColor: '#ccc', paddingTop: '2mm', paddingBottom: '2mm' }}>
-            <div>
-                <h3 className="font-semibold" style={{ color: '#2d3748' }}>Bill To:</h3>
-                <p>{bill.customerName}</p>
-            </div>
+        <section style={{ borderBottom: '0.5pt solid #ccc', paddingTop: '2mm', paddingBottom: '2mm' }}>
+          <div>
+            <h3 style={{ fontWeight: 600, margin: 0, color: '#2d3748' }}>Bill To:</h3>
+            <p style={{ margin: '1mm 0 0 0' }}>{bill.customerName}</p>
+          </div>
         </section>
 
-
         {/* Items Table */}
-        <main className="flex-grow" style={{ paddingTop: '2mm' }}>
-          <table className="w-full text-left border-collapse">
+        <main style={{ flexGrow: 1, paddingTop: '2mm', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5pt' }}>
             <thead>
-              <tr className="border-b-2 bg-gray-100" style={{ borderColor: '#666' }}>
-                <th className="font-semibold" style={{ padding: '1mm 2mm' }}>S.No</th>
-                <th className="font-semibold w-2/5" style={{ padding: '1mm 2mm' }}>Product Name</th>
-                <th className="font-semibold" style={{ padding: '1mm 2mm' }}>HSN</th>
-                <th className="font-semibold" style={{ padding: '1mm 2mm' }}>Batch</th>
-                <th className="font-semibold" style={{ padding: '1mm 2mm' }}>Exp</th>
-                <th className="font-semibold text-center" style={{ padding: '1mm 2mm' }}>Qty</th>
-                <th className="font-semibold text-right" style={{ padding: '1mm 2mm' }}>MRP</th>
-                <th className="font-semibold text-center" style={{ padding: '1mm 2mm' }}>GST%</th>
-                <th className="font-semibold text-right" style={{ padding: '1mm 2mm' }}>Amount</th>
+              <tr style={{ backgroundColor: '#f3f4f6' }}>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>S.No</th>
+                <th style={{ width: '35%', fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>Product Name</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>HSN</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>Batch</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>Exp</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'center', borderBottom: '1.5pt solid #666' }}>Qty</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'right', borderBottom: '1.5pt solid #666' }}>MRP</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'center', borderBottom: '1.5pt solid #666' }}>GST%</th>
+                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'right', borderBottom: '1.5pt solid #666' }}>Amount</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item, index) => (
-                <tr key={item.batchId} className="border-b even:bg-gray-50" style={{ borderColor: '#eee' }}>
-                  <td style={{ padding: '1mm 2mm' }}>{index + 1}</td>
-                  <td style={{ padding: '1mm 2mm' }}>{item.productName}</td>
-                  <td style={{ padding: '1mm 2mm' }}>{item.hsnCode}</td>
-                  <td style={{ padding: '1mm 2mm' }}>{item.batchNumber}</td>
-                  <td style={{ padding: '1mm 2mm' }}>{item.expiryDate}</td>
-                  <td className="text-center" style={{ padding: '1mm 2mm' }}>{item.quantity}</td>
-                  <td className="text-right" style={{ padding: '1mm 2mm' }}>{(item.mrp || 0).toFixed(2)}</td>
-                  <td className="text-center" style={{ padding: '1mm 2mm' }}>{item.gst}%</td>
-                  <td className="font-medium text-right" style={{ padding: '1mm 2mm' }}>{(item.total || 0).toFixed(2)}</td>
+                <tr key={item.batchId} style={{ borderBottom: '0.5pt solid #eee' }}>
+                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{index + 1}</td>
+                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.productName}</td>
+                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.hsnCode}</td>
+                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.batchNumber}</td>
+                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.expiryDate}</td>
+                  <td style={{ padding: '1.5mm 2mm', textAlign: 'center', verticalAlign: 'top' }}>{item.quantity}</td>
+                  <td style={{ padding: '1.5mm 2mm', textAlign: 'right', verticalAlign: 'top' }}>{(item.mrp || 0).toFixed(2)}</td>
+                  <td style={{ padding: '1.5mm 2mm', textAlign: 'center', verticalAlign: 'top' }}>{item.gst}%</td>
+                  <td style={{ padding: '1.5mm 2mm', textAlign: 'right', verticalAlign: 'top', fontWeight: 500 }}>{(item.total || 0).toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {items.length === 0 && (
-              <div className="text-center py-4" style={{ color: '#718096' }}>
+              <div style={{ textAlign: 'center', padding: '10mm 0', color: '#718096' }}>
                   <p>-- No items in this bill --</p>
               </div>
           )}
         </main>
 
-        {/* Footer and Totals */}
-        <footer className="mt-auto border-t-2" style={{ paddingTop: '2mm', borderColor: '#333' }}>
-          <div className="flex justify-between items-end">
-            <div className="w-1/2">
-              <p className="font-semibold">Thank you for your visit!</p>
-              <p>Get Well Soon.</p>
+        {/* Footer */}
+        <footer style={{ marginTop: 'auto', borderTop: '1.5pt solid #333', paddingTop: '2mm' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ width: '50%' }}>
+              <p style={{ fontWeight: 600, margin: 0 }}>Thank you for your visit!</p>
+              <p style={{ margin: '1mm 0 0 0' }}>Get Well Soon.</p>
             </div>
-            <div className="w-1/2">
-              <table className="w-full">
-                <tbody>
-                  <tr>
-                    <td className="text-right pr-4">Subtotal</td>
-                    <td className="w-32 font-medium text-right">₹{(bill.subTotal || 0).toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-right pr-4">Total GST</td>
-                    <td className="font-medium text-right">₹{(bill.totalGst || 0).toFixed(2)}</td>
-                  </tr>
-                  <tr className="font-bold border-t-2" style={{ fontSize: '10pt', borderColor: '#888' }}>
-                    <td className="pt-1 pr-4 text-right">GRAND TOTAL</td>
-                    <td className="pt-1 text-right">₹{(bill.grandTotal || 0).toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <div style={{ width: '50%', textAlign: 'right' }}>
+              <div style={{ display: 'inline-block', minWidth: '80mm' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Subtotal</span>
+                  <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>₹{(bill.subTotal || 0).toFixed(2)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1mm' }}>
+                  <span>Total GST</span>
+                  <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>₹{(bill.totalGst || 0).toFixed(2)}</span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontWeight: 'bold',
+                  fontSize: '11pt',
+                  borderTop: '1.5pt solid #888',
+                  marginTop: '1.5mm',
+                  paddingTop: '1.5mm'
+                }}>
+                  <span>GRAND TOTAL</span>
+                  <span>₹{(bill.grandTotal || 0).toFixed(2)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </footer>

@@ -51,6 +51,7 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
     return (
          <Modal isOpen={isOpen} onClose={onClose} title="Print Bill">
             <style>{`
+                /* Define A5 landscape page size and remove margins for printing */
                 @page {
                     size: A5 landscape;
                     margin: 0;
@@ -60,12 +61,15 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
                     }
+                    /* Hide everything on the page by default */
                     body * {
                         visibility: hidden;
                     }
+                    /* Make only the printable area and its contents visible */
                     #printable-area, #printable-area * {
-                        visibility: visible !important; /* Use important to override tailwind 'hidden' */
+                        visibility: visible !important;
                     }
+                    /* Position the printable area to fill the page */
                     #printable-area {
                         position: absolute;
                         left: 0;
@@ -73,9 +77,11 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         width: 100%;
                         height: auto;
                     }
+                    /* Hide modal UI elements during printing */
                     .modal-actions, .print-format-tabs { 
                         display: none !important; 
                     }
+                    /* Ensure the preview container has no extra styles affecting print */
                     .print-preview-container {
                         max-height: none !important;
                         overflow: visible !important;
@@ -84,11 +90,10 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         background-color: white !important;
                     }
                     
-                    /* Laser Print Mode */
+                    /* Conditional display for different print formats */
                     body.print-laser .laser-content { display: block !important; }
                     body.print-laser .thermal-content { display: none !important; }
                     
-                    /* Thermal Print Mode */
                     body.print-thermal .laser-content { display: none !important; }
                     body.print-thermal .thermal-content { display: block !important; }
                     body.print-thermal #printable-area { width: 72mm; }
