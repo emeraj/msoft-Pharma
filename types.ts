@@ -89,7 +89,10 @@ export interface Supplier {
   openingBalance: number;
 }
 
-export type AppView = 'billing' | 'inventory' | 'daybook' | 'purchases';
+// New Types for Reports
+export type ReportView = 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale';
+
+export type AppView = 'billing' | 'inventory' | 'purchases' | ReportView;
 
 // New Types for Settings
 export type Theme = 'light' | 'dark';

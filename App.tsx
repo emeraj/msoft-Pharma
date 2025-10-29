@@ -12,6 +12,9 @@ import { database, auth } from './firebase';
 // Fix: Import firebase compat for types and v8 API
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/database';
+import SuppliersLedger from './components/SuppliersLedger';
+import SalesReport from './components/SalesReport';
+import CompanyWiseSale from './components/CompanyWiseSale';
 
 
 const App: React.FC = () => {
@@ -341,6 +344,9 @@ const App: React.FC = () => {
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;
+      case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} />;
+      case 'salesReport': return <SalesReport bills={bills} />;
+      case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
       default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;
     }
   };
