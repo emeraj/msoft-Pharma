@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -16,6 +16,7 @@ import 'firebase/compat/auth';
 import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
+import PaymentEntry from './components/PaymentEntry';
 
 
 const App: React.FC = () => {
@@ -29,6 +30,7 @@ const App: React.FC = () => {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
@@ -53,6 +55,7 @@ const App: React.FC = () => {
       setPurchases([]);
       setCompanies([]);
       setSuppliers([]);
+      setPayments([]);
       setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors
@@ -96,6 +99,7 @@ const App: React.FC = () => {
     const purchasesRef = database.ref(`users/${uid}/purchases`);
     const companiesRef = database.ref(`users/${uid}/companies`);
     const suppliersRef = database.ref(`users/${uid}/suppliers`);
+    const paymentsRef = database.ref(`users/${uid}/payments`);
     const profileRef = database.ref(`users/${uid}/companyProfile`);
 
     productsRef.on('value', (snapshot) => parseProductsSnapshot(snapshot, setProducts));
@@ -103,12 +107,13 @@ const App: React.FC = () => {
     purchasesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
     companiesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setCompanies));
     suppliersRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setSuppliers));
+    paymentsRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPayments));
     profileRef.on('value', (snapshot) => {
       const data = snapshot.val();
       if (data) setCompanyProfile(data);
     });
 
-    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get(), companiesRef.get(), suppliersRef.get()])
+    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get(), companiesRef.get(), suppliersRef.get(), paymentsRef.get()])
       .then(() => setDataLoading(false))
       .catch((error: any) => {
         console.error("Error fetching initial data:", error);
@@ -128,6 +133,7 @@ const App: React.FC = () => {
       profileRef.off();
       companiesRef.off();
       suppliersRef.off();
+      paymentsRef.off();
     };
   }, [currentUser]);
 
@@ -335,6 +341,45 @@ const App: React.FC = () => {
     await database.ref().update(updates);
   };
 
+  const handleAddPayment = async (paymentData: Omit<Payment, 'id' | 'key' | 'voucherNumber'>): Promise<Payment | null> => {
+    if (!currentUser) return null;
+    const uid = currentUser.uid;
+    const paymentsRef = database.ref(`users/${uid}/payments`);
+    const newPaymentRef = paymentsRef.push();
+    
+    // Generate voucher number
+    const snapshot = await paymentsRef.get();
+    const count = snapshot.exists() ? snapshot.numChildren() : 0;
+    const voucherPrefix = 'PV-';
+    const newVoucherNumber = `${voucherPrefix}${(count + 1).toString().padStart(4, '0')}`;
+    
+    const newPayment: Payment = {
+      ...paymentData,
+      id: `pay_${newPaymentRef.key}`,
+      key: newPaymentRef.key!,
+      voucherNumber: newVoucherNumber,
+    };
+    
+    await newPaymentRef.set(newPayment);
+    return newPayment;
+  };
+
+  const handleUpdatePayment = async (paymentKey: string, paymentData: Omit<Payment, 'id' | 'key'>) => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
+    await paymentRef.update(paymentData);
+  };
+
+  const handleDeletePayment = async (paymentKey: string) => {
+    if (!currentUser) return;
+    if (window.confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) {
+      const uid = currentUser.uid;
+      const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
+      await paymentRef.remove();
+    }
+  };
+
   const renderView = () => {
     if (authLoading || (currentUser && dataLoading)) {
       return <div className="flex-grow flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
@@ -348,9 +393,10 @@ const App: React.FC = () => {
     switch (activeView) {
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
+      case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;
-      case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} />;
+      case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
       default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;

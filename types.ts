@@ -89,10 +89,22 @@ export interface Supplier {
   openingBalance: number;
 }
 
+// New type for Supplier Payments
+export interface Payment {
+  id: string;
+  key?: string; // Firebase key
+  supplierName: string;
+  date: string; // ISO String
+  voucherNumber: string;
+  amount: number;
+  method: 'Cash' | 'Bank Transfer' | 'Cheque' | 'Other';
+  remarks?: string;
+}
+
 // New Types for Reports
 export type ReportView = 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale';
 
-export type AppView = 'billing' | 'inventory' | 'purchases' | ReportView;
+export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
 // New Types for Settings
 export type Theme = 'light' | 'dark';

@@ -36,6 +36,9 @@ const Auth: React.FC = () => {
         case 'auth/wrong-password':
           setError('Incorrect password. Please try again.');
           break;
+        case 'auth/invalid-credential':
+          setError('The email or password you entered is incorrect. Please double-check your credentials.');
+          break;
         case 'auth/email-already-in-use':
           setError('This email is already registered. Please login.');
           break;

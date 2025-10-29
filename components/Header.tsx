@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon } from './icons/Icons';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -120,6 +120,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
              <nav className="hidden sm:flex space-x-2">
               <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
               <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
+              <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
               <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
               <ReportsDropdown activeView={activeView} setActiveView={setActiveView} />
             </nav>
@@ -141,6 +142,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
             <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
             <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
+            <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
             <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
             <ReportsDropdown activeView={activeView} setActiveView={setActiveView} />
         </nav>
