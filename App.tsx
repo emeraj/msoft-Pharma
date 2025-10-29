@@ -12,6 +12,7 @@ import { database, auth } from './firebase';
 // Fix: Import firebase compat for types and v8 API
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/database';
+import 'firebase/compat/auth';
 import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
@@ -133,7 +134,12 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
   }, [theme]);
   
   const handleLogout = () => {
