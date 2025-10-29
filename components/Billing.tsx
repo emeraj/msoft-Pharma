@@ -54,21 +54,22 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                 styleEl.textContent = `
                     @page {
                        size: 72mm auto;
-                       margin: 2mm;
+                       margin: 0;
                     }
                     body {
+                        width: 72mm;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                     }
                 `;
             } else { // laser
                 styleEl.textContent = `
-         
                     @page {
-                        size: A5;
-                        margin: 10mm;
+                        size: A5 landscape;
+                        margin: 0;
                     }
                     body {
+                        width: 210mm;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                     }
