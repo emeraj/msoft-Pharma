@@ -79,6 +79,16 @@ export interface Company {
   name: string;
 }
 
+export interface Supplier {
+  id: string;
+  key?: string; // Firebase key
+  name: string;
+  address: string;
+  phone: string;
+  gstin: string;
+  openingBalance: number;
+}
+
 export type AppView = 'billing' | 'inventory' | 'daybook' | 'purchases';
 
 // New Types for Settings

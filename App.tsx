@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -24,6 +24,7 @@ const App: React.FC = () => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
@@ -47,6 +48,7 @@ const App: React.FC = () => {
       setBills([]);
       setPurchases([]);
       setCompanies([]);
+      setSuppliers([]);
       setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors
@@ -89,18 +91,20 @@ const App: React.FC = () => {
     const billsRef = database.ref(`users/${uid}/bills`);
     const purchasesRef = database.ref(`users/${uid}/purchases`);
     const companiesRef = database.ref(`users/${uid}/companies`);
+    const suppliersRef = database.ref(`users/${uid}/suppliers`);
     const profileRef = database.ref(`users/${uid}/companyProfile`);
 
     productsRef.on('value', (snapshot) => parseProductsSnapshot(snapshot, setProducts));
     billsRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setBills));
     purchasesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
     companiesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setCompanies));
+    suppliersRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setSuppliers));
     profileRef.on('value', (snapshot) => {
       const data = snapshot.val();
       if (data) setCompanyProfile(data);
     });
 
-    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get(), companiesRef.get()])
+    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get(), companiesRef.get(), suppliersRef.get()])
       .then(() => setDataLoading(false))
       .catch((error: any) => {
         console.error("Error fetching initial data:", error);
@@ -119,6 +123,7 @@ const App: React.FC = () => {
       purchasesRef.off();
       profileRef.off();
       companiesRef.off();
+      suppliersRef.off();
     };
   }, [currentUser]);
 
@@ -256,6 +261,19 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>): Promise<Supplier | null> => {
+    if (!currentUser) return null;
+    const uid = currentUser.uid;
+    const newSupplierRef = database.ref(`users/${uid}/suppliers`).push();
+    const newSupplier: Supplier = {
+        ...supplierData,
+        id: `supp_${Date.now()}`,
+        key: newSupplierRef.key!
+    };
+    await newSupplierRef.set(newSupplier);
+    return newSupplier;
+  };
+
   const handlePurchaseEntry = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
@@ -320,7 +338,7 @@ const App: React.FC = () => {
     }
     switch (activeView) {
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
-      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} companies={companies} />;
+      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;
       default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;

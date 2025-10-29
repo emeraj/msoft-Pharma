@@ -1,17 +1,91 @@
-import React, { useState, useMemo } from 'react';
-import type { Product, Purchase, PurchaseLineItem, Company } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types';
 import Card from './common/Card';
+import Modal from './common/Modal';
 import { PlusIcon, TrashIcon } from './icons/Icons';
 
 interface PurchasesProps {
     products: Product[];
     purchases: Purchase[];
     companies: Company[];
+    suppliers: Supplier[];
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
+    onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
 }
 
-const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
+
+
+const AddSupplierModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => void;
+    initialName?: string;
+}> = ({ isOpen, onClose, onAddSupplier, initialName = '' }) => {
+    const [formState, setFormState] = useState({
+        name: '', address: '', phone: '', gstin: '', openingBalance: ''
+    });
+
+    useEffect(() => {
+        if (isOpen) {
+            setFormState({
+                name: initialName, address: '', phone: '', gstin: '', openingBalance: '0'
+            });
+        }
+    }, [isOpen, initialName]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setFormState({ ...formState, [e.target.name]: e.target.value });
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formState.name) {
+            alert('Supplier Name is required.');
+            return;
+        }
+        onAddSupplier({
+            ...formState,
+            openingBalance: parseFloat(formState.openingBalance) || 0
+        });
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Add New Supplier">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name*</label>
+                        <input name="name" value={formState.name} onChange={handleChange} className={formInputStyle} required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone</label>
+                        <input name="phone" value={formState.phone} onChange={handleChange} className={formInputStyle} />
+                    </div>
+                </div>
+                 <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
+                    <input name="address" value={formState.address} onChange={handleChange} className={formInputStyle} />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
+                        <input name="gstin" value={formState.gstin} onChange={handleChange} className={formInputStyle} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
+                        <input name="openingBalance" value={formState.openingBalance} onChange={handleChange} type="number" step="0.01" className={formInputStyle} />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Supplier</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
 
 
 const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[] }> = ({ products, onAddItem, companies }) => {
@@ -209,12 +283,42 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 };
 
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, onAddPurchase }) => {
-    const [supplier, setSupplier] = useState('');
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, onAddPurchase, onAddSupplier }) => {
+    const [supplierName, setSupplierName] = useState('');
     const [invoiceNumber, setInvoiceNumber] = useState('');
     const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
     const [currentItems, setCurrentItems] = useState<PurchaseLineItem[]>([]);
     
+    const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
+    const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
+
+    const supplierSuggestions = useMemo(() => {
+        if (!supplierName) return [];
+        return suppliers.filter(s => s.name.toLowerCase().includes(supplierName.toLowerCase()));
+    }, [supplierName, suppliers]);
+
+    const exactMatch = useMemo(() => {
+        return suppliers.some(s => s.name.toLowerCase() === supplierName.trim().toLowerCase());
+    }, [supplierName, suppliers]);
+
+    const handleSelectSupplier = (name: string) => {
+        setSupplierName(name);
+        setShowSupplierSuggestions(false);
+    };
+
+    const handleOpenSupplierModal = () => {
+        setSupplierModalOpen(true);
+        setShowSupplierSuggestions(false);
+    };
+
+    const handleAddNewSupplier = async (supplierData: Omit<Supplier, 'id'>) => {
+        const newSupplier = await onAddSupplier(supplierData);
+        if (newSupplier) {
+            setSupplierName(newSupplier.name);
+            setSupplierModalOpen(false);
+        }
+    };
+
     const handleAddItem = (item: PurchaseLineItem) => {
         setCurrentItems(prev => [...prev, item]);
     };
@@ -228,8 +332,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, o
     }, [currentItems]);
     
     const handleSavePurchase = () => {
-        if (!supplier || !invoiceDate || currentItems.length === 0) {
-            alert('Please fill supplier, date, and add at least one item.');
+        if (!supplierName || !invoiceDate || currentItems.length === 0) {
+            alert('Please select a supplier, set the date, and add at least one item.');
             return;
         }
         if (!invoiceNumber.trim()) {
@@ -240,9 +344,9 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, o
             alert('Invoice Number must be at least 3 characters long.');
             return;
         }
-        onAddPurchase({ supplier, invoiceNumber, invoiceDate, items: currentItems });
+        onAddPurchase({ supplier: supplierName, invoiceNumber, invoiceDate, items: currentItems });
         // Reset form
-        setSupplier('');
+        setSupplierName('');
         setInvoiceNumber('');
         setInvoiceDate(new Date().toISOString().split('T')[0]);
         setCurrentItems([]);
@@ -252,9 +356,41 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, o
         <div className="p-4 sm:p-6 space-y-6">
             <Card title="New Purchase Entry">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="Supplier Name*" className={formInputStyle} required/>
-                    <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Invoice Number*" className={formInputStyle} required/>
-                    <input value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} type="date" className={formInputStyle} required/>
+                    <div className="relative">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
+                        <input 
+                            value={supplierName} 
+                            onChange={e => setSupplierName(e.target.value)}
+                            onFocus={() => setShowSupplierSuggestions(true)}
+                            onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)}
+                            placeholder="Search or Add Supplier*" 
+                            className={formInputStyle} 
+                            required
+                            autoComplete="off"
+                        />
+                         {showSupplierSuggestions && supplierName.length > 0 && (
+                          <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                              {supplierSuggestions.map(s => (
+                                  <li key={s.key} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
+                                      {s.name}
+                                  </li>
+                              ))}
+                              {!exactMatch && supplierName.trim().length > 0 && (
+                                  <li onClick={handleOpenSupplierModal} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
+                                      <PlusIcon className="h-4 w-4 inline mr-2"/> Add new supplier: "{supplierName.trim()}"
+                                  </li>
+                              )}
+                          </ul>
+                        )}
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Number</label>
+                        <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Invoice Number*" className={formInputStyle} required/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Date</label>
+                        <input value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} type="date" className={formInputStyle} required/>
+                    </div>
                 </div>
 
                 <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} />
@@ -302,6 +438,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, o
                     </div>
                 )}
             </Card>
+            
+            <AddSupplierModal 
+                isOpen={isSupplierModalOpen}
+                onClose={() => setSupplierModalOpen(false)}
+                onAddSupplier={handleAddNewSupplier}
+                initialName={supplierName}
+            />
 
             <Card title="Purchase History">
                  <div className="overflow-x-auto">

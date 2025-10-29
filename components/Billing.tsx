@@ -65,7 +65,7 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                         width: 100%;
                         height: auto;
                     }
-                    .modal-actions, .print-preview-border, .print-format-tabs { 
+                    .modal-actions, .print-format-tabs { 
                         display: none !important; 
                     }
                     .print-preview-container {
@@ -104,7 +104,7 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
 
 
             <div id="printable-area">
-                <div className="print-preview-container print-preview-border p-4 border rounded-b-lg rounded-tr-lg bg-slate-50 dark:bg-slate-700 max-h-96 overflow-y-auto">
+                <div className="print-preview-container p-4 border rounded-b-lg rounded-tr-lg bg-slate-50 dark:bg-slate-700 max-h-96 overflow-y-auto">
                     <div className={`laser-content ${printFormat !== 'laser' ? 'hidden' : ''}`}>
                         <PrintableBill bill={bill} companyProfile={companyProfile} />
                     </div>
