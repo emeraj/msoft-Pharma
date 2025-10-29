@@ -66,15 +66,14 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                 styleEl.textContent = `
                     @page {
                         size: A5 landscape;
-                        margin: 0mm !important; /* Force zero margins */
+                        margin: 0 !important; /* Force zero margins */
                     }
-                    /* Reset body for print */
+                    /* By resetting the body margin/padding and NOT setting a size,
+                       we allow the PrintableBill component to fully control the layout
+                       within the browser's printable area for the A5 page. */
                     body {
-                        margin: 0;
-                        padding: 0;
-                        width: 210mm;
-                        height: 148.5mm;
-                        box-sizing: border-box;
+                        margin: 0 !important;
+                        padding: 0 !important;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                     }
