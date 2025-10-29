@@ -66,10 +66,15 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                 styleEl.textContent = `
                     @page {
                         size: A5 landscape;
-                        margin: 0;
+                        margin: 0mm !important; /* Force zero margins */
                     }
+                    /* Reset body for print */
                     body {
+                        margin: 0;
+                        padding: 0;
                         width: 210mm;
+                        height: 148.5mm;
+                        box-sizing: border-box;
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                     }
