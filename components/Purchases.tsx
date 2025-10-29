@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon } from './icons/Icons';
 
 interface PurchasesProps {
     products: Product[];
@@ -10,6 +10,8 @@ interface PurchasesProps {
     companies: Company[];
     suppliers: Supplier[];
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
+    onUpdatePurchase: (key: string, updatedData: Omit<Purchase, 'id'| 'key'>, originalPurchase: Purchase) => void;
+    onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
 }
 
@@ -88,7 +90,7 @@ const AddSupplierModal: React.FC<{
 };
 
 
-const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[] }> = ({ products, onAddItem, companies }) => {
+const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], disabled?: boolean }> = ({ products, onAddItem, companies, disabled = false }) => {
     const initialFormState = {
         isNewProduct: false,
         productSearch: '',
@@ -183,7 +185,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     };
 
     return (
-        <form onSubmit={handleAddItem} className="p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+        <form onSubmit={handleAddItem} className={`p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="md:col-span-2 relative">
                     <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">Search Existing Product</label>
@@ -194,7 +196,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                         onChange={handleChange}
                         placeholder="Type to search..."
                         className={`mt-1 w-full ${formInputStyle}`}
-                        disabled={formState.isNewProduct}
+                        disabled={formState.isNewProduct || disabled}
                         autoComplete="off"
                     />
                     {searchResults.length > 0 && formState.productSearch && !formState.selectedProduct && (
@@ -206,7 +208,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                     )}
                 </div>
                 <div>
-                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-900 transition-colors">
+                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-900 transition-colors" disabled={disabled}>
                         Or, Add New Product
                     </button>
                 </div>
@@ -283,26 +285,44 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 };
 
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, onAddPurchase, onAddSupplier }) => {
-    const [supplierName, setSupplierName] = useState('');
-    const [invoiceNumber, setInvoiceNumber] = useState('');
-    const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
-    const [currentItems, setCurrentItems] = useState<PurchaseLineItem[]>([]);
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
+    const initialFormState = {
+        supplierName: '',
+        invoiceNumber: '',
+        invoiceDate: new Date().toISOString().split('T')[0],
+        currentItems: [] as PurchaseLineItem[]
+    };
     
+    const [formState, setFormState] = useState(initialFormState);
+    const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
     const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
 
+    useEffect(() => {
+        if (editingPurchase) {
+            setFormState({
+                supplierName: editingPurchase.supplier,
+                invoiceNumber: editingPurchase.invoiceNumber,
+                invoiceDate: new Date(editingPurchase.invoiceDate).toISOString().split('T')[0],
+                currentItems: editingPurchase.items || [],
+            });
+            window.scrollTo(0, 0); // Scroll to top to see the form
+        } else {
+            setFormState(initialFormState);
+        }
+    }, [editingPurchase]);
+
     const supplierSuggestions = useMemo(() => {
-        if (!supplierName) return [];
-        return suppliers.filter(s => s.name.toLowerCase().includes(supplierName.toLowerCase()));
-    }, [supplierName, suppliers]);
+        if (!formState.supplierName) return [];
+        return suppliers.filter(s => s.name.toLowerCase().includes(formState.supplierName.toLowerCase()));
+    }, [formState.supplierName, suppliers]);
 
     const exactMatch = useMemo(() => {
-        return suppliers.some(s => s.name.toLowerCase() === supplierName.trim().toLowerCase());
-    }, [supplierName, suppliers]);
+        return suppliers.some(s => s.name.toLowerCase() === formState.supplierName.trim().toLowerCase());
+    }, [formState.supplierName, suppliers]);
 
     const handleSelectSupplier = (name: string) => {
-        setSupplierName(name);
+        setFormState(prev => ({ ...prev, supplierName: name }));
         setShowSupplierSuggestions(false);
     };
 
@@ -314,53 +334,61 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const handleAddNewSupplier = async (supplierData: Omit<Supplier, 'id'>) => {
         const newSupplier = await onAddSupplier(supplierData);
         if (newSupplier) {
-            setSupplierName(newSupplier.name);
+            setFormState(prev => ({ ...prev, supplierName: newSupplier.name }));
             setSupplierModalOpen(false);
         }
     };
 
     const handleAddItem = (item: PurchaseLineItem) => {
-        setCurrentItems(prev => [...prev, item]);
+        setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}));
     };
 
     const handleRemoveItem = (index: number) => {
-        setCurrentItems(prev => prev.filter((_, i) => i !== index));
+        setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== index)}));
     };
 
     const totalAmount = useMemo(() => {
-        return currentItems.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    }, [currentItems]);
+        return formState.currentItems.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
+    }, [formState.currentItems]);
     
+    const resetForm = () => {
+        setEditingPurchase(null);
+    };
+
     const handleSavePurchase = () => {
-        if (!supplierName || !invoiceDate || currentItems.length === 0) {
+        if (!formState.supplierName || !formState.invoiceDate || formState.currentItems.length === 0) {
             alert('Please select a supplier, set the date, and add at least one item.');
             return;
         }
-        if (!invoiceNumber.trim()) {
+        if (!formState.invoiceNumber.trim()) {
             alert('Invoice Number is required.');
             return;
         }
-        if (invoiceNumber.trim().length < 3) {
-            alert('Invoice Number must be at least 3 characters long.');
-            return;
+        
+        const purchaseData = { 
+            supplier: formState.supplierName, 
+            invoiceNumber: formState.invoiceNumber, 
+            invoiceDate: formState.invoiceDate, 
+            items: formState.currentItems,
+        };
+
+        if (editingPurchase && editingPurchase.key) {
+             onUpdatePurchase(editingPurchase.key, { ...purchaseData, totalAmount }, editingPurchase);
+        } else {
+            onAddPurchase(purchaseData);
         }
-        onAddPurchase({ supplier: supplierName, invoiceNumber, invoiceDate, items: currentItems });
-        // Reset form
-        setSupplierName('');
-        setInvoiceNumber('');
-        setInvoiceDate(new Date().toISOString().split('T')[0]);
-        setCurrentItems([]);
+        resetForm();
     };
     
     return (
         <div className="p-4 sm:p-6 space-y-6">
-            <Card title="New Purchase Entry">
+            <Card title={editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
                         <input 
-                            value={supplierName} 
-                            onChange={e => setSupplierName(e.target.value)}
+                            value={formState.supplierName} 
+                            onChange={e => setFormState(prev => ({...prev, supplierName: e.target.value}))}
                             onFocus={() => setShowSupplierSuggestions(true)}
                             onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)}
                             placeholder="Search or Add Supplier*" 
@@ -368,16 +396,16 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             required
                             autoComplete="off"
                         />
-                         {showSupplierSuggestions && supplierName.length > 0 && (
+                         {showSupplierSuggestions && formState.supplierName.length > 0 && (
                           <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                               {supplierSuggestions.map(s => (
                                   <li key={s.key} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
                                       {s.name}
                                   </li>
                               ))}
-                              {!exactMatch && supplierName.trim().length > 0 && (
+                              {!exactMatch && formState.supplierName.trim().length > 0 && (
                                   <li onClick={handleOpenSupplierModal} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
-                                      <PlusIcon className="h-4 w-4 inline mr-2"/> Add new supplier: "{supplierName.trim()}"
+                                      <PlusIcon className="h-4 w-4 inline mr-2"/> Add new supplier: "{formState.supplierName.trim()}"
                                   </li>
                               )}
                           </ul>
@@ -385,17 +413,17 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Number</label>
-                        <input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Invoice Number*" className={formInputStyle} required/>
+                        <input value={formState.invoiceNumber} onChange={e => setFormState(prev => ({...prev, invoiceNumber: e.target.value}))} placeholder="Invoice Number*" className={formInputStyle} required/>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Date</label>
-                        <input value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} type="date" className={formInputStyle} required/>
+                        <input value={formState.invoiceDate} onChange={e => setFormState(prev => ({...prev, invoiceDate: e.target.value}))} type="date" className={formInputStyle} required/>
                     </div>
                 </div>
 
                 <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} />
                 
-                {currentItems.length > 0 && (
+                {formState.currentItems.length > 0 && (
                     <div className="mt-4">
                          <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Items in Current Purchase</h3>
                          <div className="overflow-x-auto">
@@ -411,7 +439,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {currentItems.map((item, index) => (
+                                    {formState.currentItems.map((item, index) => (
                                         <tr key={index} className="border-b dark:border-slate-700">
                                             <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 dark:text-green-400 font-semibold">(New)</span>}</td>
                                             <td className="px-4 py-2">{item.batchNumber}</td>
@@ -431,8 +459,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 <span>Total Amount: </span>
                                 <span>₹{totalAmount.toFixed(2)}</span>
                             </div>
+                            {editingPurchase && (
+                                <button type="button" onClick={resetForm} className="bg-slate-500 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-slate-600 transition-colors w-full sm:w-auto">
+                                    Cancel Edit
+                                </button>
+                            )}
                             <button onClick={handleSavePurchase} className="bg-green-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition-colors w-full sm:w-auto">
-                                Save Purchase
+                                {editingPurchase ? 'Update Purchase' : 'Save Purchase'}
                             </button>
                          </div>
                     </div>
@@ -443,7 +476,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 isOpen={isSupplierModalOpen}
                 onClose={() => setSupplierModalOpen(false)}
                 onAddSupplier={handleAddNewSupplier}
-                initialName={supplierName}
+                initialName={formState.supplierName}
             />
 
             <Card title="Purchase History">
@@ -456,6 +489,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 <th className="px-6 py-3">Supplier</th>
                                 <th className="px-6 py-3 text-center">Items</th>
                                 <th className="px-6 py-3 text-right">Total Amount</th>
+                                <th className="px-6 py-3 text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -466,6 +500,16 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                     <td className="px-6 py-4">{p.supplier}</td>
                                     <td className="px-6 py-4 text-center">{p.items.length}</td>
                                     <td className="px-6 py-4 font-semibold text-right">₹{p.totalAmount.toFixed(2)}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex justify-center items-center gap-4">
+                                            <button onClick={() => setEditingPurchase(p)} title="Edit Purchase" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                                <PencilIcon className="h-5 w-5" />
+                                            </button>
+                                            <button onClick={() => onDeletePurchase(p)} title="Delete Purchase" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
+                                                <TrashIcon className="h-5 w-5" />
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

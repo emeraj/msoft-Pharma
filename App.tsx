@@ -289,7 +289,7 @@ const App: React.FC = () => {
     return newSupplier;
   };
 
-  const handlePurchaseEntry = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
+  const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
     const updates: { [key: string]: any } = {};
@@ -339,6 +339,93 @@ const App: React.FC = () => {
     updates[`/users/${uid}/purchases/${newPurchaseRef.key}`] = { ...purchaseData, id: `purch_${newPurchaseRef.key}`, totalAmount };
     // Fix: Use v8 compat API for update
     await database.ref().update(updates);
+  };
+
+  const handleUpdatePurchase = async (
+    purchaseKey: string, 
+    updatedPurchaseData: Omit<Purchase, 'id' | 'key'>, 
+    originalPurchase: Purchase
+  ) => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const updates: { [key: string]: any } = {};
+    const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    // 1. Revert original purchase: Delete old batches
+    for (const item of originalPurchase.items) {
+      if (!item.productKey) continue;
+      const product = products.find(p => p.key === item.productKey);
+      if (product && product.batches) {
+        const batchEntry = product.batches.find(b => b.batchNumber === item.batchNumber && b.mrp === item.mrp);
+        if (batchEntry && batchEntry.key) {
+          updates[`/users/${uid}/products/${item.productKey}/batches/${batchEntry.key}`] = null;
+        }
+      }
+    }
+
+    // 2. Re-apply updated purchase: Create new batches
+    for (const item of updatedPurchaseData.items) {
+        const newBatchData = {
+            id: `batch_${uniqueIdSuffix()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+            stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+        };
+        if (item.isNewProduct) {
+             const newProductRef = database.ref(`users/${uid}/products`).push();
+             const newBatchRef = database.ref(`users/${uid}/products/${newProductRef.key}/batches`).push();
+             updates[`/users/${uid}/products/${newProductRef.key}`] = {
+                 id: `prod_${uniqueIdSuffix()}`, name: item.productName, company: item.company,
+                 hsnCode: item.hsnCode, gst: item.gst,
+                 batches: { [newBatchRef.key!]: newBatchData }
+             };
+        } else if (item.productKey) {
+            const newBatchRef = database.ref(`users/${uid}/products/${item.productKey}/batches`).push();
+            updates[`/users/${uid}/products/${item.productKey}/batches/${newBatchRef.key}`] = newBatchData;
+        }
+    }
+    
+    // 3. Update the purchase record itself
+    const totalAmount = updatedPurchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
+    updates[`/users/${uid}/purchases/${purchaseKey}`] = { ...updatedPurchaseData, totalAmount };
+    
+    try {
+      await database.ref().update(updates);
+      alert("Purchase updated successfully and stock adjusted.");
+    } catch(error) {
+      console.error("Error updating purchase:", error);
+      alert("Failed to update purchase. Check console for details.");
+    }
+  };
+
+  const handleDeletePurchase = async (purchase: Purchase) => {
+    if (!currentUser || !purchase.key) return;
+    if (!window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This will also remove the associated stock from your inventory.`)) return;
+
+    const uid = currentUser.uid;
+    const updates: { [key: string]: any } = {};
+
+    // 1. Mark associated batches for deletion
+    for (const item of purchase.items) {
+      if (!item.productKey) continue;
+      const product = products.find(p => p.key === item.productKey);
+      if (product && product.batches) {
+        // Find batch by a combination of properties for better accuracy
+         const batchEntry = product.batches.find(b => b.batchNumber === item.batchNumber && b.mrp === item.mrp && b.purchasePrice === item.purchasePrice);
+        if (batchEntry && batchEntry.key) {
+          updates[`/users/${uid}/products/${item.productKey}/batches/${batchEntry.key}`] = null;
+        }
+      }
+    }
+    
+    // 2. Mark the purchase for deletion
+    updates[`/users/${uid}/purchases/${purchase.key}`] = null;
+
+    try {
+      await database.ref().update(updates);
+      alert("Purchase deleted successfully and stock adjusted.");
+    } catch(error) {
+      console.error("Error deleting purchase:", error);
+      alert("Failed to delete purchase. Check console for details.");
+    }
   };
 
   const handleAddPayment = async (paymentData: Omit<Payment, 'id' | 'key' | 'voucherNumber'>): Promise<Payment | null> => {
@@ -392,7 +479,7 @@ const App: React.FC = () => {
     }
     switch (activeView) {
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
-      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handlePurchaseEntry} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
+      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;

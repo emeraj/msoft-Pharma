@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
+import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import { TrashIcon } from './icons/Icons';
+import PrintableA5Bill from './PrintableA5Bill';
 
 interface BillingProps {
   products: Product[];
@@ -100,6 +102,36 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     const grandTotal = subTotal + totalGst;
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
+
+  const handleExportPdf = () => {
+    if (cart.length === 0) return;
+
+    const tempBillForPrint: Bill = {
+        id: `print_${Date.now()}`,
+        billNumber: 'PREVIEW',
+        date: new Date().toISOString(),
+        customerName: customerName || 'Walk-in Customer',
+        items: cart,
+        subTotal,
+        totalGst,
+        grandTotal,
+    };
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+        const rootEl = document.createElement('div');
+        printWindow.document.body.appendChild(rootEl);
+        const root = ReactDOM.createRoot(rootEl);
+        
+        root.render(<PrintableA5Bill bill={tempBillForPrint} companyProfile={companyProfile} />);
+        
+        setTimeout(() => {
+            printWindow.document.title = `Invoice - ${tempBillForPrint.customerName}`;
+            printWindow.print();
+            printWindow.close();
+        }, 500);
+    }
+  };
 
   const handleFinalizeBill = async () => {
     if (cart.length === 0) {
@@ -260,13 +292,22 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
-                <button 
-                    onClick={handleFinalizeBill}
-                    disabled={cart.length === 0}
-                    className="w-full bg-green-600 text-white py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed"
-                >
-                    Generate Bill
-                </button>
+                <div className="pt-2 space-y-2">
+                    <button 
+                        onClick={handleFinalizeBill}
+                        disabled={cart.length === 0}
+                        className="w-full bg-green-600 text-white py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        Generate Bill
+                    </button>
+                    <button 
+                        onClick={handleExportPdf}
+                        disabled={cart.length === 0}
+                        className="w-full bg-indigo-600 text-white py-2 rounded-lg text-md font-semibold shadow-md hover:bg-indigo-700 transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed"
+                    >
+                        Export to PDF
+                    </button>
+                </div>
             </div>
         </Card>
       </div>
