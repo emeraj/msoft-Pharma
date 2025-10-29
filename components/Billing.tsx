@@ -4,8 +4,7 @@ import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon } from './icons/Icons';
-import PrintableBill from './PrintableBill';
-import ThermalPrintableBill from './ThermalPrintableBill';
+import PrintableA5Bill from './PrintableA5Bill';
 
 interface BillingProps {
   products: Product[];
@@ -24,10 +23,8 @@ const getExpiryDate = (expiryString: string): Date => {
 
 // --- Helper Component for Printing ---
 const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; companyProfile: CompanyProfile; }> = ({ isOpen, onClose, bill, companyProfile }) => {
-    const [printFormat, setPrintFormat] = useState<'laser' | 'thermal'>('laser');
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const [iframeBody, setIframeBody] = useState<HTMLElement | null>(null);
-    const [iframeKey, setIframeKey] = useState(0);
 
     const handlePrint = () => {
         const iframe = iframeRef.current;
@@ -45,90 +42,38 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
 
             // Inject print-specific styles
             const styleEl = iframeDoc.createElement('style');
-            if (printFormat === 'thermal') {
-                styleEl.textContent = `
-                    @page {
-                       size: 72mm auto;
-                       margin: 0;
-                    }
-                    body {
-                        width: 72mm;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
-                    }
-                `;
-            } else { // laser
-                styleEl.textContent = `
-                    @page {
-                        size: A4;
-                        margin: 0 !important; /* Force zero margins */
-                    }
-                    /* By resetting the body margin/padding and NOT setting a size,
-                       we allow the PrintableBill component to fully control the layout
-                       within the browser's printable area for the A4 page. */
-                    body {
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
-                    }
-                `;
-            }
+            styleEl.textContent = `
+                @page {
+                    size: A5;
+                    margin: 0;
+                }
+                body {
+                    margin: 0;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+            `;
             iframeDoc.head.appendChild(styleEl);
             
             setIframeBody(iframeDoc.body);
         }
     };
 
-    // Reset format and iframe key when modal opens/closes or format changes
-    useEffect(() => {
-        if (isOpen) {
-            setPrintFormat('laser'); // Default to laser
-            setIframeKey(key => key + 1); // Force iframe remount on open
-        }
-    }, [isOpen]);
-    
-    useEffect(() => {
-        if (isOpen) {
-           setIframeKey(key => key + 1); // Force iframe remount on format change
-        }
-    }, [printFormat]);
-
-
     return (
-         <Modal isOpen={isOpen} onClose={onClose} title="Print Bill">
-            <div className="print-format-tabs flex border-b dark:border-slate-600 mb-2">
-                <button
-                    onClick={() => setPrintFormat('laser')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${printFormat === 'laser' ? 'border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                >
-                    Laser Printer (A4)
-                </button>
-                <button
-                    onClick={() => setPrintFormat('thermal')}
-                    className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${printFormat === 'thermal' ? 'border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
-                >
-                    Thermal Receipt (3 Inch)
-                </button>
-            </div>
-
-
-            <div className="print-preview-container p-1 border rounded-b-lg rounded-tr-lg bg-slate-200 dark:bg-slate-700">
+         <Modal isOpen={isOpen} onClose={onClose} title="Print Invoice">
+            <div className="print-preview-container p-1 border rounded-lg bg-slate-200 dark:bg-slate-700" style={{ aspectRatio: '1 / 1.414' }}>
                 {isOpen && (
                     <iframe
-                        key={iframeKey}
                         ref={iframeRef}
                         onLoad={onIframeLoad}
                         title="Print Preview"
-                        className="w-full h-96 bg-white"
+                        className="w-full h-full bg-white"
                         frameBorder="0"
                         src="about:blank"
                     />
                 )}
                 {iframeBody && createPortal(
-                    printFormat === 'laser' 
-                        ? <PrintableBill bill={bill} companyProfile={companyProfile} />
-                        : <ThermalPrintableBill bill={bill} companyProfile={companyProfile} />,
+                    <PrintableA5Bill bill={bill} companyProfile={companyProfile} />,
                     iframeBody
                 )}
             </div>
