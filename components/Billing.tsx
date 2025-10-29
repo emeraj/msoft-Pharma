@@ -1,10 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useMemo } from 'react';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
-import Modal from './common/Modal';
 import { TrashIcon } from './icons/Icons';
-import PrintableA5Bill from './PrintableA5Bill';
 
 interface BillingProps {
   products: Product[];
@@ -21,81 +18,11 @@ const getExpiryDate = (expiryString: string): Date => {
     return new Date(year, month, 0); // Last day of the expiry month
 };
 
-// --- Helper Component for Printing ---
-const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; companyProfile: CompanyProfile; }> = ({ isOpen, onClose, bill, companyProfile }) => {
-    const iframeRef = useRef<HTMLIFrameElement>(null);
-    const [iframeBody, setIframeBody] = useState<HTMLElement | null>(null);
-
-    const handlePrint = () => {
-        const iframe = iframeRef.current;
-        if (iframe && iframe.contentWindow) {
-            iframe.contentWindow.focus(); // Focus is needed for some browsers to work correctly
-            iframe.contentWindow.print();
-        }
-    };
-    
-    const onIframeLoad = () => {
-        if (!iframeRef.current) return;
-        const iframeDoc = iframeRef.current.contentDocument;
-        if (iframeDoc) {
-            iframeDoc.head.innerHTML = ''; // Clear head
-
-            // Inject print-specific styles
-            const styleEl = iframeDoc.createElement('style');
-            styleEl.textContent = `
-                @page {
-                    size: A5;
-                    margin: 0;
-                }
-                body {
-                    margin: 0;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                }
-            `;
-            iframeDoc.head.appendChild(styleEl);
-            
-            setIframeBody(iframeDoc.body);
-        }
-    };
-
-    return (
-         <Modal isOpen={isOpen} onClose={onClose} title="Print Invoice">
-            <div className="print-preview-container p-1 border rounded-lg bg-slate-200 dark:bg-slate-700" style={{ aspectRatio: '1 / 1.414' }}>
-                {isOpen && (
-                    <iframe
-                        ref={iframeRef}
-                        onLoad={onIframeLoad}
-                        title="Print Preview"
-                        className="w-full h-full bg-white"
-                        frameBorder="0"
-                        src="about:blank"
-                    />
-                )}
-                {iframeBody && createPortal(
-                    <PrintableA5Bill bill={bill} companyProfile={companyProfile} />,
-                    iframeBody
-                )}
-            </div>
-
-            <div className="modal-actions flex flex-col sm:flex-row justify-end items-center gap-4 mt-6">
-                <button onClick={onClose} className="w-full sm:w-auto px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors font-semibold">
-                    Close
-                </button>
-                <button onClick={handlePrint} className="w-full sm:w-auto px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-semibold">
-                    Print
-                </button>
-            </div>
-        </Modal>
-    );
-};
-
 
 const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProfile }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
-  const [lastBill, setLastBill] = useState<Bill | null>(null);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -189,7 +116,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     });
 
     if (newBill) {
-      setLastBill(newBill); // Show print modal
+      alert(`Bill ${newBill.billNumber} has been saved successfully!`);
       setCart([]);
       setCustomerName('');
     } else {
@@ -343,14 +270,6 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
             </div>
         </Card>
       </div>
-      {lastBill && (
-        <BillPrintModal 
-            isOpen={!!lastBill}
-            onClose={() => setLastBill(null)}
-            bill={lastBill}
-            companyProfile={companyProfile}
-        />
-      )}
     </div>
   );
 };
