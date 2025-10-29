@@ -51,7 +51,15 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
     return (
          <Modal isOpen={isOpen} onClose={onClose} title="Print Bill">
             <style>{`
+                @page {
+                    size: A5 landscape;
+                    margin: 0;
+                }
                 @media print {
+                    body {
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
                     body * {
                         visibility: hidden;
                     }
