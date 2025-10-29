@@ -1,44 +1,30 @@
-import React, { useMemo } from 'react';
-import type { Supplier, Purchase, Payment, CompanyProfile } from '../types';
+import React from 'react';
+import type { Supplier, CompanyProfile } from '../types';
 
-interface SupplierLedgerEntry extends Supplier {
-    totalPurchases: number;
-    outstandingBalance: number;
+interface Transaction {
+    date: Date;
+    particulars: string;
+    debit: number;
+    credit: number;
 }
 
 interface PrintableSupplierLedgerProps {
-  supplier: SupplierLedgerEntry;
-  purchases: Purchase[];
-  payments: Payment[];
+  supplier: Supplier;
+  transactions: Transaction[];
   companyProfile: CompanyProfile;
+  openingBalance: number;
+  dateRange: { from: string; to: string };
 }
 
-const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ supplier, purchases, payments, companyProfile }) => {
+const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ supplier, transactions, companyProfile, openingBalance, dateRange }) => {
     
-    const allTransactions = useMemo(() => {
-        const purchaseTransactions = purchases.map(p => ({
-            date: new Date(p.invoiceDate),
-            particulars: `Purchase - Inv #${p.invoiceNumber}`,
-            debit: p.totalAmount,
-            credit: 0,
-        }));
-        
-        const paymentTransactions = payments.map(p => ({
-            date: new Date(p.date),
-            particulars: `Payment - ${p.method}`,
-            debit: 0,
-            credit: p.amount,
-        }));
-
-        return [...purchaseTransactions, ...paymentTransactions]
-            .sort((a, b) => a.date.getTime() - b.date.getTime());
-    }, [purchases, payments]);
+    let runningBalance = openingBalance;
+    const totalDebit = transactions.reduce((sum, tx) => sum + tx.debit, 0);
+    const totalCredit = transactions.reduce((sum, tx) => sum + tx.credit, 0);
     
-    let runningBalance = supplier.openingBalance;
-    const totalDebit = allTransactions.reduce((sum, tx) => sum + tx.debit, 0);
-    const totalCredit = allTransactions.reduce((sum, tx) => sum + tx.credit, 0);
+    const formatDate = (dateString: string) => dateString ? new Date(dateString).toLocaleDateString() : 'Start';
+    const periodString = `For period: ${formatDate(dateRange.from)} to ${formatDate(dateRange.to)}`;
 
-    const today = new Date().toLocaleDateString();
 
     const styles: { [key: string]: React.CSSProperties } = {
         page: {
@@ -101,7 +87,8 @@ const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ suppl
                 </div>
                 <div style={{ width: '40%', textAlign: 'right' }}>
                     <h2 style={{ fontWeight: 'bold', fontSize: '14pt', margin: 0 }}>Statement of Account</h2>
-                    <p style={{ margin: '1.5mm 0 0 0' }}><strong>Date:</strong> {today}</p>
+                    <p style={{ margin: '1.5mm 0 0 0' }}><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
+                    <p style={{ margin: '1mm 0 0 0', fontSize: '9pt' }}>{periodString}</p>
                 </div>
             </header>
 
@@ -130,9 +117,9 @@ const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ suppl
                             <td style={{ ...styles.td, fontStyle: 'italic' }}>Opening Balance</td>
                             <td style={styles.td}></td>
                             <td style={styles.td}></td>
-                            <td style={{ ...styles.td, textAlign: 'right' }}>{supplier.openingBalance.toFixed(2)}</td>
+                            <td style={{ ...styles.td, textAlign: 'right' }}>{openingBalance.toFixed(2)}</td>
                         </tr>
-                        {allTransactions.map((tx, index) => {
+                        {transactions.map((tx, index) => {
                             runningBalance = runningBalance + tx.debit - tx.credit;
                             return (
                                 <tr key={index}>

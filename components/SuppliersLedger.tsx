@@ -47,40 +47,74 @@ interface SuppliersLedgerProps {
 }
 
 interface SupplierLedgerEntry extends Supplier {
-    totalPurchases: number;
-    totalPayments: number;
+    openingBalanceForPeriod: number;
+    purchasesInPeriod: number;
+    paymentsInPeriod: number;
     outstandingBalance: number;
 }
 
 const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedSupplier, setSelectedSupplier] = useState<SupplierLedgerEntry | null>(null);
 
     const supplierLedgerData = useMemo<SupplierLedgerEntry[]>(() => {
-        const purchaseTotals = new Map<string, number>();
-        purchases.forEach(purchase => {
-            const currentTotal = purchaseTotals.get(purchase.supplier) || 0;
-            purchaseTotals.set(purchase.supplier, currentTotal + purchase.totalAmount);
-        });
+        const startDate = fromDate ? new Date(fromDate) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
 
-        const paymentTotals = new Map<string, number>();
-        payments.forEach(payment => {
-            const currentTotal = paymentTotals.get(payment.supplierName) || 0;
-            paymentTotals.set(payment.supplierName, currentTotal + payment.amount);
-        });
-
+        const endDate = toDate ? new Date(toDate) : new Date();
+        endDate.setHours(23, 59, 59, 999);
+        
         return suppliers.map(supplier => {
-            const totalPurchases = purchaseTotals.get(supplier.name) || 0;
-            const totalPayments = paymentTotals.get(supplier.name) || 0;
-            const outstandingBalance = (supplier.openingBalance || 0) + totalPurchases - totalPayments;
+            const supplierPurchases = purchases.filter(p => p.supplier === supplier.name);
+            const supplierPayments = payments.filter(p => p.supplierName === supplier.name);
+
+            // Calculate Opening Balance for the period
+            let openingBalanceForPeriod = supplier.openingBalance || 0;
+            if (startDate) {
+                supplierPurchases.forEach(p => {
+                    if (new Date(p.invoiceDate) < startDate) {
+                        openingBalanceForPeriod += p.totalAmount;
+                    }
+                });
+                supplierPayments.forEach(p => {
+                    if (new Date(p.date) < startDate) {
+                        openingBalanceForPeriod -= p.amount;
+                    }
+                });
+            }
+
+            // Calculate transactions within the period
+            const purchasesInPeriod = supplierPurchases.reduce((sum, p) => {
+                const purchaseDate = new Date(p.invoiceDate);
+                const isAfterStart = startDate ? purchaseDate >= startDate : true;
+                if (isAfterStart && purchaseDate <= endDate) {
+                    return sum + p.totalAmount;
+                }
+                return sum;
+            }, 0);
+
+            const paymentsInPeriod = supplierPayments.reduce((sum, p) => {
+                const paymentDate = new Date(p.date);
+                const isAfterStart = startDate ? paymentDate >= startDate : true;
+                if (isAfterStart && paymentDate <= endDate) {
+                    return sum + p.amount;
+                }
+                return sum;
+            }, 0);
+
+            const outstandingBalance = openingBalanceForPeriod + purchasesInPeriod - paymentsInPeriod;
+
             return {
                 ...supplier,
-                totalPurchases,
-                totalPayments,
+                openingBalanceForPeriod,
+                purchasesInPeriod,
+                paymentsInPeriod,
                 outstandingBalance,
             };
         }).sort((a, b) => a.name.localeCompare(b.name));
-    }, [suppliers, purchases, payments]);
+    }, [suppliers, purchases, payments, fromDate, toDate]);
     
     const filteredLedger = useMemo(() => {
         if (!searchTerm) return supplierLedgerData;
@@ -90,9 +124,9 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
     const handleExport = () => {
         const exportData = filteredLedger.map(s => ({
             'Supplier Name': s.name,
-            'Opening Balance': s.openingBalance.toFixed(2),
-            'Total Purchases': s.totalPurchases.toFixed(2),
-            'Total Payments': s.totalPayments.toFixed(2),
+            'Opening Balance': s.openingBalanceForPeriod.toFixed(2),
+            'Total Purchases (Period)': s.purchasesInPeriod.toFixed(2),
+            'Total Payments (Period)': s.paymentsInPeriod.toFixed(2),
             'Outstanding Balance': s.outstandingBalance.toFixed(2),
             'Phone': s.phone,
             'GSTIN': s.gstin,
@@ -103,19 +137,30 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <Card title="Suppliers Ledger">
-                <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <input
                         type="text"
                         placeholder="Search by supplier name..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        className="w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 flex-grow"
+                        className="w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 md:col-span-2"
                     />
+                     <div className="flex items-center gap-2">
+                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>
+                        <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-full px-3 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                     </div>
+                     <div className="flex items-center gap-2">
+                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">To</label>
+                        <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className="w-full px-3 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                     </div>
+                </div>
+                <div className="flex justify-end mb-4">
                     <button onClick={handleExport} className="flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
                         <DownloadIcon className="h-5 w-5" />
                         <span className="hidden sm:inline">Export to Excel</span>
                     </button>
                 </div>
+
 
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
@@ -123,8 +168,8 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                             <tr>
                                 <th scope="col" className="px-6 py-3">Supplier</th>
                                 <th scope="col" className="px-6 py-3 text-right">Opening Balance</th>
-                                <th scope="col" className="px-6 py-3 text-right">Total Purchases</th>
-                                <th scope="col" className="px-6 py-3 text-right">Total Payments</th>
+                                <th scope="col" className="px-6 py-3 text-right">Purchases (Period)</th>
+                                <th scope="col" className="px-6 py-3 text-right">Payments (Period)</th>
                                 <th scope="col" className="px-6 py-3 text-right">Outstanding Balance</th>
                                 <th scope="col" className="px-6 py-3">Action</th>
                             </tr>
@@ -133,9 +178,9 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                             {filteredLedger.map(supplier => (
                                 <tr key={supplier.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{supplier.name}</td>
-                                    <td className="px-6 py-4 text-right">₹{supplier.openingBalance.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-right">₹{supplier.totalPurchases.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-right">₹{supplier.totalPayments.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right">₹{supplier.openingBalanceForPeriod.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right">₹{supplier.purchasesInPeriod.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right">₹{supplier.paymentsInPeriod.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right font-bold">₹{supplier.outstandingBalance.toFixed(2)}</td>
                                     <td className="px-6 py-4">
                                         <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
@@ -148,7 +193,7 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                     </table>
                     {filteredLedger.length === 0 && (
                         <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                            <p>No suppliers found.</p>
+                            <p>No suppliers found for the selected criteria.</p>
                         </div>
                     )}
                 </div>
@@ -159,9 +204,10 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                     isOpen={!!selectedSupplier}
                     onClose={() => setSelectedSupplier(null)}
                     supplier={selectedSupplier}
-                    purchases={purchases.filter(p => p.supplier === selectedSupplier.name)}
-                    payments={payments.filter(p => p.supplierName === selectedSupplier.name)}
+                    purchases={purchases}
+                    payments={payments}
                     companyProfile={companyProfile}
+                    dateRange={{ from: fromDate, to: toDate }}
                 />
             )}
         </div>
@@ -175,17 +221,38 @@ interface SupplierDetailsModalProps {
     purchases: Purchase[];
     payments: Payment[];
     companyProfile: CompanyProfile;
+    dateRange: { from: string; to: string };
 }
 
-const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onClose, supplier, purchases, payments, companyProfile }) => {
+const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onClose, supplier, purchases, payments, companyProfile, dateRange }) => {
     
     const transactions = useMemo(() => {
-        const combined = [
-            ...purchases.map(p => ({ type: 'purchase' as const, date: new Date(p.invoiceDate), data: p })),
-            ...payments.map(p => ({ type: 'payment' as const, date: new Date(p.date), data: p }))
-        ];
-        return combined.sort((a, b) => b.date.getTime() - a.date.getTime());
-    }, [purchases, payments]);
+        const startDate = dateRange.from ? new Date(dateRange.from) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+
+        const endDate = dateRange.to ? new Date(dateRange.to) : new Date();
+        endDate.setHours(23, 59, 59, 999);
+
+        const periodPurchases = purchases
+            .filter(p => p.supplier === supplier.name)
+            .filter(p => {
+                const purchaseDate = new Date(p.invoiceDate);
+                const isAfterStart = startDate ? purchaseDate >= startDate : true;
+                return isAfterStart && purchaseDate <= endDate;
+            })
+            .map(p => ({ type: 'purchase' as const, date: new Date(p.invoiceDate), data: p }));
+
+        const periodPayments = payments
+            .filter(p => p.supplierName === supplier.name)
+            .filter(p => {
+                const paymentDate = new Date(p.date);
+                const isAfterStart = startDate ? paymentDate >= startDate : true;
+                return isAfterStart && paymentDate <= endDate;
+            })
+            .map(p => ({ type: 'payment' as const, date: new Date(p.date), data: p }));
+
+        return [...periodPurchases, ...periodPayments].sort((a, b) => a.date.getTime() - b.date.getTime());
+    }, [purchases, payments, supplier.name, dateRange]);
 
     const handleExportPdf = () => {
         const printWindow = window.open('', '_blank', 'height=800,width=800');
@@ -198,9 +265,13 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                 root.render(
                     <PrintableSupplierLedger
                         supplier={supplier}
-                        purchases={purchases}
-                        payments={payments}
+                        transactions={transactions.map(tx => tx.type === 'purchase' ? 
+                            { date: tx.date, particulars: `Purchase - Inv #${tx.data.invoiceNumber}`, debit: tx.data.totalAmount, credit: 0 } :
+                            { date: tx.date, particulars: `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`, debit: 0, credit: tx.data.amount }
+                        )}
                         companyProfile={companyProfile}
+                        openingBalance={supplier.openingBalanceForPeriod}
+                        dateRange={dateRange}
                     />
                 );
                 setTimeout(() => {
@@ -217,11 +288,11 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
             <div className="space-y-4 text-slate-800 dark:text-slate-300">
                 <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     <div className="font-semibold text-slate-800 dark:text-slate-200">Opening Balance:</div>
-                    <div className="text-right">₹{supplier.openingBalance.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Total Purchases:</div>
-                    <div className="text-right">₹{supplier.totalPurchases.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Total Payments:</div>
-                    <div className="text-right text-green-600 dark:text-green-400">₹{supplier.totalPayments.toFixed(2)}</div>
+                    <div className="text-right">₹{supplier.openingBalanceForPeriod.toFixed(2)}</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Purchases (Period):</div>
+                    <div className="text-right">₹{supplier.purchasesInPeriod.toFixed(2)}</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Payments (Period):</div>
+                    <div className="text-right text-green-600 dark:text-green-400">₹{supplier.paymentsInPeriod.toFixed(2)}</div>
                     <div className="font-bold text-lg text-slate-800 dark:text-slate-100 col-span-2 border-t dark:border-slate-600 mt-2 pt-2 flex justify-between">
                         <span>Outstanding Balance:</span>
                         <span>₹{supplier.outstandingBalance.toFixed(2)}</span>
@@ -229,7 +300,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                 </div>
 
                 <div className="border-t dark:border-slate-700 pt-2">
-                    <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Transaction History</h4>
+                    <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Transaction History (Period)</h4>
                     <div className="max-h-60 overflow-y-auto">
                         <table className="w-full text-xs text-left">
                             <thead className="sticky top-0 bg-slate-100 dark:bg-slate-700">
@@ -258,7 +329,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                                 ))}
                             </tbody>
                         </table>
-                        {transactions.length === 0 && <p className="text-center text-slate-500 dark:text-slate-400 py-4">No transactions found for this supplier.</p>}
+                        {transactions.length === 0 && <p className="text-center text-slate-500 dark:text-slate-400 py-4">No transactions found for this supplier in the selected period.</p>}
                     </div>
                 </div>
 
