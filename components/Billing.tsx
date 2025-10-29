@@ -43,11 +43,6 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
         if (iframeDoc) {
             iframeDoc.head.innerHTML = ''; // Clear head
 
-            // Inject Tailwind CSS for component styling
-            const tailwind = iframeDoc.createElement('script');
-            tailwind.src = 'https://cdn.tailwindcss.com';
-            iframeDoc.head.appendChild(tailwind);
-            
             // Inject print-specific styles
             const styleEl = iframeDoc.createElement('style');
             if (printFormat === 'thermal') {
