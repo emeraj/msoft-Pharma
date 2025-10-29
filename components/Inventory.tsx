@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import type { Product, Batch, Company } from '../types';
 import Card from './common/Card';
@@ -277,60 +278,71 @@ const SelectedItemStockView: React.FC<{products: Product[]}> = ({ products }) =>
 };
 
 const CompanyWiseStockView: React.FC<{products: Product[]}> = ({ products }) => {
-    const [openCompany, setOpenCompany] = useState<string | null>(null);
-    const productsByCompany = useMemo(() => {
-        return products.reduce<Record<string, Product[]>>((acc, product) => {
-            (acc[product.company] = acc[product.company] || []).push(product);
-            return acc;
-        }, {});
-    }, [products]);
+    const [companyFilter, setCompanyFilter] = useState('');
+
+    const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
+
+    const filteredAndSortedProducts = useMemo(() => {
+        return products
+            .filter(product => companyFilter === '' || product.company === companyFilter)
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [products, companyFilter]);
 
     const handleExport = () => {
-        const exportData = products.map(product => ({
-            'Company': product.company,
+        const exportData = filteredAndSortedProducts.map(product => ({
             'Product Name': product.name,
+            'Company': product.company,
             'Total Stock': product.batches.reduce((sum, b) => sum + b.stock, 0),
-        })).sort((a, b) => a.Company.localeCompare(b.Company));
-        exportToCsv('company_wise_stock', exportData);
+        }));
+        const filename = companyFilter ? `stock_for_${companyFilter.replace(/ /g, '_')}` : 'company_wise_stock';
+        exportToCsv(filename, exportData);
     };
 
     return (
         <Card title="Company-wise Stock">
-            <div className="mb-4">
-                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
-                    <DownloadIcon className="h-5 w-5" /> Export All to Excel
-                </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                 <select
+                    value={companyFilter}
+                    onChange={e => setCompanyFilter(e.target.value)}
+                    className={selectStyle}
+                >
+                    <option value="">All Companies</option>
+                    {companies.map(company => <option key={company} value={company}>{company}</option>)}
+                </select>
+                <div className="flex justify-start sm:justify-end">
+                    <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200 h-full">
+                        <DownloadIcon className="h-5 w-5" /> Export to Excel
+                    </button>
+                </div>
             </div>
-            <div className="space-y-4">
-                {Object.entries(productsByCompany).map(([company, companyProducts]) => {
-                    const totalStock = companyProducts.flatMap(p => p.batches).reduce((sum, b) => sum + b.stock, 0);
-                    return (
-                    <div key={company} className="border dark:border-slate-700 rounded-lg overflow-hidden">
-                        <button onClick={() => setOpenCompany(openCompany === company ? null : company)} className="w-full flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600">
-                            <h3 className="font-semibold text-slate-800 dark:text-slate-200">{company}</h3>
-                            <div className="flex items-center gap-4">
-                                <span className="text-sm text-slate-600 dark:text-slate-400">Products: {companyProducts.length}</span>
-                                <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Total Stock: {totalStock}</span>
-                                <svg className={`h-5 w-5 text-slate-600 dark:text-slate-400 transition-transform ${openCompany === company ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            </div>
-                        </button>
-                        {openCompany === company && (
-                            <div className="p-4 border-t dark:border-slate-700">
-                                <table className="w-full text-sm text-slate-800 dark:text-slate-300">
-                                    <thead className="text-xs text-slate-800 dark:text-slate-300 bg-white dark:bg-slate-800"><tr><th className="py-2 text-left">Product</th><th className="py-2 text-right">Total Stock</th></tr></thead>
-                                    <tbody>
-                                        {companyProducts.map(p => (
-                                            <tr key={p.id} className="border-b dark:border-slate-700">
-                                                <td className="py-2">{p.name}</td>
-                                                <td className="py-2 text-right font-medium">{p.batches.reduce((s, b) => s + b.stock, 0)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+                        <tr>
+                            <th scope="col" className="px-6 py-3">Product Name</th>
+                            <th scope="col" className="px-6 py-3">Company</th>
+                            <th scope="col" className="px-6 py-3">Total Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {filteredAndSortedProducts.map(product => {
+                            const totalStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
+                            return (
+                                <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                    <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{product.name}</th>
+                                    <td className="px-6 py-4">{product.company}</td>
+                                    <td className="px-6 py-4 font-bold">{totalStock}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                {filteredAndSortedProducts.length === 0 && (
+                    <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+                        <p>No products found for the selected company.</p>
                     </div>
-                )})}
+                )}
             </div>
         </Card>
     );
@@ -382,7 +394,14 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
         batches.filter(b => 
             b.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
             b.batchNumber.toLowerCase().includes(searchTerm.toLowerCase())
-        ).sort((a,b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()),
+        ).sort((a, b) => {
+            const nameA = a.productName.toLowerCase();
+            const nameB = b.productName.toLowerCase();
+            if (nameA < nameB) return -1;
+            if (nameA > nameB) return 1;
+            // If product names are the same, sort by expiry date
+            return getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime();
+        }),
     [batches, searchTerm]);
 
     const today = new Date();
