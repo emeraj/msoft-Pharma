@@ -12,7 +12,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) =
   return (
     <div style={{
       width: '210mm',
-      height: '148.5mm',
+      height: '297mm',
       boxSizing: 'border-box',
       backgroundColor: 'white',
       color: 'black',

@@ -65,12 +65,12 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
             } else { // laser
                 styleEl.textContent = `
                     @page {
-                        size: A5 landscape;
+                        size: A4;
                         margin: 0 !important; /* Force zero margins */
                     }
                     /* By resetting the body margin/padding and NOT setting a size,
                        we allow the PrintableBill component to fully control the layout
-                       within the browser's printable area for the A5 page. */
+                       within the browser's printable area for the A4 page. */
                     body {
                         margin: 0 !important;
                         padding: 0 !important;
@@ -107,7 +107,7 @@ const BillPrintModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bil
                     onClick={() => setPrintFormat('laser')}
                     className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${printFormat === 'laser' ? 'border-b-2 border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
                 >
-                    Laser Printer (A5)
+                    Laser Printer (A4)
                 </button>
                 <button
                     onClick={() => setPrintFormat('thermal')}
