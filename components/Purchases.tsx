@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon } from './icons/Icons';
 
 interface PurchasesProps {
     products: Product[];
@@ -14,6 +14,42 @@ interface PurchasesProps {
     onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
 }
+
+// --- Utility function to export data to CSV ---
+const exportToCsv = (filename: string, data: any[]) => {
+  if (data.length === 0) {
+    alert("No data to export.");
+    return;
+  }
+
+  const headers = Object.keys(data[0]);
+  const csvContent = [
+    headers.join(','), // header row
+    ...data.map(row => 
+      headers.map(header => {
+        let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
+        // handle commas, quotes, and newlines in data
+        if (/[",\n]/.test(cell)) {
+          cell = `"${cell.replace(/"/g, '""')}"`;
+        }
+        return cell;
+      }).join(',')
+    )
+  ].join('\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement("a");
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+};
+
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
@@ -297,6 +333,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
     const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
+    
+    // State for purchase history filtering
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
     useEffect(() => {
         if (editingPurchase) {
@@ -379,7 +419,48 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         }
         resetForm();
     };
+
+    const filteredPurchases = useMemo(() => {
+        return purchases
+            .filter(p => {
+                const purchaseDate = new Date(p.invoiceDate);
+                purchaseDate.setHours(0,0,0,0);
+                
+                if (fromDate) {
+                    const start = new Date(fromDate);
+                    start.setHours(0,0,0,0);
+                    if (purchaseDate < start) return false;
+                }
+                
+                if (toDate) {
+                    const end = new Date(toDate);
+                    end.setHours(0,0,0,0);
+                    if (purchaseDate > end) return false;
+                }
+                
+                return true;
+            })
+            .sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
+    }, [purchases, fromDate, toDate]);
     
+    const handleExport = () => {
+        if (filteredPurchases.length === 0) {
+            alert("No purchase data to export for the selected date range.");
+            return;
+        }
+    
+        const exportData = filteredPurchases.map(p => ({
+            'Date': new Date(p.invoiceDate).toLocaleDateString(),
+            'Invoice #': p.invoiceNumber,
+            'Supplier': p.supplier,
+            'Items': p.items.length,
+            'Total Amount': p.totalAmount.toFixed(2),
+        }));
+        
+        const filename = `purchase_history_${fromDate || 'all-time'}_to_${toDate || 'today'}`;
+        exportToCsv(filename, exportData);
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <Card title={editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}>
@@ -480,6 +561,19 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             />
 
             <Card title="Purchase History">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>
+                        <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">To</label>
+                        <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
+                    </div>
+                    <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                        <DownloadIcon className="h-5 w-5" /> Export to Excel
+                    </button>
+                </div>
                  <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
                         <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
@@ -493,7 +587,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             </tr>
                         </thead>
                         <tbody>
-                            {purchases.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()).map(p => (
+                            {filteredPurchases.map(p => (
                                 <tr key={p.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-6 py-4">{new Date(p.invoiceDate).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{p.invoiceNumber}</td>
@@ -514,7 +608,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             ))}
                         </tbody>
                     </table>
-                    {purchases.length === 0 && <p className="text-center py-6 text-slate-600 dark:text-slate-400">No purchase history found.</p>}
+                    {filteredPurchases.length === 0 && <p className="text-center py-6 text-slate-600 dark:text-slate-400">No purchase history found for the selected dates.</p>}
                  </div>
             </Card>
         </div>
