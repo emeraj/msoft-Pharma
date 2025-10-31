@@ -29,14 +29,13 @@ import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
 import PaymentEntry from './components/PaymentEntry';
-import SalesDashboard from './components/SalesDashboard';
 
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [activeView, setActiveView] = useState<AppView>('salesDashboard');
+  const [activeView, setActiveView] = useState<AppView>('billing');
   const [products, setProducts] = useState<Product[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -454,7 +453,6 @@ const App: React.FC = () => {
         return <PermissionErrorComponent />;
     }
     switch (activeView) {
-      case 'salesDashboard': return <SalesDashboard bills={bills} products={products} />;
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
@@ -463,7 +461,7 @@ const App: React.FC = () => {
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
-      default: return <SalesDashboard bills={bills} products={products} />;
+      default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
     }
   };
 

@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
 import type { Bill, Product } from '../types';
 import Card from './common/Card';
-// FIX: `ChartBarIcon` was not imported. It is needed for one of the stat cards.
 import { ArchiveIcon, CashIcon, CubeIcon, ReceiptIcon, ChartBarIcon } from './icons/Icons';
 
 interface SalesDashboardProps {

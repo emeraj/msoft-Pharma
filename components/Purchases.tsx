@@ -392,6 +392,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     
     const resetForm = () => {
         setEditingPurchase(null);
+        setFormState(initialFormState);
     };
 
     const handleSavePurchase = () => {

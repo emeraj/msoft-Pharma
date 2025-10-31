@@ -10,13 +10,13 @@ interface PaymentEntryProps {
   suppliers: Supplier[];
   payments: Payment[];
   companyProfile: CompanyProfile;
-// FIX: The Payment object has an `id`, not a `key`. Changed props to reflect the correct data model.
   onAddPayment: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
   onUpdatePayment: (id: string, payment: Omit<Payment, 'id'>) => void;
   onDeletePayment: (id: string) => void;
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+// FIX: Corrected typo in variable name from 'formInputstyle' to 'formInputStyle'.
 const formSelectStyle = `${formInputStyle} appearance-none`;
 const formTextAreaStyle = `${formInputStyle} h-20 resize-none`;
 
@@ -54,10 +54,14 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
         return [...payments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [payments]);
 
+    const isFormValid = useMemo(() => {
+        const amount = parseFloat(formState.amount);
+        return formState.supplierName.trim() !== '' && !isNaN(amount) && amount > 0;
+    }, [formState.supplierName, formState.amount]);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        const amount = parseFloat(formState.amount);
-        if (!formState.supplierName || !amount || amount <= 0) {
+        if (!isFormValid) {
             alert('Please select a supplier and enter a valid amount.');
             return;
         }
@@ -65,21 +69,21 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
         const paymentData = {
             supplierName: formState.supplierName,
             date: new Date(formState.date).toISOString(),
-            amount,
+            amount: parseFloat(formState.amount),
             method: formState.method,
             remarks: formState.remarks,
         };
 
-// FIX: The `Payment` object has an `id` property, not `key`. Using `editingPayment.id` to check for an existing payment and pass it to the update handler.
         if (editingPayment && editingPayment.id) {
             onUpdatePayment(editingPayment.id, { ...paymentData, voucherNumber: formState.voucherNumber });
+            setEditingPayment(null);
         } else {
             const newPayment = await onAddPayment(paymentData);
             if (newPayment) {
                 setLastAddedPayment(newPayment); // Trigger print modal
             }
+            setFormState(initialFormState);
         }
-        setEditingPayment(null);
     };
 
     const handleCancelEdit = () => {
@@ -147,7 +151,7 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                         {editingPayment && (
                              <button type="button" onClick={handleCancelEdit} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
                         )}
-                        <button type="submit" className="px-6 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700">
+                        <button type="submit" disabled={!isFormValid} className="px-6 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed">
                             {editingPayment ? 'Update Payment' : 'Save Payment'}
                         </button>
                     </div>
@@ -169,7 +173,6 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                         </thead>
                         <tbody>
                             {sortedPayments.map(p => (
-// FIX: The `Payment` object has an `id` property, not `key`. Used `p.id` for the React list key.
                                 <tr key={p.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
                                     <td className="px-4 py-2 font-medium">{p.voucherNumber}</td>
                                     <td className="px-4 py-2">{new Date(p.date).toLocaleDateString()}</td>
@@ -179,8 +182,7 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                                     <td className="px-4 py-2">
                                         <div className="flex gap-3">
                                             <button onClick={() => setEditingPayment(p)} title="Edit" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"><PencilIcon className="h-4 w-4" /></button>
-// FIX: The `Payment` object has an `id` property, not `key`. Passed `p.id` to the delete handler.
-                                            <button onClick={() => p.id && onDeletePayment(p.id)} title="Delete" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"><TrashIcon className="h-4 w-4" /></button>
+                                            <button onClick={() => onDeletePayment(p.id)} title="Delete" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"><TrashIcon className="h-4 w-4" /></button>
                                         </div>
                                     </td>
                                 </tr>
