@@ -327,8 +327,8 @@ const App: React.FC = () => {
   };
 
   const handleUpdatePurchase = async (
-    purchaseId: string, 
-    updatedPurchaseData: Omit<Purchase, 'id'>, 
+    purchaseId: string,
+    updatedPurchaseData: Omit<Purchase, 'id'>,
     originalPurchase: Purchase
   ) => {
     if (!currentUser) return;
@@ -336,49 +336,51 @@ const App: React.FC = () => {
     const batch = writeBatch(db);
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Revert stock changes from original purchase
-    for (const item of originalPurchase.items) {
-      if (!item.productId) {
-        console.warn('Original purchase item missing productId, cannot revert stock reliably.', item);
-        continue;
-      }
-      const product = products.find(p => p.id === item.productId);
-      if (product) {
-        let newBatches: Batch[];
-        if (item.batchId) {
-            // New, reliable way: remove by unique batchId
-            newBatches = product.batches.filter(b => b.id !== item.batchId);
-        } else {
-            // Fallback for old data that doesn't have batchId
-            console.warn("Reverting old purchase item without batchId. Using property matching.", item);
-            let batchRemoved = false;
-            newBatches = product.batches.reduce((acc, currentBatch) => {
-                if (!batchRemoved && 
-                    currentBatch.batchNumber === item.batchNumber && 
-                    currentBatch.mrp === item.mrp && 
-                    currentBatch.purchasePrice === item.purchasePrice) {
-                    batchRemoved = true; 
-                } else {
-                    acc.push(currentBatch);
+    // Revert stock changes from original purchase by grouping items by product
+    const originalItemsByProduct = originalPurchase.items.reduce((acc, item) => {
+        if (item.productId) {
+            acc[item.productId] = (acc[item.productId] || []).concat(item);
+        }
+        return acc;
+    }, {} as Record<string, PurchaseLineItem[]>);
+
+    for (const productId in originalItemsByProduct) {
+        const product = products.find(p => p.id === productId);
+        if (!product) {
+            console.warn(`Product with ID ${productId} not found while reverting purchase.`);
+            continue;
+        }
+
+        let newBatches = [...product.batches];
+        for(const item of originalItemsByProduct[productId]) {
+            if (item.batchId) {
+                newBatches = newBatches.filter(b => b.id !== item.batchId);
+            } else {
+                console.warn("Reverting old purchase item without batchId. Using property matching.", item);
+                const batchIndex = newBatches.findIndex(b => 
+                    b.batchNumber === item.batchNumber && 
+                    b.mrp === item.mrp && 
+                    b.purchasePrice === item.purchasePrice);
+
+                if (batchIndex > -1) {
+                    newBatches.splice(batchIndex, 1);
                 }
-                return acc;
-            }, [] as Batch[]);
+            }
         }
         const productRef = doc(db, `users/${uid}/products`, product.id);
         batch.update(productRef, { batches: newBatches });
-      }
     }
 
     const updatedItemsWithProductIds: PurchaseLineItem[] = [];
 
     // Apply stock changes for the updated purchase
     for (const item of updatedPurchaseData.items) {
-        const batchId = `batch_${uniqueIdSuffix()}`;
+        const newBatchId = `batch_${uniqueIdSuffix()}`;
         const newBatchData = {
-            id: batchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+            id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
             stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
         };
-        const finalItem = {...item, batchId};
+        const finalItem = {...item, batchId: newBatchId};
 
         if (item.isNewProduct) {
              const newProductRef = doc(collection(db, `users/${uid}/products`));
@@ -414,35 +416,40 @@ const App: React.FC = () => {
     const uid = currentUser.uid;
     const batch = writeBatch(db);
 
-    for (const item of purchase.items) {
-      if (!item.productId) {
-        console.warn('Purchase item missing productId, cannot revert stock reliably.', item);
-        continue;
-      }
-      const product = products.find(p => p.id === item.productId);
-      if (product) {
-        let newBatches: Batch[];
-        if (item.batchId) {
-             newBatches = product.batches.filter(b => b.id !== item.batchId);
-        } else {
-            console.warn("Deleting old purchase item without batchId. Using property matching.", item);
-            let batchRemoved = false;
-            newBatches = product.batches.reduce((acc, currentBatch) => {
-                if (!batchRemoved && 
-                    currentBatch.batchNumber === item.batchNumber && 
-                    currentBatch.mrp === item.mrp && 
-                    currentBatch.purchasePrice === item.purchasePrice) {
-                    batchRemoved = true; 
-                } else {
-                    acc.push(currentBatch);
+    // Group items by product to correctly revert stock
+    const itemsByProduct = purchase.items.reduce((acc, item) => {
+        if (item.productId) {
+            acc[item.productId] = (acc[item.productId] || []).concat(item);
+        }
+        return acc;
+    }, {} as Record<string, PurchaseLineItem[]>);
+
+    for (const productId in itemsByProduct) {
+        const product = products.find(p => p.id === productId);
+        if (!product) {
+            console.warn(`Product with ID ${productId} not found while deleting purchase.`);
+            continue;
+        }
+
+        let newBatches = [...product.batches];
+        for (const item of itemsByProduct[productId]) {
+            if (item.batchId) {
+                newBatches = newBatches.filter(b => b.id !== item.batchId);
+            } else {
+                console.warn("Deleting old purchase item without batchId. Using property matching.", item);
+                const batchIndex = newBatches.findIndex(b => 
+                    b.batchNumber === item.batchNumber && 
+                    b.mrp === item.mrp && 
+                    b.purchasePrice === item.purchasePrice);
+                
+                if (batchIndex > -1) {
+                    newBatches.splice(batchIndex, 1);
                 }
-                return acc;
-            }, [] as Batch[]);
+            }
         }
         
         const productRef = doc(db, `users/${uid}/products`, product.id);
         batch.update(productRef, { batches: newBatches });
-      }
     }
     
     const purchaseRef = doc(db, `users/${uid}/purchases`, purchase.id);
