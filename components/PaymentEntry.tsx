@@ -16,7 +16,6 @@ interface PaymentEntryProps {
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
-// FIX: Corrected typo in variable name from 'formInputstyle' to 'formInputStyle'.
 const formSelectStyle = `${formInputStyle} appearance-none`;
 const formTextAreaStyle = `${formInputStyle} h-20 resize-none`;
 

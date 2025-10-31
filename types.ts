@@ -48,6 +48,7 @@ export interface PurchaseLineItem {
   hsnCode: string;
   gst: number;
   productId?: string; // Firestore document ID of existing product
+  batchId?: string; // ID of the batch created by this line item
   
   // New batch details
   batchNumber: string;
