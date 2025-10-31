@@ -10,7 +10,7 @@ interface PurchasesProps {
     companies: Company[];
     suppliers: Supplier[];
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
-    onUpdatePurchase: (key: string, updatedData: Omit<Purchase, 'id'| 'key'>, originalPurchase: Purchase) => void;
+    onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
     onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
 }
@@ -213,7 +213,6 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
         if (!isNewProduct && selectedProduct) {
             item.productId = selectedProduct.id;
-            item.productKey = selectedProduct.key;
         }
 
         onAddItem(item);
@@ -270,7 +269,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                             {showCompanySuggestions && (
                                 <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                                     {companySuggestions.map(c => (
-                                        <li key={c.key} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
+                                        <li key={c.id} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
                                             {c.name}
                                         </li>
                                     ))}
@@ -410,10 +409,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             invoiceNumber: formState.invoiceNumber, 
             invoiceDate: formState.invoiceDate, 
             items: formState.currentItems,
+            totalAmount
         };
 
-        if (editingPurchase && editingPurchase.key) {
-             onUpdatePurchase(editingPurchase.key, { ...purchaseData, totalAmount }, editingPurchase);
+        if (editingPurchase && editingPurchase.id) {
+             onUpdatePurchase(editingPurchase.id, purchaseData, editingPurchase);
         } else {
             onAddPurchase(purchaseData);
         }
@@ -480,7 +480,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                          {showSupplierSuggestions && formState.supplierName.length > 0 && (
                           <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                               {supplierSuggestions.map(s => (
-                                  <li key={s.key} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
+                                  <li key={s.id} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
                                       {s.name}
                                   </li>
                               ))}

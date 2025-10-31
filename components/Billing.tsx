@@ -57,10 +57,8 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     } else {
       const newItem: CartItem = {
         productId: product.id,
-        productKey: product.key!,
         productName: product.name,
         batchId: batch.id,
-        batchKey: batch.key!,
         batchNumber: batch.batchNumber,
         expiryDate: batch.expiryDate,
         hsnCode: product.hsnCode,

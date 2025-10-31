@@ -1,6 +1,5 @@
 export interface Batch {
   id: string;
-  key?: string; // Firebase key
   batchNumber: string;
   expiryDate: string; // YYYY-MM format
   stock: number;
@@ -9,8 +8,7 @@ export interface Batch {
 }
 
 export interface Product {
-  id: string;
-  key?: string; // Firebase key
+  id: string; // Firestore Document ID
   name: string;
   company: string;
   hsnCode: string;
@@ -20,10 +18,8 @@ export interface Product {
 
 export interface CartItem {
   productId: string;
-  productKey: string; // Firebase key for product
   productName: string;
   batchId: string;
-  batchKey: string; // Firebase key for batch
   batchNumber: string;
   expiryDate: string;
   hsnCode: string;
@@ -34,8 +30,7 @@ export interface CartItem {
 }
 
 export interface Bill {
-  id: string;
-  key?: string; // Firebase key
+  id: string; // Firestore Document ID
   billNumber: string;
   date: string; // ISO string
   customerName: string;
@@ -52,8 +47,7 @@ export interface PurchaseLineItem {
   company: string;
   hsnCode: string;
   gst: number;
-  productId?: string;
-  productKey?: string; // Firebase key of existing product
+  productId?: string; // Firestore document ID of existing product
   
   // New batch details
   batchNumber: string;
@@ -64,8 +58,7 @@ export interface PurchaseLineItem {
 }
 
 export interface Purchase {
-  id: string;
-  key?: string; // Firebase key
+  id: string; // Firestore Document ID
   invoiceNumber: string;
   invoiceDate: string; // ISO String
   supplier: string;
@@ -74,14 +67,12 @@ export interface Purchase {
 }
 
 export interface Company {
-  id: string;
-  key?: string; // Firebase key
+  id: string; // Firestore Document ID
   name: string;
 }
 
 export interface Supplier {
-  id: string;
-  key?: string; // Firebase key
+  id: string; // Firestore Document ID
   name: string;
   address: string;
   phone: string;
@@ -91,8 +82,7 @@ export interface Supplier {
 
 // New type for Supplier Payments
 export interface Payment {
-  id: string;
-  key?: string; // Firebase key
+  id: string; // Firestore Document ID
   supplierName: string;
   date: string; // ISO String
   voucherNumber: string;
@@ -104,7 +94,7 @@ export interface Payment {
 // New Types for Reports
 export type ReportView = 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale';
 
-export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
+export type AppView = 'salesDashboard' | 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
 // New Types for Settings
 export type Theme = 'light' | 'dark';

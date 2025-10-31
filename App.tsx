@@ -8,23 +8,35 @@ import Purchases from './components/Purchases';
 import SettingsModal from './components/SettingsModal';
 import Auth from './components/Auth';
 import Card from './components/common/Card';
-import { database, auth } from './firebase';
-// Fix: Import firebase compat for types and v8 API
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/database';
-import 'firebase/compat/auth';
+import { db, auth } from './firebase';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  writeBatch,
+  query,
+  where,
+  arrayUnion,
+  Unsubscribe
+} from 'firebase/firestore';
 import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
 import PaymentEntry from './components/PaymentEntry';
+import SalesDashboard from './components/SalesDashboard';
 
 
 const App: React.FC = () => {
-  // Fix: Use firebase.User type from compat import
-  const [currentUser, setCurrentUser] = useState<firebase.User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [activeView, setActiveView] = useState<AppView>('billing');
+  const [activeView, setActiveView] = useState<AppView>('salesDashboard');
   const [products, setProducts] = useState<Product[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -39,8 +51,7 @@ const App: React.FC = () => {
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ'});
 
   useEffect(() => {
-    // Fix: Use v8 compat API for onAuthStateChanged
-    const unsubscribe = auth.onAuthStateChanged(user => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
       setCurrentUser(user);
       setAuthLoading(false);
     });
@@ -66,59 +77,43 @@ const App: React.FC = () => {
     setPermissionError(null);
     const uid = currentUser.uid;
 
-    const parseProductsSnapshot = (snapshot: firebase.database.DataSnapshot, setter: Function) => {
-        const data = snapshot.val();
-        if (data) {
-            const list = Object.entries(data).map(([key, value]: [string, any]) => ({
-                ...value,
-                key,
-                batches: value.batches ? Object.entries(value.batches).map(([batchKey, batchValue]: [string, any]) => ({...batchValue, key: batchKey})) : []
-            }));
-            setter(list);
-        } else {
-            setter([]);
+    const createListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
+      const collRef = collection(db, `users/${uid}/${collectionName}`);
+      return onSnapshot(collRef, (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setter(list);
+      }, (error) => {
+        console.error(`Error fetching ${collectionName}:`, error);
+        if (error.code === 'permission-denied') {
+          setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firestore security rules.");
+          setDataLoading(false);
         }
+      });
     };
+    
+    const unsubscribers: Unsubscribe[] = [
+        createListener('products', setProducts),
+        createListener('bills', setBills),
+        createListener('purchases', setPurchases),
+        createListener('companies', setCompanies),
+        createListener('suppliers', setSuppliers),
+        createListener('payments', setPayments),
+    ];
 
-    const parseGenericListSnapshot = (snapshot: firebase.database.DataSnapshot, setter: Function) => {
-        const data = snapshot.val();
-        if (data) {
-            const list = Object.entries(data).map(([key, value]: [string, any]) => ({
-                ...value,
-                key,
-            }));
-            setter(list);
-        } else {
-            setter([]);
+    const profileRef = doc(db, `users/${uid}/companyProfile`, 'profile');
+    const unsubProfile = onSnapshot(profileRef, (doc) => {
+        if (doc.exists()) {
+            setCompanyProfile(doc.data() as CompanyProfile);
         }
-    };
-
-    // Fix: Use v8 compat API for database references and listeners
-    const productsRef = database.ref(`users/${uid}/products`);
-    const billsRef = database.ref(`users/${uid}/bills`);
-    const purchasesRef = database.ref(`users/${uid}/purchases`);
-    const companiesRef = database.ref(`users/${uid}/companies`);
-    const suppliersRef = database.ref(`users/${uid}/suppliers`);
-    const paymentsRef = database.ref(`users/${uid}/payments`);
-    const profileRef = database.ref(`users/${uid}/companyProfile`);
-
-    productsRef.on('value', (snapshot) => parseProductsSnapshot(snapshot, setProducts));
-    billsRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setBills));
-    purchasesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPurchases));
-    companiesRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setCompanies));
-    suppliersRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setSuppliers));
-    paymentsRef.on('value', (snapshot) => parseGenericListSnapshot(snapshot, setPayments));
-    profileRef.on('value', (snapshot) => {
-      const data = snapshot.val();
-      if (data) setCompanyProfile(data);
     });
+    unsubscribers.push(unsubProfile);
 
-    Promise.all([productsRef.get(), billsRef.get(), purchasesRef.get(), profileRef.get(), companiesRef.get(), suppliersRef.get(), paymentsRef.get()])
+    // Check for initial data load / permission
+    getDocs(collection(db, `users/${uid}/products`))
       .then(() => setDataLoading(false))
       .catch((error: any) => {
-        console.error("Error fetching initial data:", error);
-        if (error.code === 'PERMISSION_DENIED') {
-          setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firebase security rules.");
+        if (error.code === 'permission-denied') {
+          setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firestore security rules.");
         } else {
            setPermissionError(`Could not connect to the database. Error: ${error.message}`);
         }
@@ -126,14 +121,7 @@ const App: React.FC = () => {
       });
 
     return () => {
-      // Detach listeners
-      productsRef.off();
-      billsRef.off();
-      purchasesRef.off();
-      profileRef.off();
-      companiesRef.off();
-      suppliersRef.off();
-      paymentsRef.off();
+      unsubscribers.forEach(unsub => unsub());
     };
   }, [currentUser]);
 
@@ -149,8 +137,7 @@ const App: React.FC = () => {
   }, [theme]);
   
   const handleLogout = () => {
-    // Fix: Use v8 compat API for signOut
-    auth.signOut();
+    signOut(auth);
   };
 
   const PermissionErrorComponent: React.FC = () => (
@@ -164,18 +151,15 @@ const App: React.FC = () => {
                 </p>
                 <ol className="list-decimal list-inside space-y-2 text-slate-700 dark:text-slate-300">
                     <li>Open your Firebase project console.</li>
-                    <li>Navigate to <strong>Realtime Database</strong> &gt; <strong>Rules</strong> tab.</li>
+                    <li>Navigate to <strong>Firestore Database</strong> &gt; <strong>Rules</strong> tab.</li>
                     <li>Replace the content of the editor with the following:</li>
                 </ol>
                 <pre className="bg-black text-white p-3 rounded-md text-sm mt-3 overflow-x-auto">
                     <code>
-{`{
-  "rules": {
-    "users": {
-      "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
-      }
+{`service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }`}
@@ -200,76 +184,70 @@ const App: React.FC = () => {
 
   const handleProfileChange = (profile: CompanyProfile) => {
     if (!currentUser) return;
-    // Fix: Use v8 compat API for set
-    database.ref(`users/${currentUser.uid}/companyProfile`).set(profile);
+    const profileRef = doc(db, `users/${currentUser.uid}/companyProfile`, 'profile');
+    setDoc(profileRef, profile);
     setCompanyProfile(profile);
   };
 
-  const handleAddProduct = (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
+  const handleAddProduct = async (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const updates: { [key: string]: any } = {};
+    const batch = writeBatch(db);
 
     // Ensure company exists
     const companyName = productData.company.trim();
-    if (companyName && !companies.some(c => c.name.toLowerCase() === companyName.toLowerCase())) {
-        const newCompanyRef = database.ref(`users/${uid}/companies`).push();
-        updates[`/users/${uid}/companies/${newCompanyRef.key}`] = {
-            id: `comp_${Date.now()}`,
-            name: companyName
-        };
+    const companyExists = companies.some(c => c.name.toLowerCase() === companyName.toLowerCase());
+    
+    if (companyName && !companyExists) {
+        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        batch.set(newCompanyRef, { name: companyName });
     }
 
-    const newProductRef = database.ref(`users/${uid}/products`).push();
-    const newBatchRef = database.ref(`users/${uid}/products/${newProductRef.key}/batches`).push();
-    
-    updates[`/users/${uid}/products/${newProductRef.key}`] = {
+    const newProductRef = doc(collection(db, `users/${uid}/products`));
+    const newProductData = {
         ...productData,
-        id: `prod_${Date.now()}`,
-        batches: {
-            [newBatchRef.key!]: { ...firstBatchData, id: `batch_${Date.now()}` }
-        }
+        batches: [{ ...firstBatchData, id: `batch_${Date.now()}` }]
     };
+    batch.set(newProductRef, newProductData);
     
-    database.ref().update(updates);
+    await batch.commit();
   };
 
-  const handleAddBatch = (productId: string, batchData: Omit<Batch, 'id'>) => {
+  const handleAddBatch = async (productId: string, batchData: Omit<Batch, 'id'>) => {
     if (!currentUser) return;
-    const product = products.find(p => p.id === productId);
-    if (!product || !product.key) return;
-    
-    // Fix: Use v8 compat API for push and set
-    const batchesRef = database.ref(`users/${currentUser.uid}/products/${product.key}/batches`);
-    const newBatchRef = batchesRef.push();
-    newBatchRef.set({ ...batchData, id: `batch_${Date.now()}` });
+    const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+    await updateDoc(productRef, {
+        batches: arrayUnion({ ...batchData, id: `batch_${Date.now()}` })
+    });
   };
   
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    // Fix: Use v8 compat API for push
-    const billListRef = database.ref(`users/${uid}/bills`);
-    const newBillRef = billListRef.push();
     
+    const billsCollectionRef = collection(db, `users/${uid}/bills`);
     const newBillNumber = `B${(bills.length + 1).toString().padStart(4, '0')}`;
-    const newBill: Bill = { ...billData, id: `bill_${newBillRef.key}`, billNumber: newBillNumber };
     
-    const updates: { [key: string]: any } = {};
-    updates[`/users/${uid}/bills/${newBillRef.key}`] = newBill;
+    const batch = writeBatch(db);
+    
+    const newBillRef = doc(billsCollectionRef);
+    const newBill: Omit<Bill, 'id'> = { ...billData, billNumber: newBillNumber };
+    batch.set(newBillRef, newBill);
 
-    billData.items.forEach(item => {
+    for (const item of billData.items) {
         const product = products.find(p => p.id === item.productId);
-        const batch = product?.batches.find(b => b.id === item.batchId);
-        if (product && batch) {
-            updates[`/users/${uid}/products/${item.productKey}/batches/${item.batchKey}/stock`] = batch.stock - item.quantity;
+        if (product) {
+            const newBatches = product.batches.map(b => 
+                b.id === item.batchId ? { ...b, stock: b.stock - item.quantity } : b
+            );
+            const productRef = doc(db, `users/${uid}/products`, product.id);
+            batch.update(productRef, { batches: newBatches });
         }
-    });
+    }
 
     try {
-        // Fix: Use v8 compat API for update
-        await database.ref().update(updates);
-        return newBill;
+        await batch.commit();
+        return { ...newBill, id: newBillRef.id };
     } catch (error) {
         console.error("Failed to generate bill: ", error);
         return null;
@@ -279,22 +257,17 @@ const App: React.FC = () => {
   const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>): Promise<Supplier | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    const newSupplierRef = database.ref(`users/${uid}/suppliers`).push();
-    const newSupplier: Supplier = {
-        ...supplierData,
-        id: `supp_${Date.now()}`,
-        key: newSupplierRef.key!
-    };
-    await newSupplierRef.set(newSupplier);
-    return newSupplier;
+    const suppliersCollectionRef = collection(db, `users/${uid}/suppliers`);
+    const docRef = await addDoc(suppliersCollectionRef, supplierData);
+    return { ...supplierData, id: docRef.id };
   };
 
-  const handleUpdateSupplier = async (supplierKey: string, supplierData: Omit<Supplier, 'id' | 'key'>) => {
+  const handleUpdateSupplier = async (supplierId: string, supplierData: Omit<Supplier, 'id'>) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const supplierRef = database.ref(`users/${uid}/suppliers/${supplierKey}`);
+    const supplierRef = doc(db, `users/${uid}/suppliers`, supplierId);
     try {
-        await supplierRef.update(supplierData);
+        await updateDoc(supplierRef, supplierData);
         alert('Supplier updated successfully.');
     } catch (error) {
         console.error("Error updating supplier:", error);
@@ -305,10 +278,9 @@ const App: React.FC = () => {
   const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const updates: { [key: string]: any } = {};
+    const batch = writeBatch(db);
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
-    // Collect and create new companies if necessary
     const newCompanies = new Set<string>();
     purchaseData.items.forEach(item => {
         if (item.isNewProduct) {
@@ -320,88 +292,79 @@ const App: React.FC = () => {
     });
 
     for (const companyName of newCompanies) {
-        const newCompanyRef = database.ref(`users/${uid}/companies`).push();
-        updates[`/users/${uid}/companies/${newCompanyRef.key}`] = {
-            id: `comp_${uniqueIdSuffix()}`,
-            name: companyName,
-        };
+        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        batch.set(newCompanyRef, { name: companyName });
     }
 
-    purchaseData.items.forEach(item => {
+    for (const item of purchaseData.items) {
         const newBatchData = {
             id: `batch_${uniqueIdSuffix()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
             stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
         };
         if (item.isNewProduct) {
-            // Fix: Use v8 compat API for push
-            const newProductRef = database.ref(`users/${uid}/products`).push();
-            const newBatchRef = database.ref(`users/${uid}/products/${newProductRef.key}/batches`).push();
-            updates[`/users/${uid}/products/${newProductRef.key}`] = {
-                id: `prod_${uniqueIdSuffix()}`, name: item.productName, company: item.company,
-                hsnCode: item.hsnCode, gst: item.gst,
-                batches: { [newBatchRef.key!]: newBatchData }
-            };
-        } else if (item.productKey) {
-            const newBatchRef = database.ref(`users/${uid}/products/${item.productKey}/batches`).push();
-            updates[`/users/${uid}/products/${item.productKey}/batches/${newBatchRef.key}`] = newBatchData;
+            const newProductRef = doc(collection(db, `users/${uid}/products`));
+            batch.set(newProductRef, {
+                name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
+                batches: [newBatchData]
+            });
+        } else if (item.productId) {
+            const productRef = doc(db, `users/${uid}/products`, item.productId);
+            batch.update(productRef, { batches: arrayUnion(newBatchData) });
         }
-    });
+    }
     
     const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    const newPurchaseRef = database.ref(`users/${uid}/purchases`).push();
-    updates[`/users/${uid}/purchases/${newPurchaseRef.key}`] = { ...purchaseData, id: `purch_${newPurchaseRef.key}`, totalAmount };
-    // Fix: Use v8 compat API for update
-    await database.ref().update(updates);
+    const newPurchaseRef = doc(collection(db, `users/${uid}/purchases`));
+    batch.set(newPurchaseRef, { ...purchaseData, totalAmount });
+    await batch.commit();
   };
 
   const handleUpdatePurchase = async (
-    purchaseKey: string, 
-    updatedPurchaseData: Omit<Purchase, 'id' | 'key'>, 
+    purchaseId: string, 
+    updatedPurchaseData: Omit<Purchase, 'id'>, 
     originalPurchase: Purchase
   ) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const updates: { [key: string]: any } = {};
+    const batch = writeBatch(db);
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // 1. Revert original purchase: Delete old batches
+    // This is complex. The safest way is to revert stock changes from original and apply new ones.
+    // For simplicity here, we'll assume batch details (number, mrp, price) are unique identifiers to remove them.
     for (const item of originalPurchase.items) {
-      if (!item.productKey) continue;
-      const product = products.find(p => p.key === item.productKey);
-      if (product && product.batches) {
-        const batchEntry = product.batches.find(b => b.batchNumber === item.batchNumber && b.mrp === item.mrp);
-        if (batchEntry && batchEntry.key) {
-          updates[`/users/${uid}/products/${item.productKey}/batches/${batchEntry.key}`] = null;
-        }
+      if (!item.productId) continue;
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        const newBatches = product.batches.filter(b => 
+            !(b.batchNumber === item.batchNumber && b.mrp === item.mrp && b.purchasePrice === item.purchasePrice)
+        );
+        const productRef = doc(db, `users/${uid}/products`, product.id);
+        batch.update(productRef, { batches: newBatches });
       }
     }
 
-    // 2. Re-apply updated purchase: Create new batches
     for (const item of updatedPurchaseData.items) {
         const newBatchData = {
             id: `batch_${uniqueIdSuffix()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
             stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
         };
         if (item.isNewProduct) {
-             const newProductRef = database.ref(`users/${uid}/products`).push();
-             const newBatchRef = database.ref(`users/${uid}/products/${newProductRef.key}/batches`).push();
-             updates[`/users/${uid}/products/${newProductRef.key}`] = {
-                 id: `prod_${uniqueIdSuffix()}`, name: item.productName, company: item.company,
-                 hsnCode: item.hsnCode, gst: item.gst,
-                 batches: { [newBatchRef.key!]: newBatchData }
-             };
-        } else if (item.productKey) {
-            const newBatchRef = database.ref(`users/${uid}/products/${item.productKey}/batches`).push();
-            updates[`/users/${uid}/products/${item.productKey}/batches/${newBatchRef.key}`] = newBatchData;
+             const newProductRef = doc(collection(db, `users/${uid}/products`));
+             batch.set(newProductRef, {
+                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
+                 batches: [newBatchData]
+             });
+        } else if (item.productId) {
+            const productRef = doc(db, `users/${uid}/products`, item.productId);
+            batch.update(productRef, { batches: arrayUnion(newBatchData) });
         }
     }
     
-    // 3. Update the purchase record itself
-    const totalAmount = updatedPurchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    updates[`/users/${uid}/purchases/${purchaseKey}`] = { ...updatedPurchaseData, totalAmount };
+    const purchaseRef = doc(db, `users/${uid}/purchases`, purchaseId);
+    batch.update(purchaseRef, updatedPurchaseData);
     
     try {
-      await database.ref().update(updates);
+      await batch.commit();
       alert("Purchase updated successfully and stock adjusted.");
     } catch(error) {
       console.error("Error updating purchase:", error);
@@ -410,30 +373,29 @@ const App: React.FC = () => {
   };
 
   const handleDeletePurchase = async (purchase: Purchase) => {
-    if (!currentUser || !purchase.key) return;
+    if (!currentUser || !purchase.id) return;
     if (!window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This will also remove the associated stock from your inventory.`)) return;
 
     const uid = currentUser.uid;
-    const updates: { [key: string]: any } = {};
+    const batch = writeBatch(db);
 
-    // 1. Mark associated batches for deletion
     for (const item of purchase.items) {
-      if (!item.productKey) continue;
-      const product = products.find(p => p.key === item.productKey);
-      if (product && product.batches) {
-        // Find batch by a combination of properties for better accuracy
-         const batchEntry = product.batches.find(b => b.batchNumber === item.batchNumber && b.mrp === item.mrp && b.purchasePrice === item.purchasePrice);
-        if (batchEntry && batchEntry.key) {
-          updates[`/users/${uid}/products/${item.productKey}/batches/${batchEntry.key}`] = null;
-        }
+      if (!item.productId) continue;
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+         const newBatches = product.batches.filter(b => 
+            !(b.batchNumber === item.batchNumber && b.mrp === item.mrp && b.purchasePrice === item.purchasePrice)
+        );
+        const productRef = doc(db, `users/${uid}/products`, product.id);
+        batch.update(productRef, { batches: newBatches });
       }
     }
     
-    // 2. Mark the purchase for deletion
-    updates[`/users/${uid}/purchases/${purchase.key}`] = null;
+    const purchaseRef = doc(db, `users/${uid}/purchases`, purchase.id);
+    batch.delete(purchaseRef);
 
     try {
-      await database.ref().update(updates);
+      await batch.commit();
       alert("Purchase deleted successfully and stock adjusted.");
     } catch(error) {
       console.error("Error deleting purchase:", error);
@@ -441,48 +403,39 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddPayment = async (paymentData: Omit<Payment, 'id' | 'key' | 'voucherNumber'>): Promise<Payment | null> => {
+  const handleAddPayment = async (paymentData: Omit<Payment, 'id' | 'voucherNumber'>): Promise<Payment | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    const paymentsRef = database.ref(`users/${uid}/payments`);
-    const newPaymentRef = paymentsRef.push();
+    const paymentsCollectionRef = collection(db, `users/${uid}/payments`);
     
-    // Generate voucher number
-    const snapshot = await paymentsRef.get();
-    const count = snapshot.exists() ? snapshot.numChildren() : 0;
+    const count = payments.length;
     const voucherPrefix = 'PV-';
     const newVoucherNumber = `${voucherPrefix}${(count + 1).toString().padStart(4, '0')}`;
     
-    const newPayment: Payment = {
-      ...paymentData,
-      id: `pay_${newPaymentRef.key}`,
-      key: newPaymentRef.key!,
-      voucherNumber: newVoucherNumber,
-    };
-    
-    await newPaymentRef.set(newPayment);
-    return newPayment;
+    const newPaymentData = { ...paymentData, voucherNumber: newVoucherNumber };
+    const docRef = await addDoc(paymentsCollectionRef, newPaymentData);
+    return { ...newPaymentData, id: docRef.id };
   };
 
-  const handleUpdatePayment = async (paymentKey: string, paymentData: Omit<Payment, 'id' | 'key'>) => {
+  const handleUpdatePayment = async (paymentId: string, paymentData: Omit<Payment, 'id'>) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
+    const paymentRef = doc(db, `users/${uid}/payments`, paymentId);
     try {
-        await paymentRef.update(paymentData);
+        await updateDoc(paymentRef, paymentData);
     } catch(err) {
         console.error("Failed to update payment", err);
         alert("Error: Could not update the payment record.");
     }
   };
 
-  const handleDeletePayment = async (paymentKey: string) => {
-    if (!currentUser || !paymentKey) return;
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!currentUser || !paymentId) return;
     if (window.confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) {
         try {
             const uid = currentUser.uid;
-            const paymentRef = database.ref(`users/${uid}/payments/${paymentKey}`);
-            await paymentRef.remove();
+            const paymentRef = doc(db, `users/${uid}/payments`, paymentId);
+            await deleteDoc(paymentRef);
         } catch(err) {
             console.error("Failed to delete payment", err);
             alert("Error: Could not delete the payment record.");
@@ -501,6 +454,7 @@ const App: React.FC = () => {
         return <PermissionErrorComponent />;
     }
     switch (activeView) {
+      case 'salesDashboard': return <SalesDashboard bills={bills} products={products} />;
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
@@ -509,7 +463,7 @@ const App: React.FC = () => {
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
-      default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} />;
+      default: return <SalesDashboard bills={bills} products={products} />;
     }
   };
 

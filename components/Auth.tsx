@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth } from '../firebase';
-// Fix: Removed v9 modular imports, as compat API is now used.
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, AuthError } from 'firebase/auth';
 import Card from './common/Card';
 
 const Auth: React.FC = () => {
@@ -18,26 +18,16 @@ const Auth: React.FC = () => {
 
     try {
       if (isLogin) {
-        // Fix: Use v8 compat API for signing in
-        await auth.signInWithEmailAndPassword(email, password);
+        await signInWithEmailAndPassword(auth, email, password);
       } else {
-        // Fix: Use v8 compat API for creating user and updating profile
-        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        if (userCredential.user) {
-          await userCredential.user.updateProfile({ displayName: name });
-        }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: name });
       }
-    } catch (err: any) { // Fix: Use 'any' type for error as v9 AuthError is not available
-      const authError = err;
+    } catch (err) {
+      const authError = err as AuthError;
       switch (authError.code) {
-        case 'auth/user-not-found':
-          setError('No account found with this email.');
-          break;
-        case 'auth/wrong-password':
-          setError('Incorrect password. Please try again.');
-          break;
         case 'auth/invalid-credential':
-          setError('The email or password you entered is incorrect. Please double-check your credentials.');
+          setError('Incorrect email or password. Please try again.');
           break;
         case 'auth/email-already-in-use':
           setError('This email is already registered. Please login.');
@@ -45,6 +35,9 @@ const Auth: React.FC = () => {
         case 'auth/weak-password':
           setError('Password should be at least 6 characters.');
           break;
+        case 'auth/invalid-email':
+            setError('Please enter a valid email address.');
+            break;
         default:
           setError('Failed to authenticate. Please try again.');
           console.error(authError);

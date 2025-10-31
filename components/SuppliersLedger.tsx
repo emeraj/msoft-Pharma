@@ -44,7 +44,7 @@ interface SuppliersLedgerProps {
   purchases: Purchase[];
   payments: Payment[];
   companyProfile: CompanyProfile;
-  onUpdateSupplier: (key: string, data: Omit<Supplier, 'id' | 'key'>) => void;
+  onUpdateSupplier: (id: string, data: Omit<Supplier, 'id'>) => void;
 }
 
 interface SupplierLedgerEntry extends Supplier {
@@ -58,7 +58,7 @@ interface EditSupplierModalProps {
     isOpen: boolean;
     onClose: () => void;
     supplier: Supplier;
-    onUpdate: (key: string, data: Omit<Supplier, 'id' | 'key'>) => void;
+    onUpdate: (id: string, data: Omit<Supplier, 'id'>) => void;
 }
 
 const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, supplier, onUpdate }) => {
@@ -83,11 +83,11 @@ const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, 
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!supplier.key) {
-            alert("Cannot update supplier: missing key.");
+        if (!supplier.id) {
+            alert("Cannot update supplier: missing ID.");
             return;
         }
-        onUpdate(supplier.key, {
+        onUpdate(supplier.id, {
             name: supplier.name, // name is not editable
             address: formState.address,
             phone: formState.phone,

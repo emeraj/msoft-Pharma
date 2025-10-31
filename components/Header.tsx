@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, HomeIcon } from './icons/Icons';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -118,6 +118,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
               Welcome, {user.displayName || user.email}
             </span>
              <nav className="hidden sm:flex space-x-2">
+              <NavButton label="Dashboard" view="salesDashboard" activeView={activeView} onClick={setActiveView} icon={<HomeIcon className="h-5 w-5" />} />
               <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
               <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
               <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
@@ -140,6 +141,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           </div>
         </div>
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
+            <NavButton label="Dashboard" view="salesDashboard" activeView={activeView} onClick={setActiveView} icon={<HomeIcon className="h-5 w-5" />} />
             <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
             <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
             <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
