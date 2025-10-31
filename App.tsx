@@ -220,6 +220,48 @@ const App: React.FC = () => {
     });
   };
   
+  const handleDeleteBatch = async (productId: string, batchId: string) => {
+    if (!currentUser) return;
+
+    // 1. Check if batch is used in any bills
+    const isInBill = bills.some(bill => 
+      bill.items.some(item => item.batchId === batchId)
+    );
+
+    if (isInBill) {
+      alert('Cannot delete batch: This batch is part of a sales record.');
+      return;
+    }
+
+    // 2. Check if batch is part of any purchase record
+    const isInPurchase = purchases.some(purchase => 
+      purchase.items.some(item => item.batchId === batchId)
+    );
+
+    if (isInPurchase) {
+      alert('Cannot delete batch: This batch is linked to a purchase entry. Please edit or delete the corresponding purchase to remove this batch.');
+      return;
+    }
+    
+    // 3. Find the product and update its batches array
+    const productToUpdate = products.find(p => p.id === productId);
+    if (!productToUpdate) {
+      alert('Error: Product not found.');
+      return;
+    }
+    
+    const updatedBatches = productToUpdate.batches.filter(b => b.id !== batchId);
+
+    try {
+      const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+      await updateDoc(productRef, { batches: updatedBatches });
+      alert('Batch deleted successfully.');
+    } catch (error) {
+      console.error("Error deleting batch:", error);
+      alert('Failed to delete batch.');
+    }
+  };
+
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
@@ -518,7 +560,7 @@ const App: React.FC = () => {
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} companies={companies} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} />;
       case 'daybook': return <DayBook bills={bills} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;

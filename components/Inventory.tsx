@@ -1,11 +1,12 @@
 
 
 
+
 import React, { useState, useMemo } from 'react';
 import type { Product, Batch, Company } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, DownloadIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon, TrashIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -48,12 +49,13 @@ interface InventoryProps {
   companies: Company[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
+  onDeleteBatch: (productId: string, batchId: string) => void;
 }
 
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct, onAddBatch }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct, onAddBatch, onDeleteBatch }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedProductForBatch, setSelectedProductForBatch] = useState<Product | null>(null);
@@ -69,15 +71,15 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct
       case 'all':
         return <AllItemStockView products={products} onOpenBatchModal={handleOpenBatchModal} />;
       case 'selected':
-        return <SelectedItemStockView products={products} />;
+        return <SelectedItemStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'batch':
-        return <BatchWiseStockView products={products} />;
+        return <BatchWiseStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'company':
         return <CompanyWiseStockView products={products} />;
       case 'expired':
-        return <ExpiredStockView products={products} />;
+        return <ExpiredStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'nearing_expiry':
-        return <NearingExpiryStockView products={products} />;
+        return <NearingExpiryStockView products={products} onDeleteBatch={onDeleteBatch} />;
       default:
         return <AllItemStockView products={products} onOpenBatchModal={handleOpenBatchModal} />;
     }
@@ -133,6 +135,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct
           onClose={() => { setBatchModalOpen(false); setSelectedProductForBatch(null); }}
           product={selectedProductForBatch}
           onAddBatch={onAddBatch}
+          onDeleteBatch={onDeleteBatch}
         />
       )}
     </div>
@@ -226,7 +229,7 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
     );
 };
 
-const SelectedItemStockView: React.FC<{products: Product[]}> = ({ products }) => {
+const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (productId: string, batchId: string) => void}> = ({ products, onDeleteBatch }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
@@ -272,7 +275,12 @@ const SelectedItemStockView: React.FC<{products: Product[]}> = ({ products }) =>
                            <span className="font-semibold">Total Stock: {selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0)}</span>
                         </div>
                     </div>
-                    <BatchListTable title="Batches for Selected Product" batches={selectedProduct.batches.map(b => ({...b, productName: selectedProduct.name, company: selectedProduct.company}))} showProductInfo={false} />
+                    <BatchListTable 
+                      title="Batches for Selected Product" 
+                      batches={selectedProduct.batches.map(b => ({...b, productName: selectedProduct.name, company: selectedProduct.company, productId: selectedProduct.id}))} 
+                      showProductInfo={false}
+                      onDeleteBatch={onDeleteBatch}
+                    />
                  </div>
             )}
         </Card>
@@ -357,40 +365,40 @@ const getExpiryDate = (expiryString: string): Date => {
     return new Date(year, month, 0); // Last day of the expiry month
 };
 
-const BatchWiseStockView: React.FC<{products: Product[]}> = ({ products }) => {
-    const allBatches = useMemo(() => products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company }))), [products]);
-    return <BatchListTable title="All Batches" batches={allBatches} />;
+const BatchWiseStockView: React.FC<{products: Product[], onDeleteBatch: (productId: string, batchId: string) => void}> = ({ products, onDeleteBatch }) => {
+    const allBatches = useMemo(() => products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id }))), [products]);
+    return <BatchListTable title="All Batches" batches={allBatches} onDeleteBatch={onDeleteBatch} />;
 };
 
-const ExpiredStockView: React.FC<{products: Product[]}> = ({ products }) => {
+const ExpiredStockView: React.FC<{products: Product[], onDeleteBatch: (productId: string, batchId: string) => void}> = ({ products, onDeleteBatch }) => {
     const today = new Date();
     const expiredBatches = useMemo(() => 
-        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company })))
+        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id })))
                 .filter(b => getExpiryDate(b.expiryDate) < today), 
     [products]);
-    return <BatchListTable title="Expired Stock" batches={expiredBatches} />;
+    return <BatchListTable title="Expired Stock" batches={expiredBatches} onDeleteBatch={onDeleteBatch} />;
 };
 
-const NearingExpiryStockView: React.FC<{products: Product[]}> = ({ products }) => {
+const NearingExpiryStockView: React.FC<{products: Product[], onDeleteBatch: (productId: string, batchId: string) => void}> = ({ products, onDeleteBatch }) => {
     const today = new Date();
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(today.getDate() + 30);
     
     const nearingExpiryBatches = useMemo(() => 
-        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company })))
+        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id })))
                 .filter(b => {
                     const expiry = getExpiryDate(b.expiryDate);
                     return expiry >= today && expiry <= thirtyDaysFromNow;
                 }), 
     [products]);
-    return <BatchListTable title="Stock Nearing Expiry (30 Days)" batches={nearingExpiryBatches} />;
+    return <BatchListTable title="Stock Nearing Expiry (30 Days)" batches={nearingExpiryBatches} onDeleteBatch={onDeleteBatch} />;
 };
 
 
 // --- Reusable & Helper Components ---
 
-interface BatchWithProductInfo extends Batch { productName: string; company: string; }
-const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[], showProductInfo?: boolean }> = ({ title, batches, showProductInfo = true }) => {
+interface BatchWithProductInfo extends Batch { productName: string; company: string; productId: string; }
+const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[], showProductInfo?: boolean; onDeleteBatch?: (productId: string, batchId: string) => void; }> = ({ title, batches, showProductInfo = true, onDeleteBatch }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const filteredBatches = useMemo(() =>
         batches.filter(b => 
@@ -456,6 +464,7 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                             <th className="px-6 py-3">Expiry</th>
                             <th className="px-6 py-3">Stock</th>
                             <th className="px-6 py-3">MRP</th>
+                            <th className="px-6 py-3">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -483,6 +492,21 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                                 <td className="px-6 py-4 flex items-center">{batch.expiryDate} {expiryBadge}</td>
                                 <td className="px-6 py-4 font-bold">{batch.stock}</td>
                                 <td className="px-6 py-4">₹{batch.mrp.toFixed(2)}</td>
+                                <td className="px-6 py-4">
+                                  {onDeleteBatch && (
+                                    <button
+                                      onClick={() => {
+                                        if (window.confirm(`Are you sure you want to delete batch "${batch.batchNumber}" for product "${batch.productName}"? This action cannot be undone.`)) {
+                                          onDeleteBatch(batch.productId, batch.id);
+                                        }
+                                      }}
+                                      className="text-red-500 hover:text-red-700 transition-colors"
+                                      title="Delete Batch"
+                                    >
+                                      <TrashIcon className="h-5 w-5" />
+                                    </button>
+                                  )}
+                                </td>
                             </tr>
                             );
                         })}
@@ -598,7 +622,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   );
 };
 
-const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onAddBatch: InventoryProps['onAddBatch']; }> = ({ isOpen, onClose, product, onAddBatch }) => {
+const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onAddBatch: InventoryProps['onAddBatch']; onDeleteBatch: InventoryProps['onDeleteBatch']; }> = ({ isOpen, onClose, product, onAddBatch, onDeleteBatch }) => {
   const [formState, setFormState] = useState({ batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: '' });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -654,6 +678,17 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
                             {statusBadge}
                             <span className="text-sm text-slate-600 dark:text-slate-400">MRP: ₹{batch.mrp.toFixed(2)}</span>
                             <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {batch.stock}</span>
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Are you sure you want to delete batch "${batch.batchNumber}"? This action cannot be undone.`)) {
+                                  onDeleteBatch(product.id, batch.id);
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                              title="Delete Batch"
+                            >
+                              <TrashIcon className="h-5 w-5" />
+                            </button>
                         </div>
                     </li>
                 );
