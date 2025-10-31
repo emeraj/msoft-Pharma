@@ -29,13 +29,14 @@ import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
 import PaymentEntry from './components/PaymentEntry';
+import SalesDashboard from './components/SalesDashboard';
 
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [activeView, setActiveView] = useState<AppView>('billing');
+  const [activeView, setActiveView] = useState<AppView>('dashboard');
   const [products, setProducts] = useState<Product[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -319,7 +320,7 @@ const App: React.FC = () => {
   const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const batch = writeBatch(db);
+    const fbBatch = writeBatch(db);
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
     const newCompanies = new Set<string>();
@@ -334,38 +335,71 @@ const App: React.FC = () => {
 
     for (const companyName of newCompanies) {
         const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
-        batch.set(newCompanyRef, { name: companyName });
+        fbBatch.set(newCompanyRef, { name: companyName });
     }
 
-    const itemsWithProductIds: PurchaseLineItem[] = [];
+    const itemsWithIds: PurchaseLineItem[] = [];
 
     for (const item of purchaseData.items) {
-        const batchId = `batch_${uniqueIdSuffix()}`;
-        const newBatchData = {
-            id: batchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-            stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
-        };
-        const finalItem = {...item, batchId};
+        let finalItem = { ...item };
 
         if (item.isNewProduct) {
+            const newBatchId = `batch_${uniqueIdSuffix()}`;
+            const newBatchData = {
+                id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+                stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+            };
             const newProductRef = doc(collection(db, `users/${uid}/products`));
-            batch.set(newProductRef, {
+            fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
                 batches: [newBatchData]
             });
             finalItem.productId = newProductRef.id;
-            finalItem.isNewProduct = false; // Mark as not new for future edits
+            finalItem.batchId = newBatchId;
+            finalItem.isNewProduct = false;
         } else if (item.productId) {
+            const product = products.find(p => p.id === item.productId);
+            if (!product) {
+                console.error("Product not found for purchase item", item);
+                continue;
+            }
+
+            const existingBatch = product.batches.find(b => b.batchNumber === item.batchNumber);
             const productRef = doc(db, `users/${uid}/products`, item.productId);
-            batch.update(productRef, { batches: arrayUnion(newBatchData) });
+
+            if (existingBatch) {
+                // Batch found! Update stock and other details.
+                const updatedBatches = product.batches.map(b => 
+                    b.id === existingBatch.id 
+                    ? { 
+                        ...b, 
+                        stock: b.stock + item.quantity,
+                        mrp: item.mrp,
+                        purchasePrice: item.purchasePrice,
+                        expiryDate: item.expiryDate
+                      } 
+                    : b
+                );
+                fbBatch.update(productRef, { batches: updatedBatches });
+                finalItem.batchId = existingBatch.id; // Link purchase to the existing batch
+            } else {
+                // Batch not found. Create a new one for this product.
+                const newBatchId = `batch_${uniqueIdSuffix()}`;
+                const newBatchData = {
+                    id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+                    stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                };
+                fbBatch.update(productRef, { batches: arrayUnion(newBatchData) });
+                finalItem.batchId = newBatchId; // Link purchase to the new batch
+            }
         }
-        itemsWithProductIds.push(finalItem);
+        itemsWithIds.push(finalItem);
     }
     
     const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
     const newPurchaseRef = doc(collection(db, `users/${uid}/purchases`));
-    batch.set(newPurchaseRef, { ...purchaseData, totalAmount, items: itemsWithProductIds });
-    await batch.commit();
+    fbBatch.set(newPurchaseRef, { ...purchaseData, totalAmount, items: itemsWithIds });
+    await fbBatch.commit();
   };
 
   const handleUpdatePurchase = async (
@@ -375,75 +409,92 @@ const App: React.FC = () => {
   ) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const batch = writeBatch(db);
+    const fbBatch = writeBatch(db);
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-    // Revert stock changes from original purchase by grouping items by product
-    const originalItemsByProduct = originalPurchase.items.reduce((acc, item) => {
-        if (item.productId) {
-            acc[item.productId] = (acc[item.productId] || []).concat(item);
-        }
-        return acc;
-    }, {} as Record<string, PurchaseLineItem[]>);
+    // Use a map to hold the next state of products being modified.
+    const productsToUpdate = new Map<string, Product>();
 
-    for (const productId in originalItemsByProduct) {
-        const product = products.find(p => p.id === productId);
-        if (!product) {
-            console.warn(`Product with ID ${productId} not found while reverting purchase.`);
-            continue;
+    const getMutableProduct = (productId: string): Product | null => {
+        if (productsToUpdate.has(productId)) {
+            return productsToUpdate.get(productId)!;
         }
-
-        let newBatches = [...product.batches];
-        for(const item of originalItemsByProduct[productId]) {
-            if (item.batchId) {
-                newBatches = newBatches.filter(b => b.id !== item.batchId);
-            } else {
-                console.warn("Reverting old purchase item without batchId. Using property matching.", item);
-                const batchIndex = newBatches.findIndex(b => 
-                    b.batchNumber === item.batchNumber && 
-                    b.mrp === item.mrp && 
-                    b.purchasePrice === item.purchasePrice);
-
-                if (batchIndex > -1) {
-                    newBatches.splice(batchIndex, 1);
-                }
-            }
+        const p = products.find(prod => prod.id === productId);
+        if (p) {
+            const pCopy = JSON.parse(JSON.stringify(p)); // Deep copy to avoid mutating state
+            productsToUpdate.set(productId, pCopy);
+            return pCopy;
         }
-        const productRef = doc(db, `users/${uid}/products`, product.id);
-        batch.update(productRef, { batches: newBatches });
+        return null;
+    };
+
+    // 1. REVERT STAGE: Simulate subtracting quantities from original purchase.
+    for (const item of originalPurchase.items) {
+        if (!item.productId || !item.batchId) continue;
+        const product = getMutableProduct(item.productId);
+        if (!product) continue;
+        
+        const batchIndex = product.batches.findIndex(b => b.id === item.batchId);
+        if (batchIndex > -1) {
+            product.batches[batchIndex].stock -= item.quantity;
+        }
     }
 
-    const updatedItemsWithProductIds: PurchaseLineItem[] = [];
-
-    // Apply stock changes for the updated purchase
+    // 2. APPLY STAGE: Simulate adding/updating quantities from new purchase data.
+    const updatedItemsWithIds: PurchaseLineItem[] = [];
     for (const item of updatedPurchaseData.items) {
-        const newBatchId = `batch_${uniqueIdSuffix()}`;
-        const newBatchData = {
-            id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-            stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
-        };
-        const finalItem = {...item, batchId: newBatchId};
-
+        let finalItem = { ...item };
+        
         if (item.isNewProduct) {
-             const newProductRef = doc(collection(db, `users/${uid}/products`));
-             batch.set(newProductRef, {
-                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
-                 batches: [newBatchData]
-             });
-             finalItem.productId = newProductRef.id;
-             finalItem.isNewProduct = false; // Mark as not new for future edits
+            const newBatchId = `batch_${uniqueIdSuffix()}`;
+            const newProductRef = doc(collection(db, `users/${uid}/products`));
+            fbBatch.set(newProductRef, {
+                name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
+                batches: [{
+                    id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+                    stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                }]
+            });
+            finalItem.productId = newProductRef.id;
+            finalItem.batchId = newBatchId;
+            finalItem.isNewProduct = false;
         } else if (item.productId) {
-            const productRef = doc(db, `users/${uid}/products`, item.productId);
-            batch.update(productRef, { batches: arrayUnion(newBatchData) });
+            const product = getMutableProduct(item.productId);
+            if (!product) continue;
+
+            const batchIndex = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
+
+            if (batchIndex > -1) { // Batch found, update it.
+                product.batches[batchIndex].stock += item.quantity;
+                product.batches[batchIndex].mrp = item.mrp;
+                product.batches[batchIndex].purchasePrice = item.purchasePrice;
+                product.batches[batchIndex].expiryDate = item.expiryDate;
+                finalItem.batchId = product.batches[batchIndex].id;
+            } else { // Batch not found, create it.
+                const newBatchId = `batch_${uniqueIdSuffix()}`;
+                product.batches.push({
+                    id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
+                    stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                });
+                finalItem.batchId = newBatchId;
+            }
         }
-        updatedItemsWithProductIds.push(finalItem);
+        updatedItemsWithIds.push(finalItem);
+    }
+    
+    // 3. COMMIT STAGE: Write all calculated changes to the batch.
+    for (const [productId, product] of productsToUpdate.entries()) {
+        const productRef = doc(db, `users/${uid}/products`, productId);
+        // Prevent negative stock, just in case.
+        product.batches.forEach(b => { if (b.stock < 0) b.stock = 0; });
+        fbBatch.update(productRef, { batches: product.batches });
     }
     
     const purchaseRef = doc(db, `users/${uid}/purchases`, purchaseId);
-    batch.update(purchaseRef, {...updatedPurchaseData, items: updatedItemsWithProductIds});
+    fbBatch.update(purchaseRef, {...updatedPurchaseData, items: updatedItemsWithIds});
     
     try {
-      await batch.commit();
+      await fbBatch.commit();
       alert("Purchase updated successfully and stock adjusted.");
     } catch(error) {
       console.error("Error updating purchase:", error);
@@ -453,52 +504,41 @@ const App: React.FC = () => {
 
   const handleDeletePurchase = async (purchase: Purchase) => {
     if (!currentUser || !purchase.id) return;
-    if (!window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This will also remove the associated stock from your inventory.`)) return;
+    if (!window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This will subtract the purchased quantities from your inventory.`)) return;
 
     const uid = currentUser.uid;
-    const batch = writeBatch(db);
+    const fbBatch = writeBatch(db);
 
-    // Group items by product to correctly revert stock
-    const itemsByProduct = purchase.items.reduce((acc, item) => {
-        if (item.productId) {
-            acc[item.productId] = (acc[item.productId] || []).concat(item);
-        }
-        return acc;
-    }, {} as Record<string, PurchaseLineItem[]>);
-
-    for (const productId in itemsByProduct) {
-        const product = products.find(p => p.id === productId);
-        if (!product) {
-            console.warn(`Product with ID ${productId} not found while deleting purchase.`);
+    for (const item of purchase.items) {
+        if (!item.productId || !item.batchId) {
+            console.warn("Cannot revert stock for purchase item without productId or batchId", item);
             continue;
         }
 
-        let newBatches = [...product.batches];
-        for (const item of itemsByProduct[productId]) {
-            if (item.batchId) {
-                newBatches = newBatches.filter(b => b.id !== item.batchId);
-            } else {
-                console.warn("Deleting old purchase item without batchId. Using property matching.", item);
-                const batchIndex = newBatches.findIndex(b => 
-                    b.batchNumber === item.batchNumber && 
-                    b.mrp === item.mrp && 
-                    b.purchasePrice === item.purchasePrice);
-                
-                if (batchIndex > -1) {
-                    newBatches.splice(batchIndex, 1);
-                }
-            }
+        const product = products.find(p => p.id === item.productId);
+        if (!product) {
+            console.warn(`Product with ID ${item.productId} not found while deleting purchase.`);
+            continue;
         }
-        
+
+        // Find the batch and subtract the quantity
+        const updatedBatches = product.batches.map(b => {
+            if (b.id === item.batchId) {
+                const newStock = b.stock - item.quantity;
+                return { ...b, stock: newStock < 0 ? 0 : newStock }; // Prevent negative stock
+            }
+            return b;
+        });
+
         const productRef = doc(db, `users/${uid}/products`, product.id);
-        batch.update(productRef, { batches: newBatches });
+        fbBatch.update(productRef, { batches: updatedBatches });
     }
     
     const purchaseRef = doc(db, `users/${uid}/purchases`, purchase.id);
-    batch.delete(purchaseRef);
+    fbBatch.delete(purchaseRef);
 
     try {
-      await batch.commit();
+      await fbBatch.commit();
       alert("Purchase deleted successfully and stock adjusted.");
     } catch(error) {
       console.error("Error deleting purchase:", error);
@@ -557,6 +597,7 @@ const App: React.FC = () => {
         return <PermissionErrorComponent />;
     }
     switch (activeView) {
+      case 'dashboard': return <SalesDashboard bills={bills} products={products} />;
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
