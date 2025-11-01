@@ -1,9 +1,5 @@
-
-
-
-
 import React, { useState, useMemo } from 'react';
-import type { Product, Batch, Company } from '../types';
+import type { Product, Batch, Company, Bill, Purchase } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, DownloadIcon, TrashIcon } from './icons/Icons';
@@ -47,6 +43,8 @@ const exportToCsv = (filename: string, data: any[]) => {
 interface InventoryProps {
   products: Product[];
   companies: Company[];
+  bills: Bill[];
+  purchases: Purchase[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
   onDeleteBatch: (productId: string, batchId: string) => void;
@@ -55,7 +53,7 @@ interface InventoryProps {
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct, onAddBatch, onDeleteBatch }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, onAddProduct, onAddBatch, onDeleteBatch }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [selectedProductForBatch, setSelectedProductForBatch] = useState<Product | null>(null);
@@ -69,19 +67,19 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, onAddProduct
   const renderSubView = () => {
     switch (activeSubView) {
       case 'all':
-        return <AllItemStockView products={products} onOpenBatchModal={handleOpenBatchModal} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} />;
       case 'selected':
         return <SelectedItemStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'batch':
         return <BatchWiseStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'company':
-        return <CompanyWiseStockView products={products} />;
+        return <CompanyWiseStockView products={products} purchases={purchases} bills={bills} />;
       case 'expired':
         return <ExpiredStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'nearing_expiry':
         return <NearingExpiryStockView products={products} onDeleteBatch={onDeleteBatch} />;
       default:
-        return <AllItemStockView products={products} onOpenBatchModal={handleOpenBatchModal} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} />;
     }
   };
 
@@ -146,32 +144,93 @@ const inputStyle = "w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-sl
 const selectStyle = `${inputStyle} appearance-none`;
 
 // --- Sub View Components ---
+interface AllItemStockViewProps {
+    products: Product[];
+    purchases: Purchase[];
+    bills: Bill[];
+    onOpenBatchModal: (product: Product) => void;
+}
 
-const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (product: Product) => void}> = ({ products, onOpenBatchModal }) => {
+const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, onOpenBatchModal }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [companyFilter, setCompanyFilter] = useState('');
-    const companies = useMemo(() => [...new Set(products.map(p => p.company))], [products]);
-  
-    const filteredProducts = useMemo(() => {
-        return products.filter(product =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        (companyFilter === '' || product.company === companyFilter)
-        );
-    }, [products, searchTerm, companyFilter]);
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+
+    const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
+    
+    const reportData = useMemo(() => {
+        const startDate = fromDate ? new Date(fromDate) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+
+        const endDate = toDate ? new Date(toDate) : null;
+        if (endDate) endDate.setHours(23, 59, 59, 999);
+
+        return products
+            .filter(product =>
+                product.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
+                (companyFilter === '' || product.company === companyFilter)
+            )
+            .map(product => {
+                let purchasesInPeriod = 0;
+                let salesInPeriod = 0;
+
+                purchases.forEach(purchase => {
+                    const purchaseDate = new Date(purchase.invoiceDate);
+                    if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) {
+                        purchase.items.forEach(item => {
+                            if (item.productId === product.id) {
+                                purchasesInPeriod += item.quantity;
+                            }
+                        });
+                    }
+                });
+
+                bills.forEach(bill => {
+                    const billDate = new Date(bill.date);
+                    if ((!startDate || billDate >= startDate) && (!endDate || billDate <= endDate)) {
+                        bill.items.forEach(item => {
+                            if (item.productId === product.id) {
+                                salesInPeriod += item.quantity;
+                            }
+                        });
+                    }
+                });
+                
+                const currentStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
+                const openingStock = currentStock - purchasesInPeriod + salesInPeriod;
+                const stockValue = product.batches.reduce((sum, batch) => sum + (batch.mrp * batch.stock), 0);
+
+                return {
+                    id: product.id,
+                    name: product.name,
+                    company: product.company,
+                    openingStock,
+                    purchasedQty: purchasesInPeriod,
+                    soldQty: salesInPeriod,
+                    currentStock,
+                    stockValue,
+                    product // Pass the original product object for the action button
+                };
+            }).sort((a,b) => a.name.localeCompare(b.name));
+    }, [products, purchases, bills, searchTerm, companyFilter, fromDate, toDate]);
     
     const handleExport = () => {
-        const exportData = filteredProducts.map(product => ({
-            'Product Name': product.name,
-            'Company': product.company,
-            'Total Stock': product.batches.reduce((sum, batch) => sum + batch.stock, 0),
-            'Batches': product.batches.length,
+        const exportData = reportData.map(data => ({
+            'Product Name': data.name,
+            'Company': data.company,
+            'Opening Stock': data.openingStock,
+            'Purchased Qty (Period)': data.purchasedQty,
+            'Sold Qty (Period)': data.soldQty,
+            'Current Stock': data.currentStock,
+            'Stock Value (MRP)': data.stockValue.toFixed(2),
         }));
-        exportToCsv('all_item_stock', exportData);
+        exportToCsv('all_item_stock_report', exportData);
     };
 
     return (
-        <Card>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <Card title="All Item Stock Report">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                 <input
                     type="text"
                     placeholder="Search by product name..."
@@ -187,9 +246,17 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                     <option value="">All Companies</option>
                     {companies.map(company => <option key={company} value={company}>{company}</option>)}
                 </select>
+                <div className="flex items-center gap-2">
+                    <label htmlFor="fromDate-ais" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">From</label>
+                    <input type="date" id="fromDate-ais" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
+                </div>
+                <div className="flex items-center gap-2">
+                    <label htmlFor="toDate-ais" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">To</label>
+                    <input type="date" id="toDate-ais" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
+                </div>
             </div>
-            <div className="mb-6">
-                 <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+            <div className="flex justify-end mb-4">
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
                     <DownloadIcon className="h-5 w-5" /> Export to Excel
                 </button>
             </div>
@@ -199,29 +266,32 @@ const AllItemStockView: React.FC<{products: Product[], onOpenBatchModal: (produc
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
                             <th scope="col" className="px-6 py-3">Company</th>
-                            <th scope="col" className="px-6 py-3">Total Stock</th>
-                            <th scope="col" className="px-6 py-3">Batches</th>
+                            <th scope="col" className="px-6 py-3 text-center">Opening Stock</th>
+                            <th scope="col" className="px-6 py-3 text-center">Purchased (Period)</th>
+                            <th scope="col" className="px-6 py-3 text-center">Sold (Period)</th>
+                            <th scope="col" className="px-6 py-3 text-center">Current Stock</th>
+                            <th scope="col" className="px-6 py-3 text-right">Stock Value (MRP)</th>
                             <th scope="col" className="px-6 py-3">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredProducts.map(product => {
-                            const totalStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
-                            return (
-                                <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                                    <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{product.name}</th>
-                                    <td className="px-6 py-4">{product.company}</td>
-                                    <td className="px-6 py-4 font-bold">{totalStock}</td>
-                                    <td className="px-6 py-4">{product.batches.length}</td>
-                                    <td className="px-6 py-4">
-                                        <button onClick={() => onOpenBatchModal(product)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">View/Add Batch</button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                        {reportData.map(item => (
+                            <tr key={item.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{item.name}</th>
+                                <td className="px-6 py-4">{item.company}</td>
+                                <td className="px-6 py-4 text-center">{item.openingStock}</td>
+                                <td className="px-6 py-4 text-center">{item.purchasedQty}</td>
+                                <td className="px-6 py-4 text-center">{item.soldQty}</td>
+                                <td className="px-6 py-4 text-center font-bold">{item.currentStock}</td>
+                                <td className="px-6 py-4 text-right font-semibold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td className="px-6 py-4">
+                                    <button onClick={() => onOpenBatchModal(item.product)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">View/Add Batch</button>
+                                </td>
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
-                {filteredProducts.length === 0 && (
+                {reportData.length === 0 && (
                     <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No products found.</p></div>
                 )}
             </div>
@@ -287,22 +357,79 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
     );
 };
 
-const CompanyWiseStockView: React.FC<{products: Product[]}> = ({ products }) => {
+const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[], bills: Bill[]}> = ({ products, purchases, bills }) => {
     const [companyFilter, setCompanyFilter] = useState('');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
     const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
 
-    const filteredAndSortedProducts = useMemo(() => {
-        return products
+    const reportData = useMemo(() => {
+        const startDate = fromDate ? new Date(fromDate) : null;
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+
+        const endDate = toDate ? new Date(toDate) : null;
+        if (endDate) endDate.setHours(23, 59, 59, 999);
+
+        const productData = products
             .filter(product => companyFilter === '' || product.company === companyFilter)
-            .sort((a, b) => a.name.localeCompare(b.name));
-    }, [products, companyFilter]);
+            .map(product => {
+                let purchasesInPeriod = 0;
+                let salesInPeriod = 0;
+
+                // Aggregate purchases for this product within the period
+                purchases.forEach(purchase => {
+                    const purchaseDate = new Date(purchase.invoiceDate);
+                    if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) {
+                        purchase.items.forEach(item => {
+                            if (item.productId === product.id) {
+                                purchasesInPeriod += item.quantity;
+                            }
+                        });
+                    }
+                });
+
+                // Aggregate sales for this product within the period
+                bills.forEach(bill => {
+                    const billDate = new Date(bill.date);
+                    if ((!startDate || billDate >= startDate) && (!endDate || billDate <= endDate)) {
+                        bill.items.forEach(item => {
+                            if (item.productId === product.id) {
+                                salesInPeriod += item.quantity;
+                            }
+                        });
+                    }
+                });
+                
+                const currentStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
+                // Calculate opening stock by working backwards from the current stock
+                const openingStock = currentStock - purchasesInPeriod + salesInPeriod;
+                const stockValue = product.batches.reduce((sum, batch) => sum + (batch.mrp * batch.stock), 0);
+
+                return {
+                    id: product.id,
+                    name: product.name,
+                    company: product.company,
+                    openingStock,
+                    purchasedQty: purchasesInPeriod,
+                    soldQty: salesInPeriod,
+                    currentStock,
+                    stockValue
+                };
+            });
+
+        return productData.sort((a, b) => a.name.localeCompare(b.name));
+    }, [products, purchases, bills, companyFilter, fromDate, toDate]);
 
     const handleExport = () => {
-        const exportData = filteredAndSortedProducts.map(product => ({
-            'Product Name': product.name,
-            'Company': product.company,
-            'Total Stock': product.batches.reduce((sum, b) => sum + b.stock, 0),
+        const exportData = reportData.map(data => ({
+            'Product Name': data.name,
+            'Company': data.company,
+            'Opening Stock': data.openingStock,
+            'Purchased Qty (Period)': data.purchasedQty,
+            'Sold Qty (Period)': data.soldQty,
+            'Current Stock': data.currentStock,
+            'Stock Value (MRP)': data.stockValue.toFixed(2),
         }));
         const filename = companyFilter ? `stock_for_${companyFilter.replace(/ /g, '_')}` : 'company_wise_stock';
         exportToCsv(filename, exportData);
@@ -310,20 +437,28 @@ const CompanyWiseStockView: React.FC<{products: Product[]}> = ({ products }) => 
 
     return (
         <Card title="Company-wise Stock">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                  <select
                     value={companyFilter}
                     onChange={e => setCompanyFilter(e.target.value)}
-                    className={selectStyle}
+                    className={`${selectStyle} lg:col-span-2`}
                 >
                     <option value="">All Companies</option>
                     {companies.map(company => <option key={company} value={company}>{company}</option>)}
                 </select>
-                <div className="flex justify-start sm:justify-end">
-                    <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200 h-full">
-                        <DownloadIcon className="h-5 w-5" /> Export to Excel
-                    </button>
+                <div className="flex items-center gap-2">
+                    <label htmlFor="fromDate-cws" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">From</label>
+                    <input type="date" id="fromDate-cws" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
                 </div>
+                <div className="flex items-center gap-2">
+                    <label htmlFor="toDate-cws" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">To</label>
+                    <input type="date" id="toDate-cws" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
+                </div>
+            </div>
+            <div className="flex justify-end mb-4">
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                    <DownloadIcon className="h-5 w-5" /> Export to Excel
+                </button>
             </div>
 
             <div className="overflow-x-auto">
@@ -332,25 +467,30 @@ const CompanyWiseStockView: React.FC<{products: Product[]}> = ({ products }) => 
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
                             <th scope="col" className="px-6 py-3">Company</th>
-                            <th scope="col" className="px-6 py-3">Total Stock</th>
+                            <th scope="col" className="px-6 py-3 text-center">Opening Stock</th>
+                            <th scope="col" className="px-6 py-3 text-center">Purchased (Period)</th>
+                            <th scope="col" className="px-6 py-3 text-center">Sold (Period)</th>
+                            <th scope="col" className="px-6 py-3 text-center">Current Stock</th>
+                            <th scope="col" className="px-6 py-3 text-right">Stock Value (MRP)</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredAndSortedProducts.map(product => {
-                            const totalStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
-                            return (
-                                <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                                    <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{product.name}</th>
-                                    <td className="px-6 py-4">{product.company}</td>
-                                    <td className="px-6 py-4 font-bold">{totalStock}</td>
-                                </tr>
-                            );
-                        })}
+                        {reportData.map(product => (
+                            <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{product.name}</th>
+                                <td className="px-6 py-4">{product.company}</td>
+                                <td className="px-6 py-4 text-center">{product.openingStock}</td>
+                                <td className="px-6 py-4 text-center">{product.purchasedQty}</td>
+                                <td className="px-6 py-4 text-center">{product.soldQty}</td>
+                                <td className="px-6 py-4 text-center font-bold">{product.currentStock}</td>
+                                <td className="px-6 py-4 text-right font-semibold">₹{product.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
-                {filteredAndSortedProducts.length === 0 && (
+                {reportData.length === 0 && (
                     <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                        <p>No products found for the selected company.</p>
+                        <p>No products found for the selected criteria.</p>
                     </div>
                 )}
             </div>
