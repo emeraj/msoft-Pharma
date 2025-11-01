@@ -357,37 +357,12 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
     );
 };
 
-const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-);
-
-const ChevronDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-    </svg>
-);
-
 const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[], bills: Bill[]}> = ({ products, purchases, bills }) => {
     const [companyFilter, setCompanyFilter] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
-    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
     const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
-
-    const toggleRow = (productId: string) => {
-        setExpandedRows(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(productId)) {
-                newSet.delete(productId);
-            } else {
-                newSet.add(productId);
-            }
-            return newSet;
-        });
-    };
     
     const reportData = useMemo(() => {
         const startDate = fromDate ? new Date(fromDate) : null;
@@ -397,9 +372,9 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
         if (endDate) endDate.setHours(23, 59, 59, 999);
 
         const companyProducts = products.filter(product => companyFilter === '' || product.company === companyFilter);
-
-        return companyProducts.map(product => {
-            const batchesData = product.batches.map(batch => {
+        
+        const allBatches = companyProducts.flatMap(product =>
+            product.batches.map(batch => {
                 let purchasesInPeriod = 0;
                 purchases.forEach(purchase => {
                     const purchaseDate = new Date(purchase.invoiceDate);
@@ -432,64 +407,50 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                     id: batch.id,
                     batchNumber: batch.batchNumber,
                     expiryDate: batch.expiryDate,
+                    mrp: batch.mrp,
+                    productName: product.name,
+                    company: product.company,
                     openingStock,
                     purchasedQty: purchasesInPeriod,
                     soldQty: salesInPeriod,
                     currentStock,
                     stockValue,
                 };
-            });
+            })
+        );
 
-            const totalOpeningStock = batchesData.reduce((sum, b) => sum + b.openingStock, 0);
-            const totalPurchasedQty = batchesData.reduce((sum, b) => sum + b.purchasedQty, 0);
-            const totalSoldQty = batchesData.reduce((sum, b) => sum + b.soldQty, 0);
-            const totalCurrentStock = batchesData.reduce((sum, b) => sum + b.currentStock, 0);
-            const totalStockValue = batchesData.reduce((sum, b) => sum + b.stockValue, 0);
-            
-            return {
-                id: product.id,
-                name: product.name,
-                company: product.company,
-                openingStock: totalOpeningStock,
-                purchasedQty: totalPurchasedQty,
-                soldQty: totalSoldQty,
-                currentStock: totalCurrentStock,
-                stockValue: totalStockValue,
-                batches: batchesData.sort((a,b) => a.batchNumber.localeCompare(b.batchNumber))
-            };
-        }).sort((a, b) => a.name.localeCompare(b.name));
+        return allBatches.sort((a, b) => {
+            const nameA = a.productName.toLowerCase();
+            const nameB = b.productName.toLowerCase();
+            if (nameA < nameB) return -1;
+            if (nameA > nameB) return 1;
+            return a.batchNumber.localeCompare(b.batchNumber);
+        });
     }, [products, purchases, bills, companyFilter, fromDate, toDate]);
+    
+    const processedReportData = useMemo(() => {
+        let lastProductName = '';
+        return reportData.map(batch => {
+            const showProductInfo = batch.productName !== lastProductName;
+            if (showProductInfo) {
+                lastProductName = batch.productName;
+            }
+            return { ...batch, showProductInfo };
+        });
+    }, [reportData]);
 
     const handleExport = () => {
-        const exportData: any[] = [];
-        reportData.forEach(product => {
-            // Product summary row
-            exportData.push({
-                'Product Name': product.name,
-                'Company': product.company,
-                'Batch No.': '',
-                'Expiry': '',
-                'Opening Stock': product.openingStock,
-                'Purchased Qty (Period)': product.purchasedQty,
-                'Sold Qty (Period)': product.soldQty,
-                'Current Stock': product.currentStock,
-                'Stock Value (MRP)': product.stockValue.toFixed(2),
-            });
-            // Batch detail rows
-            product.batches.forEach(batch => {
-                exportData.push({
-                    'Product Name': '',
-                    'Company': '',
-                    'Batch No.': batch.batchNumber,
-                    'Expiry': batch.expiryDate,
-                    'Opening Stock': batch.openingStock,
-                    'Purchased Qty (Period)': batch.purchasedQty,
-                    'Sold Qty (Period)': batch.soldQty,
-                    'Current Stock': batch.currentStock,
-                    'Stock Value (MRP)': batch.stockValue.toFixed(2),
-                });
-            });
-        });
+        const exportData = reportData.map(batch => ({
+            'Product Name': batch.productName,
+            'Company': batch.company,
+            'Batch No.': batch.batchNumber,
+            'Expiry': batch.expiryDate,
+            'Opening Stock': batch.openingStock,
+            'Purchased Qty (Period)': batch.purchasedQty,
+            'Sold Qty (Period)': batch.soldQty,
+            'Current Stock': batch.currentStock,
+            'Stock Value (MRP)': batch.stockValue.toFixed(2),
+        }));
 
         const filename = companyFilter ? `stock_for_${companyFilter.replace(/ /g, '_')}` : 'company_wise_stock';
         exportToCsv(filename, exportData);
@@ -527,6 +488,8 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
                             <th scope="col" className="px-6 py-3">Company</th>
+                            <th scope="col" className="px-6 py-3">Batch No.</th>
+                            <th scope="col" className="px-6 py-3">Expiry</th>
                             <th scope="col" className="px-6 py-3 text-center">Opening Stock</th>
                             <th scope="col" className="px-6 py-3 text-center">Purchased (Period)</th>
                             <th scope="col" className="px-6 py-3 text-center">Sold (Period)</th>
@@ -535,59 +498,20 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                         </tr>
                     </thead>
                     <tbody>
-                        {reportData.map(product => (
-                            <React.Fragment key={product.id}>
-                                <tr className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 cursor-pointer" onClick={() => toggleRow(product.id)}>
-                                    <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap flex items-center gap-2">
-                                        <button className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">
-                                            {expandedRows.has(product.id) ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronRightIcon className="h-4 w-4" />}
-                                        </button>
-                                        {product.name}
-                                    </th>
-                                    <td className="px-6 py-4">{product.company}</td>
-                                    <td className="px-6 py-4 text-center">{product.openingStock}</td>
-                                    <td className="px-6 py-4 text-center">{product.purchasedQty}</td>
-                                    <td className="px-6 py-4 text-center">{product.soldQty}</td>
-                                    <td className="px-6 py-4 text-center font-bold">{product.currentStock}</td>
-                                    <td className="px-6 py-4 text-right font-semibold">₹{product.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                </tr>
-                                {expandedRows.has(product.id) && (
-                                    <tr className="bg-slate-50 dark:bg-slate-900/50">
-                                        <td colSpan={7} className="p-2">
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-xs">
-                                                    <thead className="text-slate-600 dark:text-slate-400">
-                                                        <tr>
-                                                            <th className="px-4 py-2 text-left">Batch No.</th>
-                                                            <th className="px-4 py-2 text-left">Expiry</th>
-                                                            <th className="px-4 py-2 text-center">Opening</th>
-                                                            <th className="px-4 py-2 text-center">Purchased</th>
-                                                            <th className="px-4 py-2 text-center">Sold</th>
-                                                            <th className="px-4 py-2 text-center">Current</th>
-                                                            <th className="px-4 py-2 text-right">Value (MRP)</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {product.batches.map(batch => (
-                                                            <tr key={batch.id} className="border-t border-slate-200 dark:border-slate-700">
-                                                                <td className="px-4 py-2">{batch.batchNumber}</td>
-                                                                <td className="px-4 py-2">{batch.expiryDate}</td>
-                                                                <td className="px-4 py-2 text-center">{batch.openingStock}</td>
-                                                                <td className="px-4 py-2 text-center">{batch.purchasedQty}</td>
-                                                                <td className="px-4 py-2 text-center">{batch.soldQty}</td>
-                                                                <td className="px-4 py-2 text-center font-bold">{batch.currentStock}</td>
-                                                                <td className="px-4 py-2 text-right font-semibold">
-                                                                    ₹{batch.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </React.Fragment>
+                        {processedReportData.map(batch => (
+                            <tr key={batch.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">
+                                    {batch.showProductInfo ? batch.productName : ''}
+                                </th>
+                                <td className="px-6 py-4">{batch.showProductInfo ? batch.company : ''}</td>
+                                <td className="px-6 py-4">{batch.batchNumber}</td>
+                                <td className="px-6 py-4">{batch.expiryDate}</td>
+                                <td className="px-6 py-4 text-center">{batch.openingStock}</td>
+                                <td className="px-6 py-4 text-center">{batch.purchasedQty}</td>
+                                <td className="px-6 py-4 text-center">{batch.soldQty}</td>
+                                <td className="px-6 py-4 text-center font-bold">{batch.currentStock}</td>
+                                <td className="px-6 py-4 text-right font-semibold">₹{batch.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            </tr>
                         ))}
                     </tbody>
                 </table>
