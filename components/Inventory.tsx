@@ -446,8 +446,8 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
             'Batch No.': batch.batchNumber,
             'Expiry': batch.expiryDate,
             'Opening Stock': batch.openingStock,
-            'Purchased Qty (Period)': batch.purchasedQty,
-            'Sold Qty (Period)': batch.soldQty,
+            'Purchased (Period)': batch.purchasedQty,
+            'Sold (Period)': batch.soldQty,
             'Current Stock': batch.currentStock,
             'Stock Value (MRP)': batch.stockValue.toFixed(2),
         }));
