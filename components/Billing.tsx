@@ -115,6 +115,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
       const newItem: CartItem = {
         productId: product.id,
         productName: product.name,
+        composition: product.composition,
         batchId: batch.id,
         batchNumber: batch.batchNumber,
         expiryDate: batch.expiryDate,

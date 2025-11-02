@@ -210,6 +210,7 @@ const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: B
                                         <tr key={item.batchId} className={`border-b dark:border-slate-700 ${rowClass}`} title={rowTitle}>
                                             <td className="py-2">
                                                 {item.productName}
+                                                {item.composition && <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">{item.composition}</div>}
                                                 <div className="text-slate-500 dark:text-slate-400">
                                                   Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
                                                 </div>

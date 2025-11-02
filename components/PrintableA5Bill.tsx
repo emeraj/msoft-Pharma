@@ -141,7 +141,10 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> 
                         {items.map((item, index) => (
                             <tr key={item.batchId}>
                                 <td style={styles.td}>{index + 1}</td>
-                                <td style={styles.td}>{item.productName}</td>
+                                <td style={styles.td}>
+                                    {item.productName}
+                                    {item.composition && <div style={{ fontSize: '7pt', color: '#4a5568', fontStyle: 'italic' }}>{item.composition}</div>}
+                                </td>
                                 <td style={styles.td}>{item.hsnCode}</td>
                                 <td style={styles.td}>{item.batchNumber}</td>
                                 <td style={styles.td}>{item.expiryDate}</td>

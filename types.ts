@@ -20,6 +20,7 @@ export interface Product {
 export interface CartItem {
   productId: string;
   productName: string;
+  composition?: string;
   batchId: string;
   batchNumber: string;
   expiryDate: string;

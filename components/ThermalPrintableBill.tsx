@@ -71,6 +71,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
                 {items.map((item, index) => (
                     <div key={item.batchId} style={styles.spaceY1}>
                         <p>{index + 1}. {item.productName}</p>
+                        {item.composition && <p style={{fontSize: '8px', color: '#4A5568', margin: '2px 0 0 10px', fontStyle: 'italic'}}>{item.composition}</p>}
                         <div style={styles.flex}>
                             <div style={{...styles.flexGrow, fontSize: '8px', color: '#4A5568'}}>
                                 <span style={styles.mr2}>Batch:{item.batchNumber}</span>
