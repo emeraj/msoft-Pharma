@@ -13,6 +13,7 @@ export interface Product {
   company: string;
   hsnCode: string;
   gst: number;
+  composition?: string; // e.g., "Paracetamol 500mg"
   batches: Batch[];
 }
 
@@ -47,6 +48,7 @@ export interface PurchaseLineItem {
   company: string;
   hsnCode: string;
   gst: number;
+  composition?: string;
   productId?: string; // Firestore document ID of existing product
   batchId?: string; // ID of the batch created by this line item
   

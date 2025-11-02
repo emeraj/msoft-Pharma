@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Batch, Company, Bill, Purchase } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, DownloadIcon, TrashIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -46,6 +46,7 @@ interface InventoryProps {
   bills: Bill[];
   purchases: Purchase[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
+  onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
   onDeleteBatch: (productId: string, batchId: string) => void;
 }
@@ -53,21 +54,26 @@ interface InventoryProps {
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, onAddProduct, onAddBatch, onDeleteBatch }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
-  const [selectedProductForBatch, setSelectedProductForBatch] = useState<Product | null>(null);
-  const [activeSubView, setActiveSubView] = useState<InventorySubView>('all');
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const handleOpenBatchModal = (product: Product) => {
-    setSelectedProductForBatch(product);
+    setSelectedProduct(product);
     setBatchModalOpen(true);
+  };
+
+  const handleOpenEditModal = (product: Product) => {
+    setSelectedProduct(product);
+    setEditModalOpen(true);
   };
   
   const renderSubView = () => {
     switch (activeSubView) {
       case 'all':
-        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} />;
       case 'selected':
         return <SelectedItemStockView products={products} onDeleteBatch={onDeleteBatch} />;
       case 'batch':
@@ -79,10 +85,11 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
       case 'nearing_expiry':
         return <NearingExpiryStockView products={products} onDeleteBatch={onDeleteBatch} />;
       default:
-        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} />;
     }
   };
-
+  const [activeSubView, setActiveSubView] = useState<InventorySubView>('all');
+  
   const SubNavButton: React.FC<{view: InventorySubView, label: string}> = ({ view, label }) => (
     <button
         onClick={() => setActiveSubView(view)}
@@ -127,13 +134,22 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         companies={companies}
       />
 
-      {selectedProductForBatch && (
+      {selectedProduct && (
         <AddBatchModal
           isOpen={isBatchModalOpen}
-          onClose={() => { setBatchModalOpen(false); setSelectedProductForBatch(null); }}
-          product={selectedProductForBatch}
+          onClose={() => { setBatchModalOpen(false); setSelectedProduct(null); }}
+          product={selectedProduct}
           onAddBatch={onAddBatch}
           onDeleteBatch={onDeleteBatch}
+        />
+      )}
+      
+      {selectedProduct && (
+        <EditProductModal
+          isOpen={isEditModalOpen}
+          onClose={() => { setEditModalOpen(false); setSelectedProduct(null); }}
+          product={selectedProduct}
+          onUpdateProduct={onUpdateProduct}
         />
       )}
     </div>
@@ -149,9 +165,10 @@ interface AllItemStockViewProps {
     purchases: Purchase[];
     bills: Bill[];
     onOpenBatchModal: (product: Product) => void;
+    onOpenEditModal: (product: Product) => void;
 }
 
-const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, onOpenBatchModal }) => {
+const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, onOpenBatchModal, onOpenEditModal }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [companyFilter, setCompanyFilter] = useState('');
     const [fromDate, setFromDate] = useState('');
@@ -205,6 +222,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     id: product.id,
                     name: product.name,
                     company: product.company,
+                    composition: product.composition,
                     openingStock,
                     purchasedQty: purchasesInPeriod,
                     soldQty: salesInPeriod,
@@ -219,6 +237,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
         const exportData = reportData.map(data => ({
             'Product Name': data.name,
             'Company': data.company,
+            'Composition': data.composition,
             'Opening Stock': data.openingStock,
             'Purchased Qty (Period)': data.purchasedQty,
             'Sold Qty (Period)': data.soldQty,
@@ -265,27 +284,34 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
-                            <th scope="col" className="px-6 py-3">Company</th>
                             <th scope="col" className="px-6 py-3 text-center">Opening Stock</th>
-                            <th scope="col" className="px-6 py-3 text-center">Purchased (Period)</th>
-                            <th scope="col" className="px-6 py-3 text-center">Sold (Period)</th>
+                            <th scope="col" className="px-6 py-3 text-center">Purchased</th>
+                            <th scope="col" className="px-6 py-3 text-center">Sold</th>
                             <th scope="col" className="px-6 py-3 text-center">Current Stock</th>
-                            <th scope="col" className="px-6 py-3 text-right">Stock Value (MRP)</th>
+                            <th scope="col" className="px-6 py-3 text-right">Stock Value</th>
                             <th scope="col" className="px-6 py-3">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {reportData.map(item => (
                             <tr key={item.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                                <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{item.name}</th>
-                                <td className="px-6 py-4">{item.company}</td>
+                                <td scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">
+                                    {item.name}
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">{item.company}</p>
+                                    <p className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">{item.composition}</p>
+                                </td>
                                 <td className="px-6 py-4 text-center">{item.openingStock}</td>
                                 <td className="px-6 py-4 text-center">{item.purchasedQty}</td>
                                 <td className="px-6 py-4 text-center">{item.soldQty}</td>
                                 <td className="px-6 py-4 text-center font-bold">{item.currentStock}</td>
                                 <td className="px-6 py-4 text-right font-semibold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4">
-                                    <button onClick={() => onOpenBatchModal(item.product)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">View/Add Batch</button>
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => onOpenBatchModal(item.product)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">View/Add Batch</button>
+                                        <button onClick={() => onOpenEditModal(item.product)} title="Edit Product" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50">
+                                            <PencilIcon className="h-4 w-4" />
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -339,6 +365,7 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
                     <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-lg border dark:border-slate-600 mb-4">
                         <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
                         <p className="text-sm text-slate-700 dark:text-slate-300">{selectedProduct.company}</p>
+                        <p className="text-sm text-indigo-700 dark:text-indigo-300 font-medium mt-1">{selectedProduct.composition}</p>
                         <div className="flex gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
                            <span>HSN: {selectedProduct.hsnCode}</span>
                            <span>GST: {selectedProduct.gst}%</span>
@@ -690,7 +717,7 @@ const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[] }> = ({ isOpen, onClose, onAddProduct, companies }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12',
+    name: '', company: '', hsnCode: '', gst: '12', composition: '',
     batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
   });
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
@@ -718,16 +745,16 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, company, hsnCode, gst, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
+    const { name, company, hsnCode, gst, composition, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
     if (!name || !company || !batchNumber || !expiryDate || !stock || !mrp) return;
 
     onAddProduct(
-      { name, company, hsnCode, gst: parseFloat(gst) },
+      { name, company, hsnCode, gst: parseFloat(gst), composition },
       { batchNumber, expiryDate, stock: parseInt(stock), mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) }
     );
     onClose();
     setFormState({
-        name: '', company: '', hsnCode: '', gst: '12',
+        name: '', company: '', hsnCode: '', gst: '12', composition: '',
         batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
     });
   };
@@ -771,6 +798,9 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
             <option value="12">GST 12%</option>
             <option value="18">GST 18%</option>
           </select>
+           <div className="sm:col-span-2">
+                <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
+            </div>
         </div>
         <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">First Batch Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -788,6 +818,64 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
     </Modal>
   );
 };
+
+const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; }> = ({ isOpen, onClose, product, onUpdateProduct }) => {
+  const [formState, setFormState] = useState({
+    name: '', company: '', hsnCode: '', gst: '12', composition: ''
+  });
+  
+  useEffect(() => {
+    if (product) {
+        setFormState({
+            name: product.name,
+            company: product.company,
+            hsnCode: product.hsnCode,
+            gst: String(product.gst),
+            composition: product.composition || ''
+        });
+    }
+  }, [product, isOpen]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormState({ ...formState, [e.target.name]: e.target.value });
+  };
+  
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formState.name || !formState.company) return;
+
+    onUpdateProduct(product.id, {
+        ...formState,
+        gst: parseFloat(formState.gst)
+    });
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Product: ${product.name}`}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
+          <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
+          <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
+          <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
+            <option value="5">GST 5%</option>
+            <option value="12">GST 12%</option>
+            <option value="18">GST 18%</option>
+          </select>
+          <div className="sm:col-span-2">
+            <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Product</button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
 
 const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onAddBatch: InventoryProps['onAddBatch']; onDeleteBatch: InventoryProps['onDeleteBatch']; }> = ({ isOpen, onClose, product, onAddBatch, onDeleteBatch }) => {
   const [formState, setFormState] = useState({ batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: '' });

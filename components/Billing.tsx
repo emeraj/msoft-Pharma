@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
-import { TrashIcon } from './icons/Icons';
+import Modal from './common/Modal';
+import { TrashIcon, SwitchHorizontalIcon } from './icons/Icons';
 import PrintableA5Bill from './PrintableA5Bill';
 
 interface BillingProps {
@@ -21,10 +22,66 @@ const getExpiryDate = (expiryString: string): Date => {
 };
 
 
+const SubstituteModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    sourceProduct: Product | null;
+    substitutes: Product[];
+    onAddToCart: (product: Product, batch: Batch) => void;
+}> = ({ isOpen, onClose, sourceProduct, substitutes, onAddToCart }) => {
+    if (!sourceProduct) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Substitutes for ${sourceProduct.name}`}>
+            <div className="space-y-4">
+                <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                    <p className="font-semibold text-slate-800 dark:text-slate-200">Original Product</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">{sourceProduct.name} by {sourceProduct.company}</p>
+                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{sourceProduct.composition}</p>
+                </div>
+
+                <div className="max-h-96 overflow-y-auto space-y-3">
+                    {substitutes.length > 0 ? (
+                        substitutes.map(product => (
+                            <div key={product.id} className="p-3 border dark:border-slate-600 rounded-lg">
+                                <p className="font-semibold text-slate-800 dark:text-slate-200">{product.name}</p>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">{product.company}</p>
+                                <ul className="mt-2 space-y-1">
+                                    {product.batches.filter(b => b.stock > 0).map(batch => (
+                                        <li key={batch.id} className="flex justify-between items-center text-sm p-2 bg-slate-50 dark:bg-slate-700/50 rounded">
+                                            <div>
+                                                <span>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                                <span className="ml-3">Exp: {batch.expiryDate}</span>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
+                                                <span className="text-green-600 dark:text-green-400">Stock: {batch.stock}</span>
+                                                <button onClick={() => { onAddToCart(product, batch); onClose(); }} className="px-3 py-1 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ))
+                    ) : (
+                        <p className="text-center text-slate-600 dark:text-slate-400 py-6">No substitutes with the same composition found in stock.</p>
+                    )}
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
+
 const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProfile }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
+  const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
+  const [substituteOptions, setSubstituteOptions] = useState<Product[]>([]);
+  const [sourceProductForSub, setSourceProductForSub] = useState<Product | null>(null);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -87,6 +144,23 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
 
   const removeFromCart = (batchId: string) => {
     setCart(cart.filter(item => item.batchId !== batchId));
+  };
+
+  const handleFindSubstitutes = (product: Product) => {
+    if (!product.composition || product.composition.trim() === '') {
+        alert('Composition details not available for this product. Please update it in the inventory.');
+        return;
+    }
+    const compositionToFind = product.composition.trim().toLowerCase();
+    const foundSubstitutes = products.filter(p =>
+        p.id !== product.id &&
+        p.composition?.trim().toLowerCase() === compositionToFind &&
+        p.batches.some(b => b.stock > 0)
+    );
+
+    setSourceProductForSub(product);
+    setSubstituteOptions(foundSubstitutes);
+    setSubstituteModalOpen(true);
   };
   
   const { subTotal, totalGst, grandTotal } = useMemo(() => {
@@ -173,7 +247,17 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                 <ul>
                   {searchResults.map(product => (
                     <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
-                      <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200">{product.name}</div>
+                      <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
+                        <span>{product.name}</span>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
+                            className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2 py-1 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                            title="Find substitute medicines"
+                        >
+                            <SwitchHorizontalIcon className="h-4 w-4" />
+                            Substitutes
+                        </button>
+                      </div>
                       <ul className="pl-4">
                         {product.batches
                           .filter(b => b.stock > 0)
@@ -309,6 +393,13 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
             </div>
         </Card>
       </div>
+      <SubstituteModal 
+        isOpen={isSubstituteModalOpen}
+        onClose={() => setSubstituteModalOpen(false)}
+        sourceProduct={sourceProductForSub}
+        substitutes={substituteOptions}
+        onAddToCart={handleAddToCart}
+      />
     </div>
   );
 };
