@@ -363,6 +363,7 @@ const App: React.FC = () => {
             const newProductRef = doc(collection(db, `users/${uid}/products`));
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
+                composition: item.composition,
                 batches: [newBatchData]
             });
             finalItem.productId = newProductRef.id;
@@ -461,6 +462,7 @@ const App: React.FC = () => {
             const newProductRef = doc(collection(db, `users/${uid}/products`));
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
+                composition: item.composition,
                 batches: [{
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
                     stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,

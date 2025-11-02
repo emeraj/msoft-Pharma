@@ -131,7 +131,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         isNewProduct: false,
         productSearch: '',
         selectedProduct: null as Product | null,
-        productName: '', company: '', hsnCode: '', gst: '12',
+        productName: '', company: '', hsnCode: '', gst: '12', composition: '',
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: ''
     };
     const [formState, setFormState] = useState(initialFormState);
@@ -187,7 +187,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
+        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
 
         if (isNewProduct && (!productName || !company)) {
             alert('Product Name and Company are required for a new product.');
@@ -204,6 +204,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             company: company.trim(),
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
             gst: parseFloat(gst),
+            composition,
             batchNumber,
             expiryDate,
             quantity: parseInt(quantity),
@@ -287,6 +288,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                             <option value="12">GST 12%</option>
                             <option value="18">GST 18%</option>
                         </select>
+                        <div className="col-span-2 md:col-span-4">
+                           <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
+                        </div>
                     </div>
                 </div>
             )}
