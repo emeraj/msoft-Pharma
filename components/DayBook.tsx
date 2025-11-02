@@ -46,50 +46,67 @@ interface DayBookProps {
 
 const DayBook: React.FC<DayBookProps> = ({ bills }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const today = new Date().toISOString().split('T')[0];
-  
-  const todaysBills = useMemo(() => {
-    return bills.filter(bill => bill.date.startsWith(today)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [bills, today]);
+  const billsForSelectedDate = useMemo(() => {
+    return bills.filter(bill => bill.date.startsWith(selectedDate)).sort((a, b) => a.billNumber.localeCompare(b.billNumber));
+  }, [bills, selectedDate]);
 
   const totalSales = useMemo(() => {
-    return todaysBills.reduce((total, bill) => total + bill.grandTotal, 0);
-  }, [todaysBills]);
+    return billsForSelectedDate.reduce((total, bill) => total + bill.grandTotal, 0);
+  }, [billsForSelectedDate]);
 
   const handleExport = () => {
-    const exportData = todaysBills.map(bill => ({
+    const exportData = billsForSelectedDate.map(bill => ({
         'Bill No.': bill.billNumber,
         'Time': new Date(bill.date).toLocaleTimeString(),
         'Customer': bill.customerName,
         'Items': bill.items.length,
         'Amount': bill.grandTotal.toFixed(2),
     }));
-    exportToCsv(`day_book_${today}`, exportData);
+    exportToCsv(`day_book_${selectedDate}`, exportData);
   };
+  
+  const formattedDate = useMemo(() => {
+    // Adding T00:00:00 to avoid timezone issues where it might show the previous day.
+    return new Date(selectedDate + 'T00:00:00').toLocaleDateString();
+  }, [selectedDate]);
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
         <Card>
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Day Book - {new Date().toLocaleDateString()}</h1>
-                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
-                    <DownloadIcon className="h-5 w-5" /> Export to Excel
-                </button>
+            <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                 <div>
+                    <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
+                        Day Book - {formattedDate}
+                    </h1>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">View sales for a specific day.</p>
+                </div>
+                <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                    <input 
+                        type="date" 
+                        value={selectedDate} 
+                        onChange={e => setSelectedDate(e.target.value)}
+                        className="w-full sm:w-auto px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
+                        <DownloadIcon className="h-5 w-5" /> Export to Excel
+                    </button>
+                </div>
             </div>
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                 <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-lg">
-                    <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills Today</p>
-                    <p className="text-3xl font-bold text-indigo-900 dark:text-indigo-200">{todaysBills.length}</p>
+                    <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills on Date</p>
+                    <p className="text-3xl font-bold text-indigo-900 dark:text-indigo-200">{billsForSelectedDate.length}</p>
                 </div>
                 <div className="bg-green-50 dark:bg-green-900/50 p-4 rounded-lg">
-                    <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales Today</p>
+                    <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales on Date</p>
                     <p className="text-3xl font-bold text-green-900 dark:text-green-200">₹{totalSales.toFixed(2)}</p>
                 </div>
             </div>
         </Card>
 
-      <Card title="Today's Bills">
+      <Card title={`Bills for ${formattedDate}`}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
             <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
@@ -103,7 +120,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
               </tr>
             </thead>
             <tbody>
-              {todaysBills.map(bill => (
+              {billsForSelectedDate.map(bill => (
                 <tr key={bill.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                   <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{bill.billNumber}</td>
                   <td className="px-6 py-4">{new Date(bill.date).toLocaleTimeString()}</td>
@@ -119,9 +136,9 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
               ))}
             </tbody>
           </table>
-          {todaysBills.length === 0 && (
+          {billsForSelectedDate.length === 0 && (
                 <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                    <p>No bills have been generated today.</p>
+                    <p>No bills have been generated on this date.</p>
                 </div>
             )}
         </div>

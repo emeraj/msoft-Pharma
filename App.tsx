@@ -48,7 +48,7 @@ const App: React.FC = () => {
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ'});
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -67,7 +67,7 @@ const App: React.FC = () => {
       setCompanies([]);
       setSuppliers([]);
       setPayments([]);
-      setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', gstin: 'ABCDE12345FGHIJ' });
+      setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors
       return;

@@ -103,5 +103,7 @@ export type Theme = 'light' | 'dark';
 export interface CompanyProfile {
   name: string;
   address: string;
+  phone?: string;
+  email?: string;
   gstin: string;
 }
