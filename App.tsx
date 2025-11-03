@@ -278,43 +278,46 @@ const App: React.FC = () => {
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    
+
     const billsCollectionRef = collection(db, `users/${uid}/bills`);
-    
-    // Find the highest existing bill number to ensure uniqueness
+
+    // Fetch all bills directly from Firestore to find the max number, avoiding stale state.
+    const allBillsSnapshot = await getDocs(billsCollectionRef);
     let maxBillNum = 0;
-    bills.forEach(bill => {
-      // Safely parse number from billNumber string like "B0047"
-      const num = parseInt(bill.billNumber.replace(/\D/g, ''), 10);
-      if (!isNaN(num) && num > maxBillNum) {
-        maxBillNum = num;
+    allBillsSnapshot.forEach(doc => {
+      const bill = doc.data();
+      if (bill.billNumber && typeof bill.billNumber === 'string') {
+        const num = parseInt(bill.billNumber.replace(/\D/g, ''), 10);
+        if (!isNaN(num) && num > maxBillNum) {
+          maxBillNum = num;
+        }
       }
     });
     const newBillNumber = `B${(maxBillNum + 1).toString().padStart(4, '0')}`;
-    
+
     const batch = writeBatch(db);
-    
+
     const newBillRef = doc(billsCollectionRef);
     const newBill: Omit<Bill, 'id'> = { ...billData, billNumber: newBillNumber };
     batch.set(newBillRef, newBill);
 
     for (const item of billData.items) {
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-            const newBatches = product.batches.map(b => 
-                b.id === item.batchId ? { ...b, stock: b.stock - item.quantity } : b
-            );
-            const productRef = doc(db, `users/${uid}/products`, product.id);
-            batch.update(productRef, { batches: newBatches });
-        }
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        const newBatches = product.batches.map(b =>
+          b.id === item.batchId ? { ...b, stock: b.stock - item.quantity } : b
+        );
+        const productRef = doc(db, `users/${uid}/products`, product.id);
+        batch.update(productRef, { batches: newBatches });
+      }
     }
 
     try {
-        await batch.commit();
-        return { ...newBill, id: newBillRef.id };
+      await batch.commit();
+      return { ...newBill, id: newBillRef.id };
     } catch (error) {
-        console.error("Failed to generate bill: ", error);
-        return null;
+      console.error("Failed to generate bill: ", error);
+      return null;
     }
   };
 
