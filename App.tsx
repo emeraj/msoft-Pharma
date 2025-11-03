@@ -280,7 +280,17 @@ const App: React.FC = () => {
     const uid = currentUser.uid;
     
     const billsCollectionRef = collection(db, `users/${uid}/bills`);
-    const newBillNumber = `B${(bills.length + 1).toString().padStart(4, '0')}`;
+    
+    // Find the highest existing bill number to ensure uniqueness
+    let maxBillNum = 0;
+    bills.forEach(bill => {
+      // Safely parse number from billNumber string like "B0047"
+      const num = parseInt(bill.billNumber.replace(/\D/g, ''), 10);
+      if (!isNaN(num) && num > maxBillNum) {
+        maxBillNum = num;
+      }
+    });
+    const newBillNumber = `B${(maxBillNum + 1).toString().padStart(4, '0')}`;
     
     const batch = writeBatch(db);
     
