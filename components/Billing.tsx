@@ -11,7 +11,7 @@ interface BillingProps {
   companyProfile: CompanyProfile;
   onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
   editingBill?: Bill | null;
-  onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => void;
+  onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => Promise<Bill | null>;
   onCancelEdit?: () => void;
 }
 
@@ -191,33 +191,28 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const handleExportPdf = () => {
-    if (cart.length === 0) return;
-
-    const tempBillForPrint: Bill = {
-        id: `print_${Date.now()}`,
-        billNumber: editingBill ? editingBill.billNumber : 'PREVIEW',
-        date: new Date().toISOString(),
-        customerName: customerName || 'Walk-in Customer',
-        items: cart,
-        subTotal,
-        totalGst,
-        grandTotal,
-    };
-
+  const executePrint = (billToPrint: Bill, onPrintDialogClosed?: () => void) => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const rootEl = document.createElement('div');
         printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
         
-        root.render(<PrintableA5Bill bill={tempBillForPrint} companyProfile={companyProfile} />);
+        root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} />);
         
         setTimeout(() => {
-            printWindow.document.title = `Invoice - ${tempBillForPrint.customerName}`;
+            printWindow.document.title = `Invoice - ${billToPrint.customerName}`;
             printWindow.print();
             printWindow.close();
+            if (onPrintDialogClosed) {
+                onPrintDialogClosed();
+            }
         }, 500);
+    } else {
+        alert("Please enable popups to print the bill.");
+        if (onPrintDialogClosed) {
+            onPrintDialogClosed();
+        }
     }
   };
 
@@ -237,7 +232,10 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
             grandTotal,
             billNumber: editingBill.billNumber // Keep original bill number
         };
-        await onUpdateBill(editingBill.id, billData, editingBill);
+        const updatedBill = await onUpdateBill(editingBill.id, billData, editingBill);
+        if (updatedBill) {
+            executePrint(updatedBill, onCancelEdit);
+        }
     } else if (!isEditing && onGenerateBill) {
         const billData = {
             date: new Date().toISOString(),
@@ -250,9 +248,10 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         const newBill = await onGenerateBill(billData);
 
         if (newBill) {
-          alert(`Bill ${newBill.billNumber} has been saved successfully!`);
-          setCart([]);
-          setCustomerName('');
+          executePrint(newBill, () => {
+              setCart([]);
+              setCustomerName('');
+          });
         } else {
           console.error("onGenerateBill did not return a valid bill object.");
           alert("There was an error generating the bill. Please try again.");
@@ -411,7 +410,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                         disabled={cart.length === 0}
                         className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                     >
-                       {isEditing ? 'Update Bill' : 'Generate Bill'}
+                       {isEditing ? 'Update Bill' : 'Print Bill'}
                     </button>
                     {isEditing && (
                         <button 
@@ -421,13 +420,6 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                             Cancel Edit
                         </button>
                     )}
-                    <button 
-                        onClick={handleExportPdf}
-                        disabled={cart.length === 0}
-                        className="w-full bg-indigo-600 text-white py-2 rounded-lg text-md font-semibold shadow-md hover:bg-indigo-700 transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed"
-                    >
-                        Export to PDF
-                    </button>
                 </div>
             </div>
         </Card>

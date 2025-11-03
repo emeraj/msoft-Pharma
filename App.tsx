@@ -321,8 +321,8 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateBill = async (billId: string, updatedBillData: Omit<Bill, 'id'>, originalBill: Bill) => {
-    if (!currentUser) return;
+  const handleUpdateBill = async (billId: string, updatedBillData: Omit<Bill, 'id'>, originalBill: Bill): Promise<Bill | null> => {
+    if (!currentUser) return null;
     const uid = currentUser.uid;
     const fbBatch = writeBatch(db);
 
@@ -344,7 +344,7 @@ const App: React.FC = () => {
         if (!product) {
             console.error(`Product ${productId} not found during bill update.`);
             alert(`Error: Product with ID ${productId} not found. Could not update bill.`);
-            return;
+            return null;
         }
 
         const newBatches = product.batches.map(b => 
@@ -353,7 +353,7 @@ const App: React.FC = () => {
         
         if (newBatches.some(b => b.stock < 0)) {
             alert("Error: Updating this bill would result in negative stock. Please check quantities.");
-            return;
+            return null;
         }
         
         const productRef = doc(db, `users/${uid}/products`, productId);
@@ -366,11 +366,11 @@ const App: React.FC = () => {
     try {
         await fbBatch.commit();
         alert(`Bill ${originalBill.billNumber} has been updated successfully!`);
-        setEditingBill(null);
-        setActiveView('daybook');
+        return { ...updatedBillData, id: billId };
     } catch (error) {
         console.error("Failed to update bill:", error);
         alert("An error occurred while updating the bill.");
+        return null;
     }
   };
 
