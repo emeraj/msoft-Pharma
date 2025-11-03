@@ -1,15 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons';
 import PrintableA5Bill from './PrintableA5Bill';
 
 interface BillingProps {
   products: Product[];
   companyProfile: CompanyProfile;
   onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
+  editingBill?: Bill | null;
+  onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => void;
+  onCancelEdit?: () => void;
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
@@ -75,13 +78,25 @@ const SubstituteModal: React.FC<{
 };
 
 
-const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProfile }) => {
+const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProfile, editingBill, onUpdateBill, onCancelEdit }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
   const [substituteOptions, setSubstituteOptions] = useState<Product[]>([]);
   const [sourceProductForSub, setSourceProductForSub] = useState<Product | null>(null);
+
+  const isEditing = !!editingBill;
+
+  useEffect(() => {
+    if (editingBill) {
+      setCart(editingBill.items);
+      setCustomerName(editingBill.customerName);
+    } else {
+      setCart([]);
+      setCustomerName('');
+    }
+  }, [editingBill]);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -181,7 +196,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
 
     const tempBillForPrint: Bill = {
         id: `print_${Date.now()}`,
-        billNumber: 'PREVIEW',
+        billNumber: editingBill ? editingBill.billNumber : 'PREVIEW',
         date: new Date().toISOString(),
         customerName: customerName || 'Walk-in Customer',
         items: cart,
@@ -206,27 +221,42 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     }
   };
 
-  const handleFinalizeBill = async () => {
+  const handleSaveBill = async () => {
     if (cart.length === 0) {
       alert("Cart is empty!");
       return;
     }
-    const newBill = await onGenerateBill({
-      date: new Date().toISOString(),
-      customerName: customerName || 'Walk-in',
-      items: cart,
-      subTotal,
-      totalGst,
-      grandTotal
-    });
+    
+    if (isEditing && editingBill && onUpdateBill) {
+        const billData = {
+            date: editingBill.date, // Keep original date on edit
+            customerName: customerName || 'Walk-in',
+            items: cart,
+            subTotal,
+            totalGst,
+            grandTotal,
+            billNumber: editingBill.billNumber // Keep original bill number
+        };
+        await onUpdateBill(editingBill.id, billData, editingBill);
+    } else if (!isEditing && onGenerateBill) {
+        const billData = {
+            date: new Date().toISOString(),
+            customerName: customerName || 'Walk-in',
+            items: cart,
+            subTotal,
+            totalGst,
+            grandTotal
+        };
+        const newBill = await onGenerateBill(billData);
 
-    if (newBill) {
-      alert(`Bill ${newBill.billNumber} has been saved successfully!`);
-      setCart([]);
-      setCustomerName('');
-    } else {
-      console.error("onGenerateBill did not return a valid bill object.");
-      alert("There was an error generating the bill. Please try again.");
+        if (newBill) {
+          alert(`Bill ${newBill.billNumber} has been saved successfully!`);
+          setCart([]);
+          setCustomerName('');
+        } else {
+          console.error("onGenerateBill did not return a valid bill object.");
+          alert("There was an error generating the bill. Please try again.");
+        }
     }
   };
 
@@ -234,7 +264,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   return (
     <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2">
-        <Card title="Create Bill">
+        <Card title={isEditing ? `Editing Bill: ${editingBill?.billNumber}` : 'Create Bill'}>
           <div className="relative mb-4">
             <input
               type="text"
@@ -377,12 +407,20 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                 </div>
                 <div className="pt-2 space-y-2">
                     <button 
-                        onClick={handleFinalizeBill}
+                        onClick={handleSaveBill}
                         disabled={cart.length === 0}
-                        className="w-full bg-green-600 text-white py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed"
+                        className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                     >
-                        Generate Bill
+                       {isEditing ? 'Update Bill' : 'Generate Bill'}
                     </button>
+                    {isEditing && (
+                        <button 
+                            onClick={onCancelEdit}
+                            className="w-full bg-slate-500 text-white py-2 rounded-lg text-md font-semibold shadow-md hover:bg-slate-600 transition-colors duration-200"
+                        >
+                            Cancel Edit
+                        </button>
+                    )}
                     <button 
                         onClick={handleExportPdf}
                         disabled={cart.length === 0}

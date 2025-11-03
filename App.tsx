@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -49,6 +49,7 @@ const App: React.FC = () => {
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
+  const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -305,6 +306,101 @@ const App: React.FC = () => {
         console.error("Failed to generate bill: ", error);
         return null;
     }
+  };
+
+  const handleUpdateBill = async (billId: string, updatedBillData: Omit<Bill, 'id'>, originalBill: Bill) => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const fbBatch = writeBatch(db);
+
+    const stockChanges = new Map<string, { productId: string, change: number }>();
+
+    const addChange = (item: CartItem, sign: 1 | -1) => {
+        const existing = stockChanges.get(item.batchId) || { productId: item.productId, change: 0 };
+        existing.change += item.quantity * sign;
+        stockChanges.set(item.batchId, existing);
+    };
+
+    originalBill.items.forEach(item => addChange(item, 1));
+    updatedBillData.items.forEach(item => addChange(item, -1));
+
+    for (const [batchId, { productId, change }] of stockChanges.entries()) {
+        if (change === 0) continue;
+
+        const product = products.find(p => p.id === productId);
+        if (!product) {
+            console.error(`Product ${productId} not found during bill update.`);
+            alert(`Error: Product with ID ${productId} not found. Could not update bill.`);
+            return;
+        }
+
+        const newBatches = product.batches.map(b => 
+            b.id === batchId ? { ...b, stock: b.stock + change } : b
+        );
+        
+        if (newBatches.some(b => b.stock < 0)) {
+            alert("Error: Updating this bill would result in negative stock. Please check quantities.");
+            return;
+        }
+        
+        const productRef = doc(db, `users/${uid}/products`, productId);
+        fbBatch.update(productRef, { batches: newBatches });
+    }
+
+    const billRef = doc(db, `users/${uid}/bills`, billId);
+    fbBatch.update(billRef, updatedBillData);
+
+    try {
+        await fbBatch.commit();
+        alert(`Bill ${originalBill.billNumber} has been updated successfully!`);
+        setEditingBill(null);
+        setActiveView('daybook');
+    } catch (error) {
+        console.error("Failed to update bill:", error);
+        alert("An error occurred while updating the bill.");
+    }
+  };
+
+  const handleDeleteBill = async (bill: Bill) => {
+    if (!currentUser) return;
+    if (!window.confirm(`Are you sure you want to delete Bill #${bill.billNumber}? This will add the sold quantities back to your inventory.`)) return;
+
+    const uid = currentUser.uid;
+    const fbBatch = writeBatch(db);
+
+    for (const item of bill.items) {
+        const product = products.find(p => p.id === item.productId);
+        if (product) {
+            const newBatches = product.batches.map(b =>
+                b.id === item.batchId ? { ...b, stock: b.stock + item.quantity } : b
+            );
+            const productRef = doc(db, `users/${uid}/products`, product.id);
+            fbBatch.update(productRef, { batches: newBatches });
+        } else {
+            console.warn(`Product ${item.productId} not found while deleting bill. Stock not reverted for this item.`);
+        }
+    }
+
+    const billRef = doc(db, `users/${uid}/bills`, bill.id);
+    fbBatch.delete(billRef);
+
+    try {
+        await fbBatch.commit();
+        alert(`Bill ${bill.billNumber} deleted successfully and stock has been reverted.`);
+    } catch (error) {
+        console.error("Failed to delete bill:", error);
+        alert("An error occurred while deleting the bill.");
+    }
+  };
+
+  const handleEditBill = (bill: Bill) => {
+    setEditingBill(bill);
+    setActiveView('billing');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingBill(null);
+    setActiveView('daybook');
   };
 
   const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>): Promise<Supplier | null> => {
@@ -611,11 +707,11 @@ const App: React.FC = () => {
     }
     switch (activeView) {
       case 'dashboard': return <SalesDashboard bills={bills} products={products} />;
-      case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
+      case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} />;
-      case 'daybook': return <DayBook bills={bills} />;
+      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;

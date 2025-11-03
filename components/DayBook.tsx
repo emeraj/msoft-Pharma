@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Bill } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon } from './icons/Icons';
+import { DownloadIcon, PencilIcon, TrashIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -42,9 +42,11 @@ const exportToCsv = (filename: string, data: any[]) => {
 
 interface DayBookProps {
   bills: Bill[];
+  onDeleteBill: (bill: Bill) => void;
+  onEditBill: (bill: Bill) => void;
 }
 
-const DayBook: React.FC<DayBookProps> = ({ bills }) => {
+const DayBook: React.FC<DayBookProps> = ({ bills, onDeleteBill, onEditBill }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -80,7 +82,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
                     <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
                         Day Book - {formattedDate}
                     </h1>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">View sales for a specific day.</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">View, edit, or delete sales for a specific day.</p>
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                     <input 
@@ -116,7 +118,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
                 <th scope="col" className="px-6 py-3">Customer</th>
                 <th scope="col" className="px-6 py-3">Items</th>
                 <th scope="col" className="px-6 py-3">Amount</th>
-                <th scope="col" className="px-6 py-3">Action</th>
+                <th scope="col" className="px-6 py-3 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -128,9 +130,17 @@ const DayBook: React.FC<DayBookProps> = ({ bills }) => {
                   <td className="px-6 py-4 text-center">{bill.items.length}</td>
                   <td className="px-6 py-4 font-semibold">₹{bill.grandTotal.toFixed(2)}</td>
                   <td className="px-6 py-4">
-                    <button onClick={() => setSelectedBill(bill)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
-                      View Details
-                    </button>
+                    <div className="flex items-center justify-center gap-4">
+                        <button onClick={() => setSelectedBill(bill)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                          View
+                        </button>
+                        <button onClick={() => onEditBill(bill)} title="Edit Bill" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                            <PencilIcon className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => onDeleteBill(bill)} title="Delete Bill" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
+                            <TrashIcon className="h-5 w-5" />
+                        </button>
+                    </div>
                   </td>
                 </tr>
               ))}
