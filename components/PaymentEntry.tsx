@@ -50,7 +50,7 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
     }, [editingPayment]);
 
     const sortedPayments = useMemo(() => {
-        // Fix: Corrected the sort comparison to use the date from object 'a'.
+        // Sorts payments by date, newest first.
         return [...payments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [payments]);
     
