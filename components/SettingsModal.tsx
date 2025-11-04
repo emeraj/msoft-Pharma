@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
-import type { Theme, CompanyProfile } from '../types';
-import Modal from './common/Modal';
-import { UpdateIcon } from './icons/Icons';
+import type { Theme, CompanyProfile } from '../types.ts';
+import Modal from './common/Modal.tsx';
+import { UpdateIcon } from './icons/Icons.tsx';
 
 interface SettingsModalProps {
   isOpen: boolean;

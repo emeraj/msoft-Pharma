@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
-import type { Bill } from '../types';
-import Card from './common/Card';
-import { DownloadIcon } from './icons/Icons';
+import type { Bill } from '../types.ts';
+import Card from './common/Card.tsx';
+import { DownloadIcon } from './icons/Icons.tsx';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {

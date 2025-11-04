@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import type { AppView, ReportView } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon } from './icons/Icons';
+import type { AppView, ReportView } from '../types.ts';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon } from './icons/Icons.tsx';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {

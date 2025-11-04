@@ -1,10 +1,11 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Supplier, Purchase, Payment, CompanyProfile } from '../types';
-import Card from './common/Card';
-import Modal from './common/Modal';
-import { DownloadIcon, PrinterIcon, PencilIcon } from './icons/Icons';
-import PrintableSupplierLedger from './PrintableSupplierLedger';
+import type { Supplier, Purchase, Payment, CompanyProfile } from '../types.ts';
+import Card from './common/Card.tsx';
+import Modal from './common/Modal.tsx';
+import { DownloadIcon, PrinterIcon, PencilIcon } from './icons/Icons.tsx';
+import PrintableSupplierLedger from './PrintableSupplierLedger.tsx';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
