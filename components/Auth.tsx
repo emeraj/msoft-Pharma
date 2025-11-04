@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
-import { auth } from '../firebase.ts';
+import { auth } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, AuthError } from 'firebase/auth';
-import Card from './common/Card.tsx';
+import Card from './common/Card';
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);

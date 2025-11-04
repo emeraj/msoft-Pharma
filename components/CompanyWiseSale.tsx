@@ -1,9 +1,8 @@
-
 import React, { useState, useMemo } from 'react';
-import type { Bill, Product } from '../types.ts';
-import Card from './common/Card.tsx';
-import Modal from './common/Modal.tsx';
-import { DownloadIcon } from './icons/Icons.tsx';
+import type { Bill, Product } from '../types';
+import Card from './common/Card';
+import Modal from './common/Modal';
+import { DownloadIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -305,7 +304,7 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
                         <p className="text-2xl font-bold text-purple-900 dark:text-purple-200">₹{summary.totalGst.toFixed(2)}</p>
                     </div>
                     <div className="bg-green-50 dark:bg-green-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Value</p>
+                        <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Invoice Value</p>
                         <p className="text-2xl font-bold text-green-900 dark:text-green-200">₹{summary.totalValue.toFixed(2)}</p>
                     </div>
                 </div>
@@ -317,55 +316,54 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
         )}
 
         {companyFilter ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-              <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
-                <tr>
-                  <th scope="col" className="px-6 py-3">Date</th>
-                  <th scope="col" className="px-6 py-3">Customer</th>
-                  <th scope="col" className="px-6 py-3 text-right">Basic Amount</th>
-                  <th scope="col" className="px-6 py-3 text-right">GST Amount</th>
-                  <th scope="col" className="px-6 py-3 text-right">Total Value</th>
-                  <th scope="col" className="px-6 py-3 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSalesData.map(sale => (
-                  <tr key={sale.billId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                    <td className="px-6 py-4">{new Date(sale.date).toLocaleDateString()}</td>
-                    <td className="px-6 py-4">{sale.customerName}</td>
-                    <td className="px-6 py-4 text-right">₹{sale.basicAmount.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-right">₹{sale.gstAmount.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-right font-semibold">₹{sale.totalValue.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-center">
-                      <button onClick={() => handleViewDetails(sale.billId)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
-                        View Details
-                      </button>
-                    </td>
+             <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+                  <tr>
+                    <th scope="col" className="px-6 py-3">Date</th>
+                    <th scope="col" className="px-6 py-3">Customer Name</th>
+                    <th scope="col" className="px-6 py-3 text-right">Basic Amount</th>
+                    <th scope="col" className="px-6 py-3 text-right">GST Amount</th>
+                    <th scope="col" className="px-6 py-3 text-right">Total Invoice Value</th>
+                    <th scope="col" className="px-6 py-3">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {filteredSalesData.length === 0 && (
-              <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                <p>No sales records found for this company in the selected period.</p>
-              </div>
-            )}
-          </div>
+                </thead>
+                <tbody>
+                  {filteredSalesData.map(sale => (
+                    <tr key={sale.billId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                      <td className="px-6 py-4">{new Date(sale.date).toLocaleDateString()}</td>
+                      <td className="px-6 py-4">{sale.customerName}</td>
+                      <td className="px-6 py-4 text-right">₹{sale.basicAmount.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right">₹{sale.gstAmount.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-semibold">₹{sale.totalValue.toFixed(2)}</td>
+                      <td className="px-6 py-4">
+                        <button onClick={() => handleViewDetails(sale.billId)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                            View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredSalesData.length === 0 && (
+                <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+                  <p>No sales records found for this company in the selected date range.</p>
+                </div>
+              )}
+            </div>
         ) : (
-            <div className="text-center py-20 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                <p className="text-lg">Please select a company to view the report.</p>
+             <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+              <p className="text-lg">Please select a company to view the sales report.</p>
             </div>
         )}
       </Card>
-      
       {selectedBill && (
         <CompanySaleDetailsModal
-            isOpen={!!selectedBill}
-            onClose={() => setSelectedBill(null)}
-            bill={selectedBill}
-            companyName={companyFilter}
-            productCompanyMap={productCompanyMap}
+          isOpen={!!selectedBill}
+          onClose={() => setSelectedBill(null)}
+          bill={selectedBill}
+          companyName={companyFilter}
+          productCompanyMap={productCompanyMap}
         />
       )}
     </div>
