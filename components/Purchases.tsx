@@ -51,7 +51,7 @@ const exportToCsv = (filename: string, data: any[]) => {
 };
 
 
-const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
 
@@ -94,30 +94,30 @@ const AddSupplierModal: React.FC<{
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Supplier Name*</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name*</label>
                         <input name="name" value={formState.name} onChange={handleChange} className={formInputStyle} required />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone</label>
                         <input name="phone" value={formState.phone} onChange={handleChange} className={formInputStyle} />
                     </div>
                 </div>
                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
                     <input name="address" value={formState.address} onChange={handleChange} className={formInputStyle} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">GSTIN</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
                         <input name="gstin" value={formState.gstin} onChange={handleChange} className={formInputStyle} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Opening Balance</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
                         <input name="openingBalance" value={formState.openingBalance} onChange={handleChange} type="number" step="0.01" className={formInputStyle} />
                     </div>
                 </div>
-                <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
                     <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Supplier</button>
                 </div>
             </form>
@@ -221,10 +221,10 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     };
 
     return (
-        <form onSubmit={handleAddItem} className={`p-4 my-4 space-y-4 bg-slate-50 rounded-lg border ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+        <form onSubmit={handleAddItem} className={`p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="md:col-span-2 relative">
-                    <label className="block text-sm font-medium text-slate-800">Search Existing Product</label>
+                    <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">Search Existing Product</label>
                     <input
                         type="text"
                         name="productSearch"
@@ -236,23 +236,23 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                         autoComplete="off"
                     />
                     {searchResults.length > 0 && formState.productSearch && !formState.selectedProduct && (
-                        <ul className="absolute z-20 w-full mt-1 bg-white border shadow-lg rounded max-h-48 overflow-y-auto">
+                        <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-lg rounded max-h-48 overflow-y-auto">
                             {searchResults.map(p => (
-                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 text-slate-800 hover:bg-indigo-100 cursor-pointer">{p.name} ({p.company})</li>
+                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 text-slate-800 dark:text-slate-200 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer">{p.name} ({p.company})</li>
                             ))}
                         </ul>
                     )}
                 </div>
                 <div>
-                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 rounded-md hover:bg-green-200 transition-colors" disabled={disabled}>
+                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-900 transition-colors" disabled={disabled}>
                         Or, Add New Product
                     </button>
                 </div>
             </div>
 
             {formState.isNewProduct && (
-                 <div className="p-3 bg-green-50 rounded border border-green-200 animate-fade-in">
-                    <h4 className="font-semibold text-green-800 mb-2">New Product Details</h4>
+                 <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 animate-fade-in">
+                    <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">New Product Details</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <input name="productName" value={formState.productName} onChange={handleChange} placeholder="Product Name*" className={formInputStyle} required />
                         <div className="relative">
@@ -268,14 +268,14 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                                 autoComplete="off"
                             />
                             {showCompanySuggestions && (
-                                <ul className="absolute z-20 w-full mt-1 bg-white border border-slate-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                                     {companySuggestions.map(c => (
-                                        <li key={c.id} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 text-slate-800">
+                                        <li key={c.id} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
                                             {c.name}
                                         </li>
                                     ))}
                                     {!companyExists && formState.company.trim().length > 0 && (
-                                        <li onClick={() => handleSelectCompany(formState.company.trim())} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 text-green-600 font-semibold">
+                                        <li onClick={() => handleSelectCompany(formState.company.trim())} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
                                             Create: "{formState.company.trim()}"
                                         </li>
                                     )}
@@ -297,7 +297,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
             {(formState.selectedProduct || formState.isNewProduct) && (
                 <div className="animate-fade-in">
-                     <h4 className="font-semibold text-slate-700 mb-2 pt-2 border-t">Batch Details</h4>
+                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 pt-2 border-t dark:border-slate-600">Batch Details</h4>
                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                          <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />
                          <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />
@@ -471,7 +471,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             <Card title={editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Supplier Name</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
                         <input 
                             value={formState.supplierName} 
                             onChange={e => setFormState(prev => ({...prev, supplierName: e.target.value}))}
@@ -483,14 +483,14 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             autoComplete="off"
                         />
                          {showSupplierSuggestions && formState.supplierName.length > 0 && (
-                          <ul className="absolute z-30 w-full mt-1 bg-white border border-slate-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                               {supplierSuggestions.map(s => (
-                                  <li key={s.id} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 text-slate-800">
+                                  <li key={s.id} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
                                       {s.name}
                                   </li>
                               ))}
                               {!exactMatch && formState.supplierName.trim().length > 0 && (
-                                  <li onClick={handleOpenSupplierModal} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 text-green-600 font-semibold">
+                                  <li onClick={handleOpenSupplierModal} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
                                       <PlusIcon className="h-4 w-4 inline mr-2"/> Add new supplier: "{formState.supplierName.trim()}"
                                   </li>
                               )}
@@ -498,11 +498,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                         )}
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Number</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Number</label>
                         <input value={formState.invoiceNumber} onChange={e => setFormState(prev => ({...prev, invoiceNumber: e.target.value}))} placeholder="Invoice Number*" className={formInputStyle} required/>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Invoice Date</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Date</label>
                         <input value={formState.invoiceDate} onChange={e => setFormState(prev => ({...prev, invoiceDate: e.target.value}))} type="date" className={formInputStyle} required/>
                     </div>
                 </div>
@@ -511,10 +511,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 
                 {formState.currentItems.length > 0 && (
                     <div className="mt-4">
-                         <h3 className="font-semibold text-slate-800 mb-2">Items in Current Purchase</h3>
+                         <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Items in Current Purchase</h3>
                          <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-slate-800">
-                                <thead className="text-xs text-slate-800 uppercase bg-slate-100">
+                            <table className="w-full text-sm text-slate-800 dark:text-slate-300">
+                                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
                                     <tr>
                                         <th className="px-4 py-2 text-left">Product</th>
                                         <th className="px-4 py-2 text-left">Batch</th>
@@ -526,8 +526,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 </thead>
                                 <tbody>
                                     {formState.currentItems.map((item, index) => (
-                                        <tr key={index} className="border-b">
-                                            <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 font-semibold">(New)</span>}</td>
+                                        <tr key={index} className="border-b dark:border-slate-700">
+                                            <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 dark:text-green-400 font-semibold">(New)</span>}</td>
                                             <td className="px-4 py-2">{item.batchNumber}</td>
                                             <td className="px-4 py-2 text-center">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
@@ -541,7 +541,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             </table>
                          </div>
                          <div className="flex flex-col sm:flex-row justify-end items-center mt-4 gap-4">
-                            <div className="text-xl font-bold text-slate-800">
+                            <div className="text-xl font-bold text-slate-800 dark:text-slate-200">
                                 <span>Total Amount: </span>
                                 <span>₹{totalAmount.toFixed(2)}</span>
                             </div>
@@ -566,13 +566,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             />
 
             <Card title="Purchase History">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 p-4 bg-slate-50 rounded-lg border">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
                     <div className="flex items-center gap-2">
-                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700">From</label>
+                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>
                         <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
                     </div>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700">To</label>
+                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">To</label>
                         <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
                     </div>
                     <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
@@ -580,8 +580,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     </button>
                 </div>
                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800">
-                        <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                        <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                             <tr>
                                 <th className="px-6 py-3">Date</th>
                                 <th className="px-6 py-3">Invoice #</th>
@@ -593,18 +593,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                         </thead>
                         <tbody>
                             {filteredPurchases.map(p => (
-                                <tr key={p.id} className="bg-white border-b hover:bg-slate-50">
+                                <tr key={p.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-6 py-4">{new Date(p.invoiceDate).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 font-medium text-slate-900">{p.invoiceNumber}</td>
+                                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{p.invoiceNumber}</td>
                                     <td className="px-6 py-4">{p.supplier}</td>
                                     <td className="px-6 py-4 text-center">{p.items.length}</td>
                                     <td className="px-6 py-4 font-semibold text-right">₹{p.totalAmount.toFixed(2)}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex justify-center items-center gap-4">
-                                            <button onClick={() => setEditingPurchase(p)} title="Edit Purchase" className="text-blue-600 hover:text-blue-800">
+                                            <button onClick={() => setEditingPurchase(p)} title="Edit Purchase" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
                                                 <PencilIcon className="h-5 w-5" />
                                             </button>
-                                            <button onClick={() => onDeletePurchase(p)} title="Delete Purchase" className="text-red-600 hover:text-red-800">
+                                            <button onClick={() => onDeletePurchase(p)} title="Delete Purchase" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
                                                 <TrashIcon className="h-5 w-5" />
                                             </button>
                                         </div>
@@ -613,7 +613,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             ))}
                         </tbody>
                     </table>
-                    {filteredPurchases.length === 0 && <p className="text-center py-6 text-slate-600">No purchase history found for the selected dates.</p>}
+                    {filteredPurchases.length === 0 && <p className="text-center py-6 text-slate-600 dark:text-slate-400">No purchase history found for the selected dates.</p>}
                  </div>
             </Card>
         </div>

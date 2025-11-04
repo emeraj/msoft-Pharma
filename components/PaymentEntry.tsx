@@ -15,7 +15,7 @@ interface PaymentEntryProps {
   onDeletePayment: (id: string) => void;
 }
 
-const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 const formTextAreaStyle = `${formInputStyle} h-20 resize-none`;
 
@@ -112,28 +112,28 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Supplier*</label>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier*</label>
                             <select name="supplierName" value={formState.supplierName} onChange={e => setFormState({...formState, supplierName: e.target.value})} className={formSelectStyle} required>
                                 <option value="" disabled>Select a supplier</option>
                                 {suppliers.sort((a,b) => a.name.localeCompare(b.name)).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Date*</label>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date*</label>
                             <input name="date" type="date" value={formState.date} onChange={e => setFormState({...formState, date: e.target.value})} className={formInputStyle} required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Voucher No.</label>
-                            <input type="text" value={formState.voucherNumber} className={`${formInputStyle} bg-slate-200 cursor-not-allowed`} readOnly />
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Voucher No.</label>
+                            <input type="text" value={formState.voucherNumber} className={`${formInputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} readOnly />
                         </div>
                          <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Amount*</label>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Amount*</label>
                             <input name="amount" type="number" value={formState.amount} onChange={e => setFormState({...formState, amount: e.target.value})} className={formInputStyle} required min="0.01" step="0.01" />
                         </div>
                     </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Payment Method*</label>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Payment Method*</label>
                             <select name="method" value={formState.method} onChange={e => setFormState({...formState, method: e.target.value as Payment['method']})} className={formSelectStyle} required>
                                 <option>Bank Transfer</option>
                                 <option>Cash</option>
@@ -142,15 +142,15 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                             </select>
                         </div>
                         <div>
-                             <label className="block text-sm font-medium text-slate-700 mb-1">Remarks (Cheque No., Txn ID, etc.)</label>
+                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Remarks (Cheque No., Txn ID, etc.)</label>
                             <input name="remarks" value={formState.remarks} onChange={e => setFormState({...formState, remarks: e.target.value})} className={formInputStyle} />
                         </div>
                     </div>
-                    <div className="flex justify-end gap-3 pt-4 border-t">
+                    <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700">
                         {editingPayment && (
-                             <button type="button" onClick={handleCancelEdit} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+                             <button type="button" onClick={handleCancelEdit} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
                         )}
-                        <button type="submit" disabled={!isFormValid} className="px-6 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 disabled:bg-slate-400 disabled:cursor-not-allowed">
+                        <button type="submit" disabled={!isFormValid} className="px-6 py-2 bg-green-600 text-white rounded font-semibold hover:bg-green-700 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed">
                             {editingPayment ? 'Update Payment' : 'Save Payment'}
                         </button>
                     </div>
@@ -159,8 +159,8 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
 
             <Card title="Recent Payments">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800">
-                        <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                        <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                             <tr>
                                 <th className="px-4 py-3">Voucher #</th>
                                 <th className="px-4 py-3">Date</th>
@@ -172,7 +172,7 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                         </thead>
                         <tbody>
                             {sortedPayments.map(p => (
-                                <tr key={p.id} className="border-b hover:bg-slate-50">
+                                <tr key={p.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
                                     <td className="px-4 py-2 font-medium">{p.voucherNumber}</td>
                                     <td className="px-4 py-2">{new Date(p.date).toLocaleDateString()}</td>
                                     <td className="px-4 py-2">{p.supplierName}</td>
@@ -180,25 +180,25 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
                                     <td className="px-4 py-2">{p.method}</td>
                                     <td className="px-4 py-2">
                                         <div className="flex gap-3">
-                                            <button onClick={() => setEditingPayment(p)} title="Edit" className="text-blue-600 hover:text-blue-800"><PencilIcon className="h-4 w-4" /></button>
-                                            <button onClick={() => onDeletePayment(p.id)} title="Delete" className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button>
+                                            <button onClick={() => setEditingPayment(p)} title="Edit" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"><PencilIcon className="h-4 w-4" /></button>
+                                            <button onClick={() => onDeletePayment(p.id)} title="Delete" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"><TrashIcon className="h-4 w-4" /></button>
                                         </div>
                                     </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                     {payments.length === 0 && <p className="text-center py-6 text-slate-600">No payment records found.</p>}
+                     {payments.length === 0 && <p className="text-center py-6 text-slate-600 dark:text-slate-400">No payment records found.</p>}
                 </div>
             </Card>
             
             <Modal isOpen={!!lastAddedPayment} onClose={() => setLastAddedPayment(null)} title="Payment Saved">
                 <div className="text-center">
-                    <p className="text-lg text-slate-800">
+                    <p className="text-lg text-slate-800 dark:text-slate-200">
                         Payment voucher <span className="font-bold">{lastAddedPayment?.voucherNumber}</span> has been saved successfully.
                     </p>
                     <div className="mt-6 flex justify-center gap-4">
-                        <button onClick={() => setLastAddedPayment(null)} className="px-4 py-2 bg-slate-200 rounded-lg">Close</button>
+                        <button onClick={() => setLastAddedPayment(null)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Close</button>
                         <button onClick={handlePrintVoucher} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700">
                             <PrinterIcon className="h-5 w-5"/> Print Voucher
                         </button>

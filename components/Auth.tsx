@@ -47,26 +47,26 @@ const Auth: React.FC = () => {
     }
   };
 
-  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500";
+  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
   return (
-    <div className="flex-grow flex items-center justify-center p-4 bg-slate-100">
+    <div className="flex-grow flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-slate-800 mt-2">
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2">
                 Pharma - Retail
             </h1>
-            <p className="text-slate-600">Please sign in to continue</p>
+            <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
         </div>
         <Card>
           <form onSubmit={handleAuthAction} className="space-y-4">
-            <h2 className="text-2xl font-semibold text-center text-slate-800">
+            <h2 className="text-2xl font-semibold text-center text-slate-800 dark:text-slate-200">
               {isLogin ? 'Login' : 'Sign Up'}
             </h2>
             
             {!isLogin && (
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
                 <input
                   type="text"
                   value={name}
@@ -77,7 +77,7 @@ const Auth: React.FC = () => {
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
               <input
                 type="email"
                 value={email}
@@ -87,7 +87,7 @@ const Auth: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
               <input
                 type="password"
                 value={password}
@@ -104,7 +104,7 @@ const Auth: React.FC = () => {
             >
               {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
             </button>
-            <p className="text-sm text-center text-slate-600">
+            <p className="text-sm text-center text-slate-600 dark:text-slate-400">
               {isLogin ? "Don't have an account?" : "Already have an account?"}
               <button
                 type="button"

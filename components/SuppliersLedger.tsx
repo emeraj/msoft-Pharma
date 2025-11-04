@@ -97,35 +97,35 @@ const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, 
         onClose();
     };
 
-    const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500";
+    const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
     
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Edit Supplier: ${supplier.name}`}>
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Supplier Name</label>
-                    <input value={supplier.name} className={`${formInputStyle} bg-slate-200 cursor-not-allowed`} readOnly />
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
+                    <input value={supplier.name} className={`${formInputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} readOnly />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Address</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
                     <input name="address" value={formState.address} onChange={handleChange} className={formInputStyle} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone</label>
                         <input name="phone" value={formState.phone} onChange={handleChange} className={formInputStyle} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">GSTIN</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
                         <input name="gstin" value={formState.gstin} onChange={handleChange} className={formInputStyle} />
                     </div>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Opening Balance</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
                     <input name="openingBalance" value={formState.openingBalance} onChange={handleChange} type="number" step="0.01" className={formInputStyle} required />
                 </div>
-                <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
                     <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Supplier</button>
                 </div>
             </form>
@@ -233,15 +233,15 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                         placeholder="Search by supplier name..."
                         value={searchTerm}
                         onChange={e => setSearchTerm(e.target.value)}
-                        className="w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 md:col-span-2"
+                        className="w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 md:col-span-2"
                     />
                      <div className="flex items-center gap-2">
-                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700">From</label>
-                        <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-full px-3 py-2 bg-yellow-100 text-slate-900 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>
+                        <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-full px-3 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                      </div>
                      <div className="flex items-center gap-2">
-                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700">To</label>
-                        <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className="w-full px-3 py-2 bg-yellow-100 text-slate-900 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500" />
+                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">To</label>
+                        <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className="w-full px-3 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500" />
                      </div>
                 </div>
                 <div className="flex justify-end mb-4">
@@ -253,8 +253,8 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
 
 
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800">
-                        <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                        <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                             <tr>
                                 <th scope="col" className="px-6 py-3">Supplier</th>
                                 <th scope="col" className="px-6 py-3 text-right">Opening Balance</th>
@@ -266,18 +266,18 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                         </thead>
                         <tbody>
                             {filteredLedger.map(supplier => (
-                                <tr key={supplier.id} className="bg-white border-b hover:bg-slate-50">
-                                    <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{supplier.name}</td>
+                                <tr key={supplier.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{supplier.name}</td>
                                     <td className="px-6 py-4 text-right">₹{supplier.openingBalanceForPeriod.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right">₹{supplier.purchasesInPeriod.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right">₹{supplier.paymentsInPeriod.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right font-bold">₹{supplier.outstandingBalance.toFixed(2)}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-4">
-                                            <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 hover:underline">
+                                            <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
                                                 View Details
                                             </button>
-                                            <button onClick={() => handleOpenEditModal(supplier)} title="Edit Supplier" className="text-blue-600 hover:text-blue-800">
+                                            <button onClick={() => handleOpenEditModal(supplier)} title="Edit Supplier" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
                                                 <PencilIcon className="h-5 w-5" />
                                             </button>
                                         </div>
@@ -287,7 +287,7 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                         </tbody>
                     </table>
                     {filteredLedger.length === 0 && (
-                        <div className="text-center py-10 text-slate-600">
+                        <div className="text-center py-10 text-slate-600 dark:text-slate-400">
                             <p>No suppliers found for the selected criteria.</p>
                         </div>
                     )}
@@ -389,25 +389,25 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
     
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Ledger for ${supplier.name}`}>
-            <div className="space-y-4 text-slate-800">
-                <div className="p-3 bg-slate-50 rounded-lg border grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div className="font-semibold text-slate-800">Opening Balance:</div>
+            <div className="space-y-4 text-slate-800 dark:text-slate-300">
+                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Opening Balance:</div>
                     <div className="text-right">₹{supplier.openingBalanceForPeriod.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800">Purchases (Period):</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Purchases (Period):</div>
                     <div className="text-right">₹{supplier.purchasesInPeriod.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800">Payments (Period):</div>
-                    <div className="text-right text-green-600">₹{supplier.paymentsInPeriod.toFixed(2)}</div>
-                    <div className="font-bold text-lg text-slate-800 col-span-2 border-t mt-2 pt-2 flex justify-between">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Payments (Period):</div>
+                    <div className="text-right text-green-600 dark:text-green-400">₹{supplier.paymentsInPeriod.toFixed(2)}</div>
+                    <div className="font-bold text-lg text-slate-800 dark:text-slate-100 col-span-2 border-t dark:border-slate-600 mt-2 pt-2 flex justify-between">
                         <span>Outstanding Balance:</span>
                         <span>₹{supplier.outstandingBalance.toFixed(2)}</span>
                     </div>
                 </div>
 
-                <div className="border-t pt-2">
-                    <h4 className="font-semibold text-slate-700 mb-2">Transaction History (Period)</h4>
+                <div className="border-t dark:border-slate-700 pt-2">
+                    <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Transaction History (Period)</h4>
                     <div className="max-h-60 overflow-y-auto">
                         <table className="w-full text-xs text-left">
-                            <thead className="sticky top-0 bg-slate-100">
+                            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-700">
                                 <tr>
                                     <th className="py-2 px-2">Date</th>
                                     <th className="py-2 px-2">Particulars</th>
@@ -416,32 +416,32 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                             </thead>
                             <tbody>
                                 {transactions.map((tx, idx) => (
-                                    <tr key={idx} className="border-b">
+                                    <tr key={idx} className="border-b dark:border-slate-600">
                                         <td className="py-2 px-2">{tx.date.toLocaleDateString()}</td>
                                         {tx.type === 'purchase' ? (
                                             <>
                                                 <td className="py-2 px-2">Purchase - Inv #{tx.data.invoiceNumber}</td>
-                                                <td className="py-2 px-2 text-right font-medium text-red-600">₹{tx.data.totalAmount.toFixed(2)}</td>
+                                                <td className="py-2 px-2 text-right font-medium text-red-600 dark:text-red-400">₹{tx.data.totalAmount.toFixed(2)}</td>
                                             </>
                                         ) : (
                                             <>
                                                 <td className="py-2 px-2">Payment - {tx.data.method} (V: {tx.data.voucherNumber})</td>
-                                                <td className="py-2 px-2 text-right font-medium text-green-600">₹{tx.data.amount.toFixed(2)}</td>
+                                                <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">₹{tx.data.amount.toFixed(2)}</td>
                                             </>
                                         )}
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
-                        {transactions.length === 0 && <p className="text-center text-slate-500 py-4">No transactions found for this supplier in the selected period.</p>}
+                        {transactions.length === 0 && <p className="text-center text-slate-500 dark:text-slate-400 py-4">No transactions found for this supplier in the selected period.</p>}
                     </div>
                 </div>
 
-                <div className="flex justify-end pt-4 border-t mt-4 gap-3">
+                <div className="flex justify-end pt-4 border-t dark:border-slate-700 mt-4 gap-3">
                     <button onClick={handleExportPdf} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 transition-colors">
                        <PrinterIcon className="h-5 w-5" /> Export to PDF
                     </button>
-                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 rounded-lg hover:bg-slate-300">Close</button>
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
                 </div>
             </div>
         </Modal>

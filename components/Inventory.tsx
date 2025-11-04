@@ -96,7 +96,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         className={`px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200 ${
             activeSubView === view
                 ? 'bg-indigo-600 text-white shadow'
-                : 'text-slate-700 hover:bg-slate-200'
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
         }`}
     >
         {label}
@@ -107,7 +107,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
     <div className="p-4 sm:p-6 space-y-6">
       <Card>
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-          <h1 className="text-2xl font-bold text-slate-800">Inventory Management</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Inventory Management</h1>
           <button 
             onClick={() => setProductModalOpen(true)}
             className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors duration-200"
@@ -115,7 +115,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
             <PlusIcon className="h-5 w-5" /> Add New Product
           </button>
         </div>
-        <div className="flex flex-wrap gap-2 border-t mt-4 pt-4">
+        <div className="flex flex-wrap gap-2 border-t dark:border-slate-700 mt-4 pt-4">
             <SubNavButton view="all" label="All Item Stock" />
             <SubNavButton view="selected" label="Selected Item Stock" />
             <SubNavButton view="batch" label="Batch Wise Stock" />
@@ -156,7 +156,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
   );
 };
 
-const inputStyle = "w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+const inputStyle = "w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 const selectStyle = `${inputStyle} appearance-none`;
 
 // --- Sub View Components ---
@@ -266,11 +266,11 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     {companies.map(company => <option key={company} value={company}>{company}</option>)}
                 </select>
                 <div className="flex items-center gap-2">
-                    <label htmlFor="fromDate-ais" className="text-sm font-medium text-slate-700 whitespace-nowrap">From</label>
+                    <label htmlFor="fromDate-ais" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">From</label>
                     <input type="date" id="fromDate-ais" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
                 </div>
                 <div className="flex items-center gap-2">
-                    <label htmlFor="toDate-ais" className="text-sm font-medium text-slate-700 whitespace-nowrap">To</label>
+                    <label htmlFor="toDate-ais" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">To</label>
                     <input type="date" id="toDate-ais" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
                 </div>
             </div>
@@ -280,8 +280,8 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                 </button>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-slate-800">
-                    <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
                             <th scope="col" className="px-6 py-3 text-center">Opening Stock</th>
@@ -294,11 +294,11 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     </thead>
                     <tbody>
                         {reportData.map(item => (
-                            <tr key={item.id} className="bg-white border-b hover:bg-slate-50">
-                                <td scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
+                            <tr key={item.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <td scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">
                                     {item.name}
-                                    <p className="text-xs text-slate-500 font-normal">{item.company}</p>
-                                    <p className="text-xs text-indigo-600 font-normal">{item.composition}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">{item.company}</p>
+                                    <p className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">{item.composition}</p>
                                 </td>
                                 <td className="px-6 py-4 text-center">{item.openingStock}</td>
                                 <td className="px-6 py-4 text-center">{item.purchasedQty}</td>
@@ -307,8 +307,8 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                 <td className="px-6 py-4 text-right font-semibold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
-                                        <button onClick={() => onOpenBatchModal(item.product)} className="font-medium text-indigo-600 hover:underline whitespace-nowrap">View/Add Batch</button>
-                                        <button onClick={() => onOpenEditModal(item.product)} title="Edit Product" className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100">
+                                        <button onClick={() => onOpenBatchModal(item.product)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">View/Add Batch</button>
+                                        <button onClick={() => onOpenEditModal(item.product)} title="Edit Product" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50">
                                             <PencilIcon className="h-4 w-4" />
                                         </button>
                                     </div>
@@ -318,7 +318,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     </tbody>
                 </table>
                 {reportData.length === 0 && (
-                    <div className="text-center py-10 text-slate-600"><p>No products found.</p></div>
+                    <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No products found.</p></div>
                 )}
             </div>
         </Card>
@@ -353,20 +353,20 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
                     className={inputStyle}
                 />
                 {searchResults.length > 0 && (
-                    <ul className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                         {searchResults.map(p => (
-                            <li key={p.id} onClick={() => handleSelect(p)} className="px-4 py-2 text-slate-800 hover:bg-indigo-50 cursor-pointer">{p.name}</li>
+                            <li key={p.id} onClick={() => handleSelect(p)} className="px-4 py-2 text-slate-800 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-indigo-900 cursor-pointer">{p.name}</li>
                         ))}
                     </ul>
                 )}
             </div>
             {selectedProduct && (
                  <div className="animate-fade-in">
-                    <div className="p-4 bg-slate-50 rounded-lg border mb-4">
-                        <h3 className="text-lg font-bold text-slate-800">{selectedProduct.name}</h3>
-                        <p className="text-sm text-slate-700">{selectedProduct.company}</p>
-                        <p className="text-sm text-indigo-700 font-medium mt-1">{selectedProduct.composition}</p>
-                        <div className="flex gap-4 mt-2 text-sm text-slate-800">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-lg border dark:border-slate-600 mb-4">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">{selectedProduct.company}</p>
+                        <p className="text-sm text-indigo-700 dark:text-indigo-300 font-medium mt-1">{selectedProduct.composition}</p>
+                        <div className="flex gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
                            <span>HSN: {selectedProduct.hsnCode}</span>
                            <span>GST: {selectedProduct.gst}%</span>
                            <span className="font-semibold">Total Stock: {selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0)}</span>
@@ -495,11 +495,11 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                     {companies.map(company => <option key={company} value={company}>{company}</option>)}
                 </select>
                 <div className="flex items-center gap-2">
-                    <label htmlFor="fromDate-cws" className="text-sm font-medium text-slate-700 whitespace-nowrap">From</label>
+                    <label htmlFor="fromDate-cws" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">From</label>
                     <input type="date" id="fromDate-cws" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
                 </div>
                 <div className="flex items-center gap-2">
-                    <label htmlFor="toDate-cws" className="text-sm font-medium text-slate-700 whitespace-nowrap">To</label>
+                    <label htmlFor="toDate-cws" className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">To</label>
                     <input type="date" id="toDate-cws" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
                 </div>
             </div>
@@ -510,8 +510,8 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
             </div>
 
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-slate-800">
-                    <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                         <tr>
                             <th scope="col" className="px-6 py-3">Product Name</th>
                             <th scope="col" className="px-6 py-3">Company</th>
@@ -526,8 +526,8 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                     </thead>
                     <tbody>
                         {processedReportData.map(batch => (
-                            <tr key={batch.id} className="bg-white border-b hover:bg-slate-50">
-                                <th scope="row" className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
+                            <tr key={batch.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <th scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">
                                     {batch.showProductInfo ? batch.productName : ''}
                                 </th>
                                 <td className="px-6 py-4">{batch.showProductInfo ? batch.company : ''}</td>
@@ -543,7 +543,7 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                     </tbody>
                 </table>
                 {reportData.length === 0 && (
-                    <div className="text-center py-10 text-slate-600">
+                    <div className="text-center py-10 text-slate-600 dark:text-slate-400">
                         <p>No products found for the selected criteria.</p>
                     </div>
                 )}
@@ -649,8 +649,8 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                 </button>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left text-slate-800">
-                    <thead className="text-xs text-slate-800 uppercase bg-slate-50">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
                         <tr>
                             {showProductInfo && <th className="px-6 py-3">Product</th>}
                             {showProductInfo && <th className="px-6 py-3">Company</th>}
@@ -664,22 +664,22 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                     <tbody>
                         {filteredBatches.map(batch => {
                             const expiry = getExpiryDate(batch.expiryDate);
-                            let rowClass = 'bg-white';
+                            let rowClass = 'bg-white dark:bg-slate-800';
                             let expiryBadge = null;
                             let rowTitle = '';
 
                             if (expiry < today) {
-                                rowClass = 'bg-red-100 text-red-900 hover:bg-red-200';
-                                expiryBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 rounded-full">Expired</span>;
+                                rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-900 dark:text-red-100 hover:bg-red-200 dark:hover:bg-red-900/70';
+                                expiryBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
                                 rowTitle = `This batch expired on ${expiry.toLocaleDateString()}`;
                             } else if (expiry <= thirtyDaysFromNow) {
-                                rowClass = 'bg-yellow-100 text-yellow-900 hover:bg-yellow-200';
-                                expiryBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 rounded-full">Expires Soon</span>;
+                                rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-900 dark:text-yellow-100 hover:bg-yellow-200 dark:hover:bg-yellow-900/70';
+                                expiryBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
                                 rowTitle = `This batch expires on ${expiry.toLocaleDateString()}`;
                             }
                             
                             return (
-                            <tr key={batch.id} className={`${rowClass} border-b`} title={rowTitle}>
+                            <tr key={batch.id} className={`${rowClass} border-b dark:border-slate-700`} title={rowTitle}>
                                 {showProductInfo && <td className="px-6 py-4 font-medium">{batch.productName}</td>}
                                 {showProductInfo && <td className="px-6 py-4">{batch.company}</td>}
                                 <td className="px-6 py-4">{batch.batchNumber}</td>
@@ -706,13 +706,13 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                         })}
                     </tbody>
                 </table>
-                {filteredBatches.length === 0 && <div className="text-center py-10 text-slate-600"><p>No batches found.</p></div>}
+                {filteredBatches.length === 0 && <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No batches found.</p></div>}
             </div>
         </Card>
     );
 };
 
-const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded focus:ring-2 focus:ring-indigo-500";
+const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[] }> = ({ isOpen, onClose, onAddProduct, companies }) => {
@@ -762,7 +762,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add New Product">
       <form onSubmit={handleSubmit} className="space-y-4">
-        <h4 className="font-semibold text-slate-700">Product Details</h4>
+        <h4 className="font-semibold text-slate-700 dark:text-slate-300">Product Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
           <div className="relative">
@@ -778,14 +778,14 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
               autoComplete="off"
             />
             {showCompanySuggestions && (
-              <ul className="absolute z-20 w-full mt-1 bg-white border border-slate-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+              <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                   {companySuggestions.map(c => (
-                      <li key={c.id} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 text-slate-800">
+                      <li key={c.id} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
                           {c.name}
                       </li>
                   ))}
                   {!companyExists && formState.company.trim().length > 0 && (
-                      <li onClick={() => handleSelectCompany(formState.company.trim())} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 text-green-600 font-semibold">
+                      <li onClick={() => handleSelectCompany(formState.company.trim())} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
                           Create new company: "{formState.company.trim()}"
                       </li>
                   )}
@@ -802,7 +802,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
                 <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
             </div>
         </div>
-        <h4 className="font-semibold text-slate-700 pt-2 border-t mt-4">First Batch Details</h4>
+        <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">First Batch Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />
             <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />
@@ -811,7 +811,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
             <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01"/>
         </div>
         <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Product</button>
         </div>
       </form>
@@ -867,8 +867,8 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
           </div>
         </div>
-        <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+        <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Update Product</button>
         </div>
       </form>
@@ -905,34 +905,34 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Batches for ${product.name}`}>
       <div className="mb-6 max-h-48 overflow-y-auto">
-          <h4 className="font-semibold text-slate-700 mb-2">Existing Batches</h4>
+          <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Existing Batches</h4>
           <ul className="space-y-2">
             {product.batches.map(batch => {
                 const expiry = getExpiryDate(batch.expiryDate);
-                let liClass = 'bg-slate-50';
+                let liClass = 'bg-slate-50 dark:bg-slate-700';
                 let statusBadge = null;
                 let liTitle = '';
 
                 if (expiry < today) {
-                    liClass = 'bg-red-100';
-                    statusBadge = <span className="px-2 py-0.5 text-xs font-semibold text-white bg-red-600 rounded-full">Expired</span>;
+                    liClass = 'bg-red-100 dark:bg-red-900/50';
+                    statusBadge = <span className="px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
                     liTitle = `This batch expired on ${expiry.toLocaleDateString()}`;
                 } else if (expiry <= thirtyDaysFromNow) {
-                    liClass = 'bg-yellow-100';
-                    statusBadge = <span className="px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 rounded-full">Expires Soon</span>;
+                    liClass = 'bg-yellow-100 dark:bg-yellow-900/50';
+                    statusBadge = <span className="px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
                     liTitle = `This batch expires on ${expiry.toLocaleDateString()}`;
                 }
 
                 return (
                     <li key={batch.id} className={`flex justify-between items-center p-2 rounded ${liClass}`} title={liTitle}>
                         <div>
-                            <span className="font-medium text-slate-800">Batch: {batch.batchNumber}</span>
-                            <span className="text-sm text-slate-600 ml-4">Exp: {batch.expiryDate}</span>
+                            <span className="font-medium text-slate-800 dark:text-slate-200">Batch: {batch.batchNumber}</span>
+                            <span className="text-sm text-slate-600 dark:text-slate-400 ml-4">Exp: {batch.expiryDate}</span>
                         </div>
                         <div className="flex items-center gap-4">
                             {statusBadge}
-                            <span className="text-sm text-slate-600">MRP: ₹{batch.mrp.toFixed(2)}</span>
-                            <span className="font-bold text-slate-800">Stock: {batch.stock}</span>
+                            <span className="text-sm text-slate-600 dark:text-slate-400">MRP: ₹{batch.mrp.toFixed(2)}</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {batch.stock}</span>
                             <button
                               onClick={() => {
                                 if (window.confirm(`Are you sure you want to delete batch "${batch.batchNumber}"? This action cannot be undone.`)) {
@@ -950,8 +950,8 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
             })}
           </ul>
       </div>
-      <form onSubmit={handleSubmit} className="space-y-4 pt-4 border-t">
-        <h4 className="font-semibold text-slate-700">Add New Batch</h4>
+      <form onSubmit={handleSubmit} className="space-y-4 pt-4 border-t dark:border-slate-700">
+        <h4 className="font-semibold text-slate-700 dark:text-slate-300">Add New Batch</h4>
          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />
             <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />
@@ -960,7 +960,7 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
             <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01"/>
         </div>
         <div className="flex justify-end gap-3 pt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Cancel</button>
+            <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
             <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Batch</button>
         </div>
       </form>
