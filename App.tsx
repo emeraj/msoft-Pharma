@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -125,17 +124,6 @@ const App: React.FC = () => {
       unsubscribers.forEach(unsub => unsub());
     };
   }, [currentUser]);
-
-
-  useEffect(() => {
-    localStorage.setItem('theme', theme);
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [theme]);
   
   const handleLogout = () => {
     signOut(auth);
@@ -144,13 +132,13 @@ const App: React.FC = () => {
   const PermissionErrorComponent: React.FC = () => (
     <div className="flex-grow flex items-center justify-center p-4">
         <Card title="Database Permission Error" className="max-w-2xl w-full text-center border-2 border-red-500/50">
-            <p className="text-red-600 dark:text-red-400 mb-4">{permissionError}</p>
-            <div className="text-left bg-slate-100 dark:bg-slate-800 p-4 rounded-lg my-4">
-                <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200 mb-2">How to Fix</h3>
-                <p className="mb-4 text-slate-700 dark:text-slate-300">
+            <p className="text-red-600 mb-4">{permissionError}</p>
+            <div className="text-left bg-slate-100 p-4 rounded-lg my-4">
+                <h3 className="font-semibold text-lg text-slate-800 mb-2">How to Fix</h3>
+                <p className="mb-4 text-slate-700">
                     This application requires specific security rules to be set in your Firebase project to protect your data.
                 </p>
-                <ol className="list-decimal list-inside space-y-2 text-slate-700 dark:text-slate-300">
+                <ol className="list-decimal list-inside space-y-2 text-slate-700">
                     <li>Open your Firebase project console.</li>
                     <li>Navigate to <strong>Firestore Database</strong> &gt; <strong>Rules</strong> tab.</li>
                     <li>Replace the content of the editor with the following:</li>
@@ -170,7 +158,7 @@ const App: React.FC = () => {
                     After applying these rules, please <strong>refresh this page</strong>.
                 </p>
                  <p className="mt-2 text-xs text-slate-500">
-                    (This information is also available in the <code className="bg-slate-200 dark:bg-slate-700 p-1 rounded">firebase.ts</code> file.)
+                    (This information is also available in the <code className="bg-slate-200 p-1 rounded">firebase.ts</code> file.)
                 </p>
             </div>
             <button
@@ -710,7 +698,7 @@ const App: React.FC = () => {
 
   const renderView = () => {
     if (authLoading || (currentUser && dataLoading)) {
-      return <div className="flex-grow flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
+      return <div className="flex-grow flex justify-center items-center h-full text-xl text-slate-600">Loading...</div>;
     }
     if (!currentUser) {
         return <Auth />;
@@ -733,7 +721,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900`}>
+    <div className="flex flex-col min-h-screen bg-slate-100">
       {currentUser && (
         <Header 
           user={currentUser}
@@ -747,16 +735,14 @@ const App: React.FC = () => {
         {renderView()}
       </main>
       {currentUser && (
-        <footer className="bg-white dark:bg-slate-800 text-center p-4 text-sm text-slate-600 dark:text-slate-400 border-t dark:border-slate-700">
-          Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">webs.msoftindia.com</a>
+        <footer className="bg-white text-center p-4 text-sm text-slate-600 border-t">
+          Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">webs.msoftindia.com</a>
         </footer>
       )}
       {currentUser && (
         <SettingsModal
           isOpen={isSettingsModalOpen}
           onClose={() => setSettingsModalOpen(false)}
-          theme={theme}
-          onThemeChange={setTheme}
           companyProfile={companyProfile}
           onProfileChange={handleProfileChange}
         />

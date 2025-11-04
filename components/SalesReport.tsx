@@ -94,14 +94,14 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
     exportToCsv(filename, exportData);
   };
   
-  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500";
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <Card title="Sales Report">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 p-4 bg-slate-50 rounded-lg border">
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Customer</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Search Customer</label>
             <input
               type="text"
               placeholder="Filter by customer name..."
@@ -112,13 +112,13 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
           </div>
           <div className="flex items-end">
             <div>
-              <label htmlFor="fromDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From</label>
+              <label htmlFor="fromDate" className="block text-sm font-medium text-slate-700 mb-1">From</label>
               <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
             </div>
           </div>
           <div className="flex items-end">
             <div>
-              <label htmlFor="toDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To</label>
+              <label htmlFor="toDate" className="block text-sm font-medium text-slate-700 mb-1">To</label>
               <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
             </div>
           </div>
@@ -126,17 +126,17 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
         
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full sm:w-auto">
-                 <div className="bg-blue-50 dark:bg-blue-900/50 p-3 rounded-lg text-center">
-                    <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold">Total Bills</p>
-                    <p className="text-2xl font-bold text-blue-900 dark:text-blue-200">{filteredBills.length}</p>
+                 <div className="bg-blue-50 p-3 rounded-lg text-center">
+                    <p className="text-sm text-blue-800 font-semibold">Total Bills</p>
+                    <p className="text-2xl font-bold text-blue-900">{filteredBills.length}</p>
                 </div>
-                <div className="bg-green-50 dark:bg-green-900/50 p-3 rounded-lg text-center">
-                    <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales</p>
-                    <p className="text-2xl font-bold text-green-900 dark:text-green-200">₹{summary.totalSales.toFixed(2)}</p>
+                <div className="bg-green-50 p-3 rounded-lg text-center">
+                    <p className="text-sm text-green-800 font-semibold">Total Sales</p>
+                    <p className="text-2xl font-bold text-green-900">₹{summary.totalSales.toFixed(2)}</p>
                 </div>
-                <div className="bg-purple-50 dark:bg-purple-900/50 p-3 rounded-lg text-center">
-                    <p className="text-sm text-purple-800 dark:text-purple-300 font-semibold">Total GST</p>
-                    <p className="text-2xl font-bold text-purple-900 dark:text-purple-200">₹{summary.totalGst.toFixed(2)}</p>
+                <div className="bg-purple-50 p-3 rounded-lg text-center">
+                    <p className="text-sm text-purple-800 font-semibold">Total GST</p>
+                    <p className="text-2xl font-bold text-purple-900">₹{summary.totalGst.toFixed(2)}</p>
                 </div>
             </div>
             <button onClick={handleExport} className="flex-shrink-0 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
@@ -147,8 +147,8 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
 
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-            <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+          <table className="w-full text-sm text-left text-slate-800">
+            <thead className="text-xs text-slate-800 uppercase bg-slate-50">
               <tr>
                 <th scope="col" className="px-6 py-3">Bill No.</th>
                 <th scope="col" className="px-6 py-3">Date</th>
@@ -159,8 +159,8 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
             </thead>
             <tbody>
               {filteredBills.map(bill => (
-                <tr key={bill.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                  <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{bill.billNumber}</td>
+                <tr key={bill.id} className="bg-white border-b hover:bg-slate-50">
+                  <td className="px-6 py-4 font-medium text-slate-900">{bill.billNumber}</td>
                   <td className="px-6 py-4">{new Date(bill.date).toLocaleDateString()}</td>
                   <td className="px-6 py-4">{bill.customerName}</td>
                   <td className="px-6 py-4 text-right">₹{bill.totalGst.toFixed(2)}</td>
@@ -170,7 +170,7 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
             </tbody>
           </table>
           {filteredBills.length === 0 && (
-            <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+            <div className="text-center py-10 text-slate-600">
               <p>No sales records found for the selected criteria.</p>
             </div>
           )}

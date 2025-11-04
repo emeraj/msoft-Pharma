@@ -17,14 +17,14 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
       onClick={onClose}
     >
       <div 
-        className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 relative animate-fade-in-up"
+        className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 relative animate-fade-in-up"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-4 pb-2 border-b dark:border-slate-700">
-          <h3 className="text-2xl font-semibold text-slate-800 dark:text-slate-200">{title}</h3>
+        <div className="flex justify-between items-center mb-4 pb-2 border-b">
+          <h3 className="text-2xl font-semibold text-slate-800">{title}</h3>
           <button 
             onClick={onClose}
-            className="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            className="text-slate-600 hover:text-slate-900 transition-colors"
           >
             <XIcon className="h-6 w-6" />
           </button>

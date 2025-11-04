@@ -15,7 +15,7 @@ interface BillingProps {
   onCancelEdit?: () => void;
 }
 
-const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 
 // --- Helper Functions ---
 const getExpiryDate = (expiryString: string): Date => {
@@ -37,28 +37,28 @@ const SubstituteModal: React.FC<{
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Substitutes for ${sourceProduct.name}`}>
             <div className="space-y-4">
-                <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                    <p className="font-semibold text-slate-800 dark:text-slate-200">Original Product</p>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">{sourceProduct.name} by {sourceProduct.company}</p>
-                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{sourceProduct.composition}</p>
+                <div className="p-3 bg-slate-100 rounded-lg">
+                    <p className="font-semibold text-slate-800">Original Product</p>
+                    <p className="text-sm text-slate-600">{sourceProduct.name} by {sourceProduct.company}</p>
+                    <p className="text-sm font-bold text-indigo-600">{sourceProduct.composition}</p>
                 </div>
 
                 <div className="max-h-96 overflow-y-auto space-y-3">
                     {substitutes.length > 0 ? (
                         substitutes.map(product => (
-                            <div key={product.id} className="p-3 border dark:border-slate-600 rounded-lg">
-                                <p className="font-semibold text-slate-800 dark:text-slate-200">{product.name}</p>
-                                <p className="text-sm text-slate-600 dark:text-slate-400">{product.company}</p>
+                            <div key={product.id} className="p-3 border rounded-lg">
+                                <p className="font-semibold text-slate-800">{product.name}</p>
+                                <p className="text-sm text-slate-600">{product.company}</p>
                                 <ul className="mt-2 space-y-1">
                                     {product.batches.filter(b => b.stock > 0).map(batch => (
-                                        <li key={batch.id} className="flex justify-between items-center text-sm p-2 bg-slate-50 dark:bg-slate-700/50 rounded">
+                                        <li key={batch.id} className="flex justify-between items-center text-sm p-2 bg-slate-50 rounded">
                                             <div>
                                                 <span>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
                                                 <span className="ml-3">Exp: {batch.expiryDate}</span>
                                             </div>
                                             <div className="flex items-center gap-4">
                                                 <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                                <span className="text-green-600 dark:text-green-400">Stock: {batch.stock}</span>
+                                                <span className="text-green-600">Stock: {batch.stock}</span>
                                                 <button onClick={() => { onAddToCart(product, batch); onClose(); }} className="px-3 py-1 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">
                                                     Add
                                                 </button>
@@ -69,7 +69,7 @@ const SubstituteModal: React.FC<{
                             </div>
                         ))
                     ) : (
-                        <p className="text-center text-slate-600 dark:text-slate-400 py-6">No substitutes with the same composition found in stock.</p>
+                        <p className="text-center text-slate-600 py-6">No substitutes with the same composition found in stock.</p>
                     )}
                 </div>
             </div>
@@ -273,15 +273,15 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
               className={`${inputStyle} w-full px-4 py-3 text-lg`}
             />
             {searchResults.length > 0 && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg">
+              <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg">
                 <ul>
                   {searchResults.map(product => (
-                    <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
-                      <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
+                    <li key={product.id} className="border-b last:border-b-0">
+                      <div className="px-4 py-2 font-semibold text-slate-800 flex justify-between items-center">
                         <span>{product.name}</span>
                         <button
                             onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
-                            className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2 py-1 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                            className="flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded-md hover:bg-indigo-100"
                             title="Find substitute medicines"
                         >
                             <SwitchHorizontalIcon className="h-4 w-4" />
@@ -300,19 +300,19 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                                <li key={batch.id} 
                                    className={`px-4 py-2 flex justify-between items-center transition-colors ${
                                        isExpired 
-                                           ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 cursor-not-allowed' 
-                                           : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'
+                                           ? 'bg-red-100 text-red-700 cursor-not-allowed' 
+                                           : 'hover:bg-indigo-50 cursor-pointer'
                                    }`}
                                    onClick={() => handleAddToCart(product, batch)}
                                    title={isExpired ? `This batch expired on ${expiry.toLocaleDateString()}` : ''}>
                                     <div>
-                                        <span className={isExpired ? '' : 'text-slate-800 dark:text-slate-200'}>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                        <span className={`text-sm ml-3 ${isExpired ? '' : 'text-slate-600 dark:text-slate-400'}`}>Exp: {batch.expiryDate}</span>
-                                        {isExpired && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>}
+                                        <span className={isExpired ? '' : 'text-slate-800'}>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                        <span className={`text-sm ml-3 ${isExpired ? '' : 'text-slate-600'}`}>Exp: {batch.expiryDate}</span>
+                                        {isExpired && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 rounded-full">Expired</span>}
                                     </div>
                                     <div>
-                                        <span className={isExpired ? '' : 'text-slate-800 dark:text-slate-200'}>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                        <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
+                                        <span className={isExpired ? '' : 'text-slate-800'}>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
+                                        <span className="text-sm text-green-600 font-semibold ml-3">Stock: {batch.stock}</span>
                                     </div>
                                </li>
                             );
@@ -325,11 +325,11 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
             )}
           </div>
           <div className="mt-6">
-            <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">Cart Items</h3>
+            <h3 className="text-xl font-semibold text-slate-800 mb-2">Cart Items</h3>
              <div className="overflow-x-auto max-h-[calc(100vh-380px)]">
                 {cart.length > 0 ? (
-                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0">
+                <table className="w-full text-sm text-left text-slate-800">
+                    <thead className="text-xs text-slate-800 uppercase bg-slate-50 sticky top-0">
                     <tr>
                         <th scope="col" className="px-4 py-3">Product</th>
                         <th scope="col" className="px-4 py-3">Batch</th>
@@ -341,8 +341,8 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                     </thead>
                     <tbody>
                     {cart.map(item => (
-                        <tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{item.productName}</td>
+                        <tr key={item.batchId} className="bg-white border-b hover:bg-slate-50">
+                        <td className="px-4 py-3 font-medium text-slate-900">{item.productName}</td>
                         <td className="px-4 py-3">{item.batchNumber}</td>
                         <td className="px-4 py-3">
                             <input 
@@ -366,7 +366,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                     </tbody>
                 </table>
                 ) : (
-                    <div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                    <div className="text-center py-10 text-slate-600 bg-slate-50 rounded-lg">
                         <p>Your cart is empty.</p>
                         <p className="text-sm">Search for products to add them to the bill.</p>
                     </div>
@@ -380,7 +380,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
                 <div>
-                    <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Customer Name</label>
+                    <label htmlFor="customerName" className="block text-sm font-medium text-slate-800">Customer Name</label>
                     <input
                         type="text"
                         id="customerName"
@@ -390,7 +390,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                         className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
                     />
                 </div>
-                <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300">
+                <div className="border-t pt-4 space-y-2 text-slate-700">
                     <div className="flex justify-between">
                         <span>Subtotal</span>
                         <span>₹{subTotal.toFixed(2)}</span>
@@ -399,7 +399,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                         <span>Total GST</span>
                         <span>₹{totalGst.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2">
+                    <div className="flex justify-between text-2xl font-bold text-slate-800 pt-2 border-t mt-2">
                         <span>Grand Total</span>
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
@@ -408,9 +408,9 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                     <button 
                         onClick={handleSaveBill}
                         disabled={cart.length === 0}
-                        className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+                        className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                     >
-                       {isEditing ? 'Update Bill' : 'Print Bill'}
+                       {isEditing ? 'Update Bill' : 'Save And Print Bill'}
                     </button>
                     {isEditing && (
                         <button 

@@ -91,14 +91,14 @@ const CompanySaleDetailsModal: React.FC<{
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Bill Details for ${companyName}: ${bill.billNumber}`}>
-            <div className="space-y-4 text-slate-800 dark:text-slate-300">
+            <div className="space-y-4 text-slate-800">
                 <div className="flex justify-between text-sm">
                     <div>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">Customer: {bill.customerName}</p>
-                        <p className="text-slate-600 dark:text-slate-400">Date: {new Date(bill.date).toLocaleString()}</p>
+                        <p className="font-semibold text-slate-800">Customer: {bill.customerName}</p>
+                        <p className="text-slate-600">Date: {new Date(bill.date).toLocaleString()}</p>
                     </div>
                 </div>
-                <div className="border-t dark:border-slate-700 pt-2">
+                <div className="border-t pt-2">
                     <div className="max-h-60 overflow-y-auto">
                         <table className="w-full text-xs text-left">
                             <thead>
@@ -117,20 +117,20 @@ const CompanySaleDetailsModal: React.FC<{
                                     let rowTitle = '';
 
                                     if (expiry < today) {
-                                        rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
-                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
+                                        rowClass = 'bg-red-100 text-red-800';
+                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 rounded-full">Expired</span>;
                                         rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
                                     } else if (expiry <= thirtyDaysFromNow) {
-                                        rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
-                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
+                                        rowClass = 'bg-yellow-100 text-yellow-800';
+                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 rounded-full">Expires Soon</span>;
                                         rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
                                     }
 
                                     return (
-                                        <tr key={item.batchId} className={`border-b dark:border-slate-700 ${rowClass}`} title={rowTitle}>
+                                        <tr key={item.batchId} className={`border-b ${rowClass}`} title={rowTitle}>
                                             <td className="py-2">
                                                 {item.productName}
-                                                <div className="text-slate-500 dark:text-slate-400">
+                                                <div className="text-slate-500">
                                                   Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
                                                 </div>
                                             </td>
@@ -144,22 +144,22 @@ const CompanySaleDetailsModal: React.FC<{
                         </table>
                     </div>
                 </div>
-                <div className="border-t dark:border-slate-700 pt-3 space-y-1 text-sm">
-                    <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                <div className="border-t pt-3 space-y-1 text-sm">
+                    <div className="flex justify-between text-slate-700">
                         <span >Subtotal (for {companyName}):</span>
                         <span className="font-medium">₹{subTotal.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-slate-700 dark:text-slate-300">
+                    <div className="flex justify-between text-slate-700">
                         <span>Total GST (for {companyName}):</span>
                         <span className="font-medium">₹{totalGst.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">
+                    <div className="flex justify-between text-lg font-bold text-slate-800 mt-1">
                         <span>Grand Total (for {companyName}):</span>
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
                  <div className="flex justify-end pt-4">
-                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 rounded hover:bg-slate-300">Close</button>
                 </div>
             </div>
         </Modal>
@@ -268,26 +268,26 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
     }
   };
 
-  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500";
   const formSelectStyle = `${formInputStyle} appearance-none`;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <Card title="Company-wise Sales Report">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-slate-50 rounded-lg border">
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Company</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Select Company</label>
               <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={formSelectStyle} required>
                   <option value="">-- Select a Company --</option>
                   {companies.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label htmlFor="fromDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From</label>
+              <label htmlFor="fromDate" className="block text-sm font-medium text-slate-700 mb-1">From</label>
               <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
             </div>
             <div>
-              <label htmlFor="toDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To</label>
+              <label htmlFor="toDate" className="block text-sm font-medium text-slate-700 mb-1">To</label>
               <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
             </div>
         </div>
@@ -295,17 +295,17 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
         {companyFilter && (
              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full sm:w-auto">
-                     <div className="bg-blue-50 dark:bg-blue-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold">Total Basic Amount</p>
-                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-200">₹{summary.totalBasic.toFixed(2)}</p>
+                     <div className="bg-blue-50 p-3 rounded-lg text-center">
+                        <p className="text-sm text-blue-800 font-semibold">Total Basic Amount</p>
+                        <p className="text-2xl font-bold text-blue-900">₹{summary.totalBasic.toFixed(2)}</p>
                     </div>
-                    <div className="bg-purple-50 dark:bg-purple-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-purple-800 dark:text-purple-300 font-semibold">Total GST Amount</p>
-                        <p className="text-2xl font-bold text-purple-900 dark:text-purple-200">₹{summary.totalGst.toFixed(2)}</p>
+                    <div className="bg-purple-50 p-3 rounded-lg text-center">
+                        <p className="text-sm text-purple-800 font-semibold">Total GST Amount</p>
+                        <p className="text-2xl font-bold text-purple-900">₹{summary.totalGst.toFixed(2)}</p>
                     </div>
-                    <div className="bg-green-50 dark:bg-green-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Invoice Value</p>
-                        <p className="text-2xl font-bold text-green-900 dark:text-green-200">₹{summary.totalValue.toFixed(2)}</p>
+                    <div className="bg-green-50 p-3 rounded-lg text-center">
+                        <p className="text-sm text-green-800 font-semibold">Total Invoice Value</p>
+                        <p className="text-2xl font-bold text-green-900">₹{summary.totalValue.toFixed(2)}</p>
                     </div>
                 </div>
                 <button onClick={handleExport} className="flex-shrink-0 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
@@ -317,8 +317,8 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
 
         {companyFilter ? (
              <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+              <table className="w-full text-sm text-left text-slate-800">
+                <thead className="text-xs text-slate-800 uppercase bg-slate-50">
                   <tr>
                     <th scope="col" className="px-6 py-3">Date</th>
                     <th scope="col" className="px-6 py-3">Customer Name</th>
@@ -330,14 +330,14 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
                 </thead>
                 <tbody>
                   {filteredSalesData.map(sale => (
-                    <tr key={sale.billId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                    <tr key={sale.billId} className="bg-white border-b hover:bg-slate-50">
                       <td className="px-6 py-4">{new Date(sale.date).toLocaleDateString()}</td>
                       <td className="px-6 py-4">{sale.customerName}</td>
                       <td className="px-6 py-4 text-right">₹{sale.basicAmount.toFixed(2)}</td>
                       <td className="px-6 py-4 text-right">₹{sale.gstAmount.toFixed(2)}</td>
                       <td className="px-6 py-4 text-right font-semibold">₹{sale.totalValue.toFixed(2)}</td>
                       <td className="px-6 py-4">
-                        <button onClick={() => handleViewDetails(sale.billId)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                        <button onClick={() => handleViewDetails(sale.billId)} className="font-medium text-indigo-600 hover:underline">
                             View Details
                         </button>
                       </td>
@@ -346,13 +346,13 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
                 </tbody>
               </table>
               {filteredSalesData.length === 0 && (
-                <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+                <div className="text-center py-10 text-slate-600">
                   <p>No sales records found for this company in the selected date range.</p>
                 </div>
               )}
             </div>
         ) : (
-             <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+             <div className="text-center py-10 text-slate-600">
               <p className="text-lg">Please select a company to view the sales report.</p>
             </div>
         )}
