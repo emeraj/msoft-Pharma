@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types.ts';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem } from './types.ts';
 import Header from './components/Header.tsx';
 import Billing from './components/Billing.tsx';
 import Inventory from './components/Inventory.tsx';
@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -126,17 +125,6 @@ const App: React.FC = () => {
     };
   }, [currentUser]);
 
-
-  useEffect(() => {
-    localStorage.setItem('theme', theme);
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [theme]);
-  
   const handleLogout = () => {
     signOut(auth);
   };
@@ -755,8 +743,6 @@ const App: React.FC = () => {
         <SettingsModal
           isOpen={isSettingsModalOpen}
           onClose={() => setSettingsModalOpen(false)}
-          theme={theme}
-          onThemeChange={setTheme}
           companyProfile={companyProfile}
           onProfileChange={handleProfileChange}
         />
