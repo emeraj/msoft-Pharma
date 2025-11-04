@@ -43,9 +43,20 @@
   }
 }
 </script>
+<!-- Suppress Babel console warning -->
+<script>
+  const warn = console.warn;
+  console.warn = (...args) => {
+    if (args.length > 0 && typeof args[0] === 'string' && args[0].startsWith('You are using the in-browser Babel transformer.')) {
+      return;
+    }
+    warn.apply(console, args);
+  };
+</script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="antialiased">
   <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
+  <script type="text/babel" data-type="module" src="index.tsx"></script>
 </body>
 </html>
