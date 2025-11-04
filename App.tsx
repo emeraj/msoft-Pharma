@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
-import Header from './components/Header';
-import Billing from './components/Billing';
-import Inventory from './components/Inventory';
-import DayBook from './components/DayBook';
-import Purchases from './components/Purchases';
-import SettingsModal from './components/SettingsModal';
-import Auth from './components/Auth';
-import Card from './components/common/Card';
-import { db, auth } from './firebase';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types.ts';
+import Header from './components/Header.tsx';
+import Billing from './components/Billing.tsx';
+import Inventory from './components/Inventory.tsx';
+import DayBook from './components/DayBook.tsx';
+import Purchases from './components/Purchases.tsx';
+import SettingsModal from './components/SettingsModal.tsx';
+import Auth from './components/Auth.tsx';
+import Card from './components/common/Card.tsx';
+import { db, auth } from './firebase.ts';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import {
   collection,
@@ -25,11 +25,11 @@ import {
   arrayUnion,
   Unsubscribe
 } from 'firebase/firestore';
-import SuppliersLedger from './components/SuppliersLedger';
-import SalesReport from './components/SalesReport';
-import CompanyWiseSale from './components/CompanyWiseSale';
-import PaymentEntry from './components/PaymentEntry';
-import SalesDashboard from './components/SalesDashboard';
+import SuppliersLedger from './components/SuppliersLedger.tsx';
+import SalesReport from './components/SalesReport.tsx';
+import CompanyWiseSale from './components/CompanyWiseSale.tsx';
+import PaymentEntry from './components/PaymentEntry.tsx';
+import SalesDashboard from './components/SalesDashboard.tsx';
 
 
 const App: React.FC = () => {

@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
-import Card from './common/Card';
-import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons';
-import PrintableA5Bill from './PrintableA5Bill';
+import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types.ts';
+import Card from './common/Card.tsx';
+import Modal from './common/Modal.tsx';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons.tsx';
+import PrintableA5Bill from './PrintableA5Bill.tsx';
 
 interface BillingProps {
   products: Product[];
