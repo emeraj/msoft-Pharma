@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Bill, CompanyProfile } from '../types.ts';
+import type { Bill, CompanyProfile } from '../types';
 
 const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> = ({ bill, companyProfile }) => {
     const items = bill?.items || [];

@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types.ts';
-import Card from './common/Card.tsx';
-import Modal from './common/Modal.tsx';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons.tsx';
-import PrintableA5Bill from './PrintableA5Bill.tsx';
+import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
+import Card from './common/Card';
+import Modal from './common/Modal';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons';
+import PrintableA5Bill from './PrintableA5Bill';
 
 interface BillingProps {
   products: Product[];
@@ -410,7 +410,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                         disabled={cart.length === 0}
                         className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
                     >
-                       {isEditing ? 'Update Bill' : 'Save And Print Bill'}
+                       {isEditing ? 'Update Bill' : 'Save and Print Bill'}
                     </button>
                     {isEditing && (
                         <button 

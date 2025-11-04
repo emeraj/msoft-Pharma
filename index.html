@@ -6,7 +6,7 @@
   <title>Pharma - Retail</title>
   <script>
     tailwind.config = {
-      darkMode: 'class',
+      
     }
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
@@ -17,9 +17,6 @@
     }
     ::-webkit-scrollbar-track {
       background: #f1f1f1;
-    }
-    .dark ::-webkit-scrollbar-track {
-      background: #2d3748; /* slate-800 */
     }
     ::-webkit-scrollbar-thumb {
       background: #888;
@@ -32,21 +29,23 @@
 <script type="importmap">
 {
   "imports": {
-    "react": "https://aistudiocdn.com/react@^18.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^18.2.0/",
-    "react/": "https://aistudiocdn.com/react@^18.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "firebase/app": "https://aistudiocdn.com/firebase@^12.4.0/app",
     "firebase/database": "https://aistudiocdn.com/firebase@^12.4.0/database",
     "firebase/auth": "https://aistudiocdn.com/firebase@^12.4.0/auth",
     "firebase/": "https://aistudiocdn.com/firebase@^12.4.0/",
-    "react-dom": "https://aistudiocdn.com/react-dom@^18.2.0"
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
   }
 }
 </script>
-<script src="https://unpkg.com/@babel/standalone@^7.24.9/babel.min.js"></script>
+<!-- Add Babel to transpile TSX in the browser for local development -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="antialiased">
   <div id="root"></div>
-  <script data-type="module" type="text/babel" src="/index.tsx"></script>
+  <!-- Change script type to text/babel and use a relative path -->
+  <script type="text/babel" data-type="module" src="index.tsx"></script>
 </body>
 </html>

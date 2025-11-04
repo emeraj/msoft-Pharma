@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import type { CompanyProfile } from '../types.ts';
-import Modal from './common/Modal.tsx';
-import { UpdateIcon } from './icons/Icons.tsx';
+import type { CompanyProfile } from '../types';
+import Modal from './common/Modal';
+import { UpdateIcon } from './icons/Icons';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -92,7 +92,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               />
             </div>
         </div>
-
+        
         {/* Action Buttons */}
         <div className="flex justify-end gap-4 pt-4 border-t dark:border-slate-700">
           <button 

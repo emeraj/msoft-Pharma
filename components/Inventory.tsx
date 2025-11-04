@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { Product, Batch, Company, Bill, Purchase } from '../types.ts';
-import Card from './common/Card.tsx';
-import Modal from './common/Modal.tsx';
-import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon } from './icons/Icons.tsx';
+import type { Product, Batch, Company, Bill, Purchase } from '../types';
+import Card from './common/Card';
+import Modal from './common/Modal';
+import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {

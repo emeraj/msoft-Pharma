@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types.ts';
-import Card from './common/Card.tsx';
-import Modal from './common/Modal.tsx';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon } from './icons/Icons.tsx';
+import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types';
+import Card from './common/Card';
+import Modal from './common/Modal';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon } from './icons/Icons';
 
 interface PurchasesProps {
     products: Product[];
