@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import type { CompanyProfile } from '../types';
+import type { Theme, CompanyProfile } from '../types';
 import Modal from './common/Modal';
 import { UpdateIcon } from './icons/Icons';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  theme: Theme;
+  onThemeChange: (theme: Theme) => void;
   companyProfile: CompanyProfile;
   onProfileChange: (profile: CompanyProfile) => void;
 }
@@ -15,6 +17,8 @@ const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slat
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
   isOpen, 
   onClose, 
+  theme, 
+  onThemeChange,
   companyProfile,
   onProfileChange,
 }) => {
@@ -91,6 +95,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 className={formInputStyle}
               />
             </div>
+        </div>
+
+        {/* Theme Selection Section */}
+        <div className="border-t dark:border-slate-700 pt-4">
+          <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-3">Theme</h4>
+          <div className="flex gap-4">
+            <button
+              onClick={() => onThemeChange('light')}
+              className={`w-full py-2 rounded-lg transition-colors ${
+                theme === 'light' 
+                  ? 'bg-indigo-600 text-white font-semibold shadow' 
+                  : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+              }`}
+            >
+              Light
+            </button>
+            <button
+              onClick={() => onThemeChange('dark')}
+              className={`w-full py-2 rounded-lg transition-colors ${
+                theme === 'dark' 
+                  ? 'bg-indigo-600 text-white font-semibold shadow' 
+                  : 'bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
+              }`}
+            >
+              Dark
+            </button>
+          </div>
         </div>
         
         {/* Action Buttons */}

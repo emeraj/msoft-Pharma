@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -47,6 +47,7 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -125,6 +126,17 @@ const App: React.FC = () => {
     };
   }, [currentUser]);
 
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    const root = document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, [theme]);
+  
   const handleLogout = () => {
     signOut(auth);
   };
@@ -721,7 +733,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-100">
+    <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900`}>
       {currentUser && (
         <Header 
           user={currentUser}
@@ -743,6 +755,8 @@ const App: React.FC = () => {
         <SettingsModal
           isOpen={isSettingsModalOpen}
           onClose={() => setSettingsModalOpen(false)}
+          theme={theme}
+          onThemeChange={setTheme}
           companyProfile={companyProfile}
           onProfileChange={handleProfileChange}
         />

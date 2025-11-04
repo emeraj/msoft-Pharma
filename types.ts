@@ -101,6 +101,8 @@ export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'salesRep
 export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
 // New Types for Settings
+export type Theme = 'light' | 'dark';
+
 export interface CompanyProfile {
   name: string;
   address: string;
