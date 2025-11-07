@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, Theme, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -47,7 +47,6 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -126,17 +125,6 @@ const App: React.FC = () => {
     };
   }, [currentUser]);
 
-
-  useEffect(() => {
-    localStorage.setItem('theme', theme);
-    const root = document.documentElement;
-    if (theme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [theme]);
-  
   const handleLogout = () => {
     signOut(auth);
   };
@@ -708,6 +696,49 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBackupData = () => {
+    if (!currentUser) {
+      alert("You must be logged in to back up data.");
+      return;
+    }
+
+    const backupData = {
+      schemaVersion: '1.0',
+      exportDate: new Date().toISOString(),
+      user: {
+        uid: currentUser.uid,
+        email: currentUser.email,
+        displayName: currentUser.displayName,
+      },
+      data: {
+        companyProfile,
+        products,
+        bills,
+        purchases,
+        companies,
+        suppliers,
+        payments,
+      }
+    };
+
+    const jsonString = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    const date = new Date().toISOString().split('T')[0];
+    link.download = `pharma_retail_backup_${date}.json`;
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    alert('Backup download has started!');
+  };
+
   const renderView = () => {
     if (authLoading || (currentUser && dataLoading)) {
       return <div className="flex-grow flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
@@ -755,10 +786,9 @@ const App: React.FC = () => {
         <SettingsModal
           isOpen={isSettingsModalOpen}
           onClose={() => setSettingsModalOpen(false)}
-          theme={theme}
-          onThemeChange={setTheme}
           companyProfile={companyProfile}
           onProfileChange={handleProfileChange}
+          onBackupData={handleBackupData}
         />
       )}
     </div>
