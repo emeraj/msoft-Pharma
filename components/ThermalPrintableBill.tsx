@@ -31,10 +31,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
         textRight: { textAlign: 'right' },
         spaceY1: { marginTop: '4px' },
         justifyBetween: { justifyContent: 'space-between' },
-        textSm: { fontSize: '14px' },
         mt2: { marginTop: '8px' },
-        textGray700: { color: '#4a5568' },
-        mr2: { marginRight: '8px' },
     };
 
     return (
@@ -58,10 +55,10 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
 
             {/* Header */}
             <div style={{ ...styles.flex, ...styles.fontBold, ...styles.text9 }}>
-                <div style={styles.flexGrow}>Item</div>
+                <div style={styles.flexGrow}>Item Description</div>
                 <div style={{ ...styles.w8, ...styles.textCenter }}>Qty</div>
                 <div style={{ ...styles.w10, ...styles.textRight }}>Rate</div>
-                <div style={{ ...styles.w12, ...styles.textRight }}>Total</div>
+                <div style={{ ...styles.w12, ...styles.textRight }}>Amount</div>
             </div>
 
             <p>{line}</p>
@@ -69,20 +66,22 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             {/* Items */}
             <div style={styles.text9}>
                 {items.map((item, index) => (
-                    <div key={item.batchId} style={styles.spaceY1}>
-                        <p>{index + 1}. {item.productName}</p>
-                        {item.composition && <p style={{fontSize: '8px', color: '#4A5568', margin: '2px 0 0 10px', fontStyle: 'italic'}}>{item.composition}</p>}
-                        <div style={styles.flex}>
-                            <div style={{...styles.flexGrow, fontSize: '8px', color: '#4A5568'}}>
-                                <span style={styles.mr2}>Batch:{item.batchNumber}</span>
-                                <span>Exp:{item.expiryDate}</span>
-                                <br />
-                                <span style={styles.mr2}>HSN:{item.hsnCode}</span>
-                                <span>GST:{item.gst}%</span>
+                    <div key={item.batchId} style={{ ...styles.spaceY1, padding: '2px 0', borderBottom: '1px dashed #ccc' }}>
+                        {/* Line 1: Item Name, Qty, Rate, Amount */}
+                        <div style={{ ...styles.flex, ...styles.justifyBetween }}>
+                            <div style={{ flex: '1 1 0%', paddingRight: '4px' }}>
+                                {index + 1}. {item.productName}
                             </div>
-                            <div style={{ ...styles.w8, ...styles.textCenter }}>{item.quantity}</div>
-                            <div style={{ ...styles.w10, ...styles.textRight }}>{item.mrp.toFixed(2)}</div>
-                            <div style={{ ...styles.w12, ...styles.textRight, ...styles.fontBold }}>{item.total.toFixed(2)}</div>
+                            <div style={{ display: 'flex', flexShrink: 0 }}>
+                                <div style={{ ...styles.w8, ...styles.textCenter }}>{item.quantity}</div>
+                                <div style={{ ...styles.w10, ...styles.textRight }}>{item.mrp.toFixed(2)}</div>
+                                <div style={{ ...styles.w12, ...styles.textRight, ...styles.fontBold }}>{item.total.toFixed(2)}</div>
+                            </div>
+                        </div>
+                        {/* Line 2: Batch, Expiry */}
+                        <div style={{ fontSize: '8px', color: '#4A5568', paddingLeft: '10px', paddingBottom: '2px' }}>
+                            <span>Batch: {item.batchNumber}</span>
+                            <span style={{ marginLeft: '12px' }}>Exp: {item.expiryDate}</span>
                         </div>
                     </div>
                 ))}

@@ -4,7 +4,7 @@ import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons';
-import PrintableA5Bill from './PrintableA5Bill';
+import ThermalPrintableBill from './ThermalPrintableBill';
 
 interface BillingProps {
   products: Product[];
@@ -130,11 +130,18 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   // --- Keyboard Navigation Effects ---
   useEffect(() => {
     if (searchTerm && searchResults.length > 0) {
-      setActiveIndices({ product: 0, batch: 0 });
+      // Find the first product with navigable batches
+      const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
+      if (firstProductIndex !== -1) {
+        setActiveIndices({ product: firstProductIndex, batch: 0 });
+      } else {
+        setActiveIndices({ product: -1, batch: -1 });
+      }
     } else {
       setActiveIndices({ product: -1, batch: -1 });
     }
-  }, [searchTerm, searchResults]);
+  }, [searchTerm, searchResults, navigableBatchesByProduct]);
+
 
   useEffect(() => {
     activeItemRef.current?.scrollIntoView({
@@ -228,7 +235,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
         
-        root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} />);
+        root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} />);
         
         setTimeout(() => {
             printWindow.document.title = `Invoice - ${billToPrint.customerName}`;
@@ -293,45 +300,65 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         if (searchResults.length === 0 || navigableBatchesByProduct.every(b => b.length === 0)) return;
 
         const findNext = (current: { product: number; batch: number }) => {
-            if (current.product === -1) return { product: 0, batch: 0 };
             let { product, batch } = current;
+
+            if (product === -1) { // Not initialized, find first valid item
+                const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
+                 return firstProductIndex !== -1 ? { product: firstProductIndex, batch: 0 } : current;
+            }
+            
             const currentProductBatches = navigableBatchesByProduct[product];
             if (batch < currentProductBatches.length - 1) {
                 return { product, batch: batch + 1 };
             }
+
             let nextProductIndex = product + 1;
             while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) {
                 nextProductIndex++;
             }
+
             if (nextProductIndex < navigableBatchesByProduct.length) {
                 return { product: nextProductIndex, batch: 0 };
             }
-            return { product: 0, batch: 0 };
+            
+            // Wrap around to the first valid item
+            const firstValidIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
+            return firstValidIndex !== -1 ? { product: firstValidIndex, batch: 0 } : current;
         };
 
         const findPrev = (current: { product: number; batch: number }) => {
-            if (current.product === -1) return { product: 0, batch: 0 };
             let { product, batch } = current;
+
+            if (product === -1) { // Not initialized, find last valid item
+                let lastProductIndex = navigableBatchesByProduct.length - 1;
+                while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) {
+                    lastProductIndex--;
+                }
+                return lastProductIndex !== -1 ? { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 } : current;
+            }
+
             if (batch > 0) {
                 return { product, batch: batch - 1 };
             }
+
             let prevProductIndex = product - 1;
             while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) {
                 prevProductIndex--;
             }
+
             if (prevProductIndex >= 0) {
                 const prevProductBatches = navigableBatchesByProduct[prevProductIndex];
                 return { product: prevProductIndex, batch: prevProductBatches.length - 1 };
             }
-            let lastProductIndex = navigableBatchesByProduct.length - 1;
-            while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) {
-                lastProductIndex--;
+            
+             // Wrap around to the last valid item
+            let lastValidIndex = navigableBatchesByProduct.length - 1;
+            while (lastValidIndex >= 0 && navigableBatchesByProduct[lastValidIndex].length === 0) {
+                lastValidIndex--;
             }
-            if (lastProductIndex >= 0) {
-                return { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 };
-            }
-            return current;
+            return lastValidIndex !== -1 ? { product: lastValidIndex, batch: navigableBatchesByProduct[lastValidIndex].length - 1 } : current;
         };
+
 
         switch (e.key) {
             case 'ArrowDown':
@@ -376,9 +403,10 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
               className={`${inputStyle} w-full px-4 py-3 text-lg`}
             />
             {searchResults.length > 0 && searchTerm && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg">
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
                 <ul>
                   {searchResults.map((product, productIndex) => (
+                    navigableBatchesByProduct[productIndex]?.length > 0 &&
                     <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                       <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
                         <span>{product.name}</span>
