@@ -231,6 +231,18 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   const executePrint = (billToPrint: Bill, onPrintDialogClosed?: () => void) => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
+        const style = printWindow.document.createElement('style');
+        style.innerHTML = `
+            @page { 
+                size: auto;
+                margin: 0mm; 
+            }
+            body {
+                margin: 0;
+            }
+        `;
+        printWindow.document.head.appendChild(style);
+        
         const rootEl = document.createElement('div');
         printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
@@ -238,7 +250,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} />);
         
         setTimeout(() => {
-            printWindow.document.title = `Invoice - ${billToPrint.customerName}`;
+            printWindow.document.title = ' ';
             printWindow.print();
             printWindow.close();
             if (onPrintDialogClosed) {

@@ -361,29 +361,40 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
     const handleExportPdf = () => {
         const printWindow = window.open('', '_blank', 'height=800,width=800');
         if (printWindow) {
-            printWindow.document.write('<html><head><title>Print Supplier Ledger</title></head><body><div id="print-root"></div></body></html>');
-            printWindow.document.close();
-            const printRoot = printWindow.document.getElementById('print-root');
-            if (printRoot) {
-                const root = ReactDOM.createRoot(printRoot);
-                root.render(
-                    <PrintableSupplierLedger
-                        supplier={supplier}
-                        transactions={transactions.map(tx => tx.type === 'purchase' ? 
-                            { date: tx.date, particulars: `Purchase - Inv #${tx.data.invoiceNumber}`, debit: tx.data.totalAmount, credit: 0 } :
-                            { date: tx.date, particulars: `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`, debit: 0, credit: tx.data.amount }
-                        )}
-                        companyProfile={companyProfile}
-                        openingBalance={supplier.openingBalanceForPeriod}
-                        dateRange={dateRange}
-                    />
-                );
-                setTimeout(() => {
-                    printWindow.focus();
-                    printWindow.print();
-                    printWindow.close();
-                }, 1000);
-            }
+            printWindow.document.title = ' ';
+            const style = printWindow.document.createElement('style');
+            style.innerHTML = `
+                @page { 
+                    size: A4;
+                    margin: 0; 
+                }
+                body {
+                    margin: 0;
+                }
+            `;
+            printWindow.document.head.appendChild(style);
+            
+            const printRoot = document.createElement('div');
+            printWindow.document.body.appendChild(printRoot);
+            
+            const root = ReactDOM.createRoot(printRoot);
+            root.render(
+                <PrintableSupplierLedger
+                    supplier={supplier}
+                    transactions={transactions.map(tx => tx.type === 'purchase' ? 
+                        { date: tx.date, particulars: `Purchase - Inv #${tx.data.invoiceNumber}`, debit: tx.data.totalAmount, credit: 0 } :
+                        { date: tx.date, particulars: `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`, debit: 0, credit: tx.data.amount }
+                    )}
+                    companyProfile={companyProfile}
+                    openingBalance={supplier.openingBalanceForPeriod}
+                    dateRange={dateRange}
+                />
+            );
+            setTimeout(() => {
+                printWindow.focus();
+                printWindow.print();
+                printWindow.close();
+            }, 1000);
         }
     };
     

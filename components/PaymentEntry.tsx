@@ -93,6 +93,19 @@ const PaymentEntry: React.FC<PaymentEntryProps> = ({ suppliers, payments, compan
         if (!lastAddedPayment) return;
         const printWindow = window.open('', '_blank');
         if (printWindow) {
+            printWindow.document.title = ' ';
+            const style = printWindow.document.createElement('style');
+            style.innerHTML = `
+                @page { 
+                    size: A4;
+                    margin: 0; 
+                }
+                body {
+                    margin: 0;
+                }
+            `;
+            printWindow.document.head.appendChild(style);
+
             const root = document.createElement('div');
             printWindow.document.body.appendChild(root);
             const reactRoot = ReactDOM.createRoot(root);
