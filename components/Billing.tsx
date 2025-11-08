@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
@@ -88,6 +88,11 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
 
   const isEditing = !!editingBill;
 
+  // --- Keyboard Navigation State ---
+  const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
+  const activeItemRef = useRef<HTMLLIElement>(null);
+
+
   useEffect(() => {
     if (editingBill) {
       setCart(editingBill.items);
@@ -111,9 +116,34 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
         p.batches.some(b => b.stock > 0 && getExpiryDate(b.expiryDate) >= today)
       )
-      .slice(0, 5);
+      .slice(0, 10);
   }, [searchTerm, products, today]);
   
+  const navigableBatchesByProduct = useMemo(() => {
+    return searchResults.map(p =>
+        p.batches
+            .filter(b => b.stock > 0 && getExpiryDate(b.expiryDate) >= today)
+            .sort((a, b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime())
+    );
+  }, [searchResults, today]);
+
+  // --- Keyboard Navigation Effects ---
+  useEffect(() => {
+    if (searchTerm && searchResults.length > 0) {
+      setActiveIndices({ product: 0, batch: 0 });
+    } else {
+      setActiveIndices({ product: -1, batch: -1 });
+    }
+  }, [searchTerm, searchResults]);
+
+  useEffect(() => {
+    activeItemRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+    });
+  }, [activeIndices]);
+
+
   const handleAddToCart = (product: Product, batch: Batch) => {
     const expiry = getExpiryDate(batch.expiryDate);
     if (expiry < today) {
@@ -258,6 +288,78 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         }
     }
   };
+  
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (searchResults.length === 0 || navigableBatchesByProduct.every(b => b.length === 0)) return;
+
+        const findNext = (current: { product: number; batch: number }) => {
+            if (current.product === -1) return { product: 0, batch: 0 };
+            let { product, batch } = current;
+            const currentProductBatches = navigableBatchesByProduct[product];
+            if (batch < currentProductBatches.length - 1) {
+                return { product, batch: batch + 1 };
+            }
+            let nextProductIndex = product + 1;
+            while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) {
+                nextProductIndex++;
+            }
+            if (nextProductIndex < navigableBatchesByProduct.length) {
+                return { product: nextProductIndex, batch: 0 };
+            }
+            return { product: 0, batch: 0 };
+        };
+
+        const findPrev = (current: { product: number; batch: number }) => {
+            if (current.product === -1) return { product: 0, batch: 0 };
+            let { product, batch } = current;
+            if (batch > 0) {
+                return { product, batch: batch - 1 };
+            }
+            let prevProductIndex = product - 1;
+            while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) {
+                prevProductIndex--;
+            }
+            if (prevProductIndex >= 0) {
+                const prevProductBatches = navigableBatchesByProduct[prevProductIndex];
+                return { product: prevProductIndex, batch: prevProductBatches.length - 1 };
+            }
+            let lastProductIndex = navigableBatchesByProduct.length - 1;
+            while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) {
+                lastProductIndex--;
+            }
+            if (lastProductIndex >= 0) {
+                return { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 };
+            }
+            return current;
+        };
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                setActiveIndices(findNext);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setActiveIndices(findPrev);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (activeIndices.product !== -1 && activeIndices.batch !== -1) {
+                    const product = searchResults[activeIndices.product];
+                    const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch];
+                    if (product && batch) {
+                        handleAddToCart(product, batch);
+                    }
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                setSearchTerm('');
+                break;
+            default:
+                break;
+        }
+    };
 
 
   return (
@@ -270,12 +372,13 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
               placeholder="Search for products to add..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
+              onKeyDown={handleKeyDown}
               className={`${inputStyle} w-full px-4 py-3 text-lg`}
             />
-            {searchResults.length > 0 && (
+            {searchResults.length > 0 && searchTerm && (
               <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg">
                 <ul>
-                  {searchResults.map(product => (
+                  {searchResults.map((product, productIndex) => (
                     <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                       <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
                         <span>{product.name}</span>
@@ -288,35 +391,54 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                             Substitutes
                         </button>
                       </div>
-                      <ul className="pl-4">
-                        {product.batches
-                          .filter(b => b.stock > 0)
-                          .sort((a, b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime())
-                          .map(batch => {
-                            const expiry = getExpiryDate(batch.expiryDate);
-                            const isExpired = expiry < today;
-                            
-                            return (
-                               <li key={batch.id} 
-                                   className={`px-4 py-2 flex justify-between items-center transition-colors ${
-                                       isExpired 
-                                           ? 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 cursor-not-allowed' 
-                                           : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'
-                                   }`}
-                                   onClick={() => handleAddToCart(product, batch)}
-                                   title={isExpired ? `This batch expired on ${expiry.toLocaleDateString()}` : ''}>
-                                    <div>
-                                        <span className={isExpired ? '' : 'text-slate-800 dark:text-slate-200'}>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                        <span className={`text-sm ml-3 ${isExpired ? '' : 'text-slate-600 dark:text-slate-400'}`}>Exp: {batch.expiryDate}</span>
-                                        {isExpired && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>}
-                                    </div>
-                                    <div>
-                                        <span className={isExpired ? '' : 'text-slate-800 dark:text-slate-200'}>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                        <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
-                                    </div>
-                               </li>
-                            );
+                      <ul className="pl-4 pb-2">
+                        {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => {
+                          const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch;
+                          return (
+                            <li
+                              key={batch.id}
+                              ref={isActive ? activeItemRef : null}
+                              className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${
+                                isActive
+                                  ? 'bg-indigo-200 dark:bg-indigo-700'
+                                  : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'
+                              }`}
+                              onClick={() => handleAddToCart(product, batch)}
+                              onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}
+                            >
+                              <div>
+                                <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                <span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
+                                <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
+                              </div>
+                            </li>
+                          );
                         })}
+                        {product.batches
+                            .filter(b => b.stock > 0 && getExpiryDate(b.expiryDate) < today)
+                            .map(batch => {
+                                const expiry = getExpiryDate(batch.expiryDate);
+                                return (
+                                <li
+                                    key={batch.id}
+                                    className={'px-4 py-2 flex justify-between items-center transition-colors bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 cursor-not-allowed rounded-md mx-2 my-1'}
+                                    title={`This batch expired on ${expiry.toLocaleDateString()}`}
+                                >
+                                <div>
+                                    <span>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                    <span className={`text-sm ml-3`}>Exp: {batch.expiryDate}</span>
+                                    <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>
+                                </div>
+                                <div>
+                                    <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
+                                    <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
+                                </div>
+                                </li>
+                                );
+                            })}
                       </ul>
                     </li>
                   ))}
