@@ -263,6 +263,48 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBulkAddProducts = async (newProducts: Omit<Product, 'id' | 'batches'>[]): Promise<{success: number; skipped: number}> => {
+    if (!currentUser) return { success: 0, skipped: 0 };
+    const uid = currentUser.uid;
+    const batch = writeBatch(db);
+
+    const existingProductKeys = new Set(products.map(p => `${p.name.trim().toLowerCase()}|${p.company.trim().toLowerCase()}`));
+    const newCompanyNames = new Set<string>();
+
+    let successCount = 0;
+    let skippedCount = 0;
+
+    for (const productData of newProducts) {
+        const key = `${productData.name.trim().toLowerCase()}|${productData.company.trim().toLowerCase()}`;
+        if (existingProductKeys.has(key)) {
+            skippedCount++;
+            continue;
+        }
+
+        const newProductRef = doc(collection(db, `users/${uid}/products`));
+        // Bulk imported products don't have an initial batch. Batches are added via Purchases.
+        batch.set(newProductRef, { ...productData, batches: [] });
+        existingProductKeys.add(key); // prevent duplicates within the same file
+
+        const companyName = productData.company.trim();
+        // Check against current companies and newly added ones
+        const allCompanyNames = new Set([...companies.map(c => c.name.toLowerCase()), ...Array.from(newCompanyNames).map(n => n.toLowerCase())]);
+        
+        if (companyName && !allCompanyNames.has(companyName.toLowerCase())) {
+            newCompanyNames.add(companyName);
+        }
+        successCount++;
+    }
+
+    newCompanyNames.forEach(name => {
+        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        batch.set(newCompanyRef, { name });
+    });
+
+    await batch.commit();
+    return { success: successCount, skipped: skippedCount };
+  };
+
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
@@ -765,8 +807,8 @@ const App: React.FC = () => {
       case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} />;
-      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} />;
+      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;

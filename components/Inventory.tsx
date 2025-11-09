@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Batch, Company, Bill, Purchase } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -66,15 +66,17 @@ interface InventoryProps {
   onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
   onDeleteBatch: (productId: string, batchId: string) => void;
+  onBulkAddProducts: (products: Omit<Product, 'id' | 'batches'>[]) => Promise<{success: number; skipped: number}>;
 }
 
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onBulkAddProducts }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [isImportModalOpen, setImportModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const handleOpenBatchModal = (product: Product) => {
@@ -125,12 +127,20 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
       <Card>
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
           <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Inventory Management</h1>
-          <button 
-            onClick={() => setProductModalOpen(true)}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors duration-200"
-          >
-            <PlusIcon className="h-5 w-5" /> Add New Product
-          </button>
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={() => setImportModalOpen(true)}
+                className="flex items-center gap-2 bg-slate-600 text-white px-4 py-2 rounded-lg shadow hover:bg-slate-700 transition-colors duration-200"
+              >
+                <UploadIcon className="h-5 w-5" /> Import Products
+              </button>
+              <button 
+                onClick={() => setProductModalOpen(true)}
+                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors duration-200"
+              >
+                <PlusIcon className="h-5 w-5" /> Add New Product
+              </button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 border-t dark:border-slate-700 mt-4 pt-4">
             <SubNavButton view="all" label="All Item Stock" />
@@ -169,6 +179,12 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
           onUpdateProduct={onUpdateProduct}
         />
       )}
+
+      <ImportProductsModal
+        isOpen={isImportModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onBulkAddProducts={onBulkAddProducts}
+      />
     </div>
   );
 };
@@ -1033,6 +1049,172 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
     `}</style>
     </Modal>
   );
+};
+
+
+const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBulkAddProducts: InventoryProps['onBulkAddProducts']; }> = ({ isOpen, onClose, onBulkAddProducts }) => {
+    const [step, setStep] = useState(1);
+    const [file, setFile] = useState<File | null>(null);
+    const [headers, setHeaders] = useState<string[]>([]);
+    const [mappedData, setMappedData] = useState<Omit<Product, 'id' | 'batches'>[]>([]);
+    const [mapping, setMapping] = useState<Record<string, string>>({});
+    const [importResult, setImportResult] = useState<{success: number; skipped: number} | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+
+    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'ignore'];
+    
+    const resetState = () => {
+        setStep(1);
+        setFile(null);
+        setHeaders([]);
+        setMappedData([]);
+        setMapping({});
+        setImportResult(null);
+        setIsLoading(false);
+    };
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = e.target.files?.[0];
+        if (selectedFile && selectedFile.type === 'text/csv') {
+            setFile(selectedFile);
+        } else {
+            alert('Please select a valid CSV file.');
+            setFile(null);
+        }
+    };
+    
+    const parseCsv = () => {
+        if (!file) return;
+        setIsLoading(true);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+            if (lines.length < 2) {
+                alert('CSV file must have a header row and at least one data row.');
+                setIsLoading(false);
+                return;
+            }
+            const fileHeaders = lines[0].split(',').map(h => h.trim());
+            setHeaders(fileHeaders);
+            
+            const data: Omit<Product, 'id' | 'batches'>[] = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(',');
+                const row: any = {};
+                fileHeaders.forEach((header, index) => {
+                    row[header] = values[index]?.trim();
+                });
+                data.push(row);
+            }
+            setMappedData(data as any);
+            setStep(2);
+            setIsLoading(false);
+        };
+        reader.readAsText(file);
+    };
+    
+    const handleMapping = () => {
+        if (!mapping['name'] || !mapping['company']) {
+            alert('You must map columns for "Product Name" and "Company".');
+            return;
+        }
+
+        const productsToImport = mappedData.map(row => {
+            const product: Omit<Product, 'id'|'batches'> = {
+                name: (row as any)[mapping['name']],
+                company: (row as any)[mapping['company']],
+                hsnCode: (row as any)[mapping['hsnCode']] || '',
+                gst: parseFloat((row as any)[mapping['gst']]) || 12,
+            };
+            
+            const composition = (row as any)[mapping['composition']];
+            if (composition) {
+                product.composition = composition;
+            }
+            const unitsPerStripRaw = (row as any)[mapping['unitsPerStrip']];
+            if (unitsPerStripRaw) {
+                 const units = parseInt(unitsPerStripRaw, 10);
+                 if (!isNaN(units) && units > 0) {
+                     product.unitsPerStrip = units;
+                 }
+            }
+            
+            return product;
+        }).filter(p => p.name && p.company); // Ensure mandatory fields are present
+
+        setIsLoading(true);
+        onBulkAddProducts(productsToImport).then(result => {
+            setImportResult(result);
+            setStep(3);
+            setIsLoading(false);
+        });
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={() => { onClose(); resetState(); }} title="Import Products from CSV">
+            <div className="space-y-4">
+                {isLoading && <div className="absolute inset-0 bg-white/70 dark:bg-slate-800/70 flex items-center justify-center z-10"><p>Processing...</p></div>}
+                {step === 1 && (
+                    <div>
+                        <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Step 1: Upload CSV File</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Select a CSV file to upload. The first row should contain headers like 'Product Name', 'Company', 'GST', etc.</p>
+                        <input type="file" accept=".csv" onChange={handleFileChange} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 dark:file:bg-indigo-900/50 file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100" />
+                        <div className="flex justify-end mt-6">
+                            <button onClick={parseCsv} disabled={!file} className="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 disabled:bg-slate-400 dark:disabled:bg-slate-600">
+                                Next: Map Columns
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {step === 2 && (
+                     <div>
+                        <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Step 2: Map Columns</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Match the columns from your CSV file to the application's product fields. 'Product Name' and 'Company' are required.</p>
+                        <div className="space-y-3 max-h-80 overflow-y-auto p-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                            {appFields.filter(f => f !== 'ignore').map(field => (
+                                <div key={field} className="grid grid-cols-2 gap-4 items-center">
+                                    <label className="font-medium text-slate-700 dark:text-slate-300 text-right capitalize">
+                                        {field.replace(/([A-Z])/g, ' $1')}
+                                        {(field === 'name' || field === 'company') && <span className="text-red-500">*</span>}
+                                    </label>
+                                    <select 
+                                        onChange={(e) => setMapping({...mapping, [field]: e.target.value})} 
+                                        className={formSelectStyle}
+                                    >
+                                        <option value="">-- Select CSV Column --</option>
+                                        {headers.map(header => <option key={header} value={header}>{header}</option>)}
+                                    </select>
+                                </div>
+                            ))}
+                        </div>
+                         <div className="flex justify-between mt-6">
+                            <button onClick={() => setStep(1)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Back</button>
+                            <button onClick={handleMapping} className="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700">
+                                Next: Import
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {step === 3 && (
+                     <div className="text-center">
+                        <h4 className="text-2xl font-bold text-green-600 dark:text-green-400 mb-2">Import Complete!</h4>
+                        <p className="text-lg text-slate-700 dark:text-slate-300">
+                            Successfully imported <span className="font-bold">{importResult?.success}</span> new products.
+                        </p>
+                        <p className="text-slate-600 dark:text-slate-400">
+                            Skipped <span className="font-bold">{importResult?.skipped}</span> products (duplicates found).
+                        </p>
+                        <div className="flex justify-center mt-6">
+                           <button onClick={() => { onClose(); resetState(); }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700">
+                                Finish
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </Modal>
+    );
 };
 
 

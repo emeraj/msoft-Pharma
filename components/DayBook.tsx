@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import type { Bill } from '../types';
+import ReactDOM from 'react-dom/client';
+import type { Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, PencilIcon, TrashIcon } from './icons/Icons';
+import { DownloadIcon, PencilIcon, TrashIcon, PrinterIcon } from './icons/Icons';
+import PrintableA5Bill from './PrintableA5Bill';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -42,11 +44,12 @@ const exportToCsv = (filename: string, data: any[]) => {
 
 interface DayBookProps {
   bills: Bill[];
+  companyProfile: CompanyProfile;
   onDeleteBill: (bill: Bill) => void;
   onEditBill: (bill: Bill) => void;
 }
 
-const DayBook: React.FC<DayBookProps> = ({ bills, onDeleteBill, onEditBill }) => {
+const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, onEditBill }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -73,6 +76,40 @@ const DayBook: React.FC<DayBookProps> = ({ bills, onDeleteBill, onEditBill }) =>
     // Adding T00:00:00 to avoid timezone issues where it might show the previous day.
     return new Date(selectedDate + 'T00:00:00').toLocaleDateString();
   }, [selectedDate]);
+
+  const handlePrintA5 = (bill: Bill) => {
+    const printWindow = window.open('', '_blank', 'height=842,width=595'); // A5 dimensions in pixels
+    if (printWindow) {
+        printWindow.document.title = ' ';
+        const style = printWindow.document.createElement('style');
+        style.innerHTML = `
+            @page { 
+                size: A5;
+                margin: 0; 
+            }
+            body {
+                margin: 0;
+            }
+        `;
+        printWindow.document.head.appendChild(style);
+        
+        const printRoot = document.createElement('div');
+        printWindow.document.body.appendChild(printRoot);
+        
+        const root = ReactDOM.createRoot(printRoot);
+        root.render(
+            <PrintableA5Bill
+                bill={bill}
+                companyProfile={companyProfile}
+            />
+        );
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+            printWindow.close();
+        }, 500);
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -133,6 +170,9 @@ const DayBook: React.FC<DayBookProps> = ({ bills, onDeleteBill, onEditBill }) =>
                     <div className="flex items-center justify-center gap-4">
                         <button onClick={() => setSelectedBill(bill)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
                           View
+                        </button>
+                        <button onClick={() => handlePrintA5(bill)} title="Print A5 Bill" className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300">
+                            <PrinterIcon className="h-5 w-5" />
                         </button>
                         <button onClick={() => onEditBill(bill)} title="Edit Bill" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
                             <PencilIcon className="h-5 w-5" />

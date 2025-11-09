@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
@@ -136,6 +136,8 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     };
     const [formState, setFormState] = useState(initialFormState);
     const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const activeItemRef = useRef<HTMLLIElement>(null);
 
     const companySuggestions = useMemo(() => {
         if (!formState.company) return companies.slice(0, 5);
@@ -152,9 +154,48 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     };
 
     const searchResults = useMemo(() => {
-        if (!formState.productSearch) return [];
+        if (!formState.productSearch || formState.selectedProduct) return [];
         return products.filter(p => p.name.toLowerCase().includes(formState.productSearch.toLowerCase())).slice(0, 5);
-    }, [formState.productSearch, products]);
+    }, [formState.productSearch, products, formState.selectedProduct]);
+
+    useEffect(() => {
+        setActiveIndex(0);
+    }, [formState.productSearch]);
+
+    useEffect(() => {
+        activeItemRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+        });
+    }, [activeIndex]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (searchResults.length === 0) return;
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                setActiveIndex(prev => (prev + 1) % searchResults.length);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setActiveIndex(prev => (prev - 1 + searchResults.length) % searchResults.length);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (activeIndex >= 0 && activeIndex < searchResults.length) {
+                    handleSelectProduct(searchResults[activeIndex]);
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                setFormState(prev => ({...prev, productSearch: '', selectedProduct: null}));
+                break;
+            default:
+                break;
+        }
+    };
+
 
     const handleSelectProduct = (product: Product) => {
         setFormState(prev => ({
@@ -168,15 +209,19 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             unitsPerStrip: String(product.unitsPerStrip || ''),
             isNewProduct: false,
         }));
+        setActiveIndex(-1);
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormState(prev => ({ ...prev, [name]: value }));
-
-        if (name === 'productSearch' && value === '') {
-             setFormState(prev => ({ ...prev, selectedProduct: null, isNewProduct: false }));
-        }
+        setFormState(prev => {
+            const newState = { ...prev, [name]: value };
+            if (name === 'productSearch') {
+                newState.selectedProduct = null;
+                newState.isNewProduct = false;
+            }
+            return newState;
+        });
     };
 
     const handleToggleNewProduct = () => {
@@ -199,23 +244,28 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             return;
         }
 
-        const units = parseInt(unitsPerStrip) || 1;
-
         const item: PurchaseLineItem = {
             isNewProduct,
             productName: isNewProduct ? productName : selectedProduct!.name,
             company: company.trim(),
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
             gst: parseFloat(gst),
-            composition,
-            unitsPerStrip: units > 1 ? units : undefined,
             batchNumber,
             expiryDate,
-            quantity: parseInt(quantity),
+            quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
         };
-
+        
+        if (composition) {
+            item.composition = composition;
+        }
+        
+        const units = parseInt(unitsPerStrip, 10);
+        if (!isNaN(units) && units > 1) {
+            item.unitsPerStrip = units;
+        }
+        
         if (!isNewProduct && selectedProduct) {
             item.productId = selectedProduct.id;
         }
@@ -234,15 +284,28 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                         name="productSearch"
                         value={formState.productSearch}
                         onChange={handleChange}
+                        onKeyDown={handleKeyDown}
                         placeholder="Type to search..."
                         className={`mt-1 w-full ${formInputStyle}`}
                         disabled={formState.isNewProduct || disabled}
                         autoComplete="off"
                     />
-                    {searchResults.length > 0 && formState.productSearch && !formState.selectedProduct && (
+                    {searchResults.length > 0 && (
                         <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-lg rounded max-h-48 overflow-y-auto">
-                            {searchResults.map(p => (
-                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 text-slate-800 dark:text-slate-200 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer">{p.name} ({p.company})</li>
+                            {searchResults.map((p, index) => (
+                                <li 
+                                    key={p.id} 
+                                    ref={index === activeIndex ? activeItemRef : null}
+                                    onClick={() => handleSelectProduct(p)} 
+                                    onMouseEnter={() => setActiveIndex(index)}
+                                    className={`p-2 text-slate-800 dark:text-slate-200 cursor-pointer ${
+                                        index === activeIndex 
+                                            ? 'bg-indigo-200 dark:bg-indigo-700' 
+                                            : 'hover:bg-indigo-100 dark:hover:bg-indigo-900'
+                                    }`}
+                                >
+                                    {p.name} ({p.company})
+                                </li>
                             ))}
                         </ul>
                     )}

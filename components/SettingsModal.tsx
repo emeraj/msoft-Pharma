@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { CompanyProfile } from '../types';
 import Modal from './common/Modal';
-import { UpdateIcon, DownloadIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon } from './icons/Icons';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -122,7 +122,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={handleSave} 
             className="flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all"
           >
-            <UpdateIcon className="h-5 w-5" />
+            <CheckCircleIcon className="h-5 w-5" />
             Update Profile
           </button>
         </div>
