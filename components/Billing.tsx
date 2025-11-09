@@ -245,18 +245,18 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
       const newItem: CartItem = {
         productId: product.id,
         productName: product.name,
-        composition: product.composition,
         batchId: batch.id,
         batchNumber: batch.batchNumber,
         expiryDate: batch.expiryDate,
         hsnCode: product.hsnCode,
-        unitsPerStrip: product.unitsPerStrip,
         stripQty: 0,
         looseQty: 1,
         quantity: 1,
         mrp: batch.mrp,
         gst: product.gst,
         total: unitPrice,
+        ...(product.composition && { composition: product.composition }),
+        ...(product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
       };
       lastAddedBatchIdRef.current = newItem.batchId;
       setCart([...cart, newItem]);

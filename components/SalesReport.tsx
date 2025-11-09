@@ -65,78 +65,87 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
           if (billDate > end) return false;
         }
 
-        if (searchTerm && !bill.customerName.toLowerCase().includes(searchTerm.toLowerCase())) {
-          return false;
+        if (searchTerm) {
+          const lowerSearchTerm = searchTerm.toLowerCase();
+          return (
+            bill.billNumber.toLowerCase().includes(lowerSearchTerm) ||
+            bill.customerName.toLowerCase().includes(lowerSearchTerm)
+          );
         }
 
         return true;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [bills, fromDate, toDate, searchTerm]);
-  
+  }, [bills, searchTerm, fromDate, toDate]);
+
   const summary = useMemo(() => {
     return filteredBills.reduce((acc, bill) => {
-      acc.totalSales += bill.grandTotal;
-      acc.totalGst += bill.totalGst;
-      return acc;
-    }, { totalSales: 0, totalGst: 0 });
+        acc.totalSales += bill.grandTotal;
+        acc.totalBills++;
+        return acc;
+    }, { totalSales: 0, totalBills: 0 });
   }, [filteredBills]);
 
   const handleExport = () => {
     const exportData = filteredBills.map(bill => ({
       'Bill No.': bill.billNumber,
       'Date': new Date(bill.date).toLocaleDateString(),
-      'Customer Name': bill.customerName,
-      'GST Amount': bill.totalGst.toFixed(2),
-      'Total Amount': bill.grandTotal.toFixed(2),
+      'Time': new Date(bill.date).toLocaleTimeString(),
+      'Customer': bill.customerName,
+      'Items': bill.items.length,
+      'Subtotal': bill.subTotal.toFixed(2),
+      'GST': bill.totalGst.toFixed(2),
+      'Grand Total': bill.grandTotal.toFixed(2),
     }));
     const filename = `sales_report_${fromDate || 'all'}_to_${toDate}`;
     exportToCsv(filename, exportData);
   };
   
   const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
-
+  
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <Card title="Sales Report">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Customer</label>
-            <input
-              type="text"
-              placeholder="Filter by customer name..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className={formInputStyle}
-            />
-          </div>
-          <div className="flex items-end">
-            <div>
-              <label htmlFor="fromDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From</label>
-              <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+            <div className="md:col-span-1">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Bill No. / Customer</label>
+                <input 
+                    type="text" 
+                    value={searchTerm} 
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className={formInputStyle}
+                    placeholder="e.g., B0001 or John Doe"
+                />
             </div>
-          </div>
-          <div className="flex items-end">
             <div>
-              <label htmlFor="toDate" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To</label>
-              <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From Date</label>
+                <input 
+                    type="date" 
+                    value={fromDate} 
+                    onChange={e => setFromDate(e.target.value)}
+                    className={formInputStyle}
+                />
             </div>
-          </div>
+            <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To Date</label>
+                <input 
+                    type="date" 
+                    value={toDate} 
+                    onChange={e => setToDate(e.target.value)}
+                    className={formInputStyle}
+                />
+            </div>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full sm:w-auto">
-                 <div className="bg-blue-50 dark:bg-blue-900/50 p-3 rounded-lg text-center">
-                    <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold">Total Bills</p>
-                    <p className="text-2xl font-bold text-blue-900 dark:text-blue-200">{filteredBills.length}</p>
-                </div>
-                <div className="bg-green-50 dark:bg-green-900/50 p-3 rounded-lg text-center">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-green-50 dark:bg-green-900/50 p-4 rounded-lg text-center">
                     <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales</p>
-                    <p className="text-2xl font-bold text-green-900 dark:text-green-200">₹{summary.totalSales.toFixed(2)}</p>
+                    <p className="text-3xl font-bold text-green-900 dark:text-green-200">₹{summary.totalSales.toFixed(2)}</p>
                 </div>
-                <div className="bg-purple-50 dark:bg-purple-900/50 p-3 rounded-lg text-center">
-                    <p className="text-sm text-purple-800 dark:text-purple-300 font-semibold">Total GST</p>
-                    <p className="text-2xl font-bold text-purple-900 dark:text-purple-200">₹{summary.totalGst.toFixed(2)}</p>
+                <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-lg text-center">
+                    <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills</p>
+                    <p className="text-3xl font-bold text-indigo-900 dark:text-indigo-200">{summary.totalBills}</p>
                 </div>
             </div>
             <button onClick={handleExport} className="flex-shrink-0 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
@@ -145,16 +154,17 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
             </button>
         </div>
 
-
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
             <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
               <tr>
                 <th scope="col" className="px-6 py-3">Bill No.</th>
                 <th scope="col" className="px-6 py-3">Date</th>
-                <th scope="col" className="px-6 py-3">Customer Name</th>
-                <th scope="col" className="px-6 py-3 text-right">GST Amount</th>
-                <th scope="col" className="px-6 py-3 text-right">Total Bill Amount</th>
+                <th scope="col" className="px-6 py-3">Customer</th>
+                <th scope="col" className="px-6 py-3 text-center">Items</th>
+                <th scope="col" className="px-6 py-3 text-right">Subtotal</th>
+                <th scope="col" className="px-6 py-3 text-right">GST</th>
+                <th scope="col" className="px-6 py-3 text-right">Grand Total</th>
               </tr>
             </thead>
             <tbody>
@@ -163,6 +173,8 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
                   <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{bill.billNumber}</td>
                   <td className="px-6 py-4">{new Date(bill.date).toLocaleDateString()}</td>
                   <td className="px-6 py-4">{bill.customerName}</td>
+                  <td className="px-6 py-4 text-center">{bill.items.length}</td>
+                  <td className="px-6 py-4 text-right">₹{bill.subTotal.toFixed(2)}</td>
                   <td className="px-6 py-4 text-right">₹{bill.totalGst.toFixed(2)}</td>
                   <td className="px-6 py-4 text-right font-semibold">₹{bill.grandTotal.toFixed(2)}</td>
                 </tr>
@@ -170,10 +182,10 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
             </tbody>
           </table>
           {filteredBills.length === 0 && (
-            <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-              <p>No sales records found for the selected criteria.</p>
-            </div>
-          )}
+                <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+                    <p>No bills found for the selected criteria.</p>
+                </div>
+            )}
         </div>
       </Card>
     </div>

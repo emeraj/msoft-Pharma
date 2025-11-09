@@ -778,9 +778,23 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
     const units = parseInt(unitsPerStrip) || 1;
     const stockInBaseUnits = parseInt(stock) * units;
 
+    const productDetails: Omit<Product, 'id' | 'batches'> = {
+      name,
+      company,
+      hsnCode,
+      gst: parseFloat(gst),
+    };
+
+    if (composition) {
+      productDetails.composition = composition;
+    }
+    if (units > 1) {
+      productDetails.unitsPerStrip = units;
+    }
+
     onAddProduct(
-      { name, company, hsnCode, gst: parseFloat(gst), composition, unitsPerStrip: units > 1 ? units : undefined },
-      { batchNumber, expiryDate, stock: stockInBaseUnits, mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) }
+      productDetails,
+      { batchNumber, expiryDate, stock: stockInBaseUnits, mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) || 0 }
     );
     onClose();
     setFormState({
@@ -876,13 +890,21 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
     e.preventDefault();
     if (!formState.name || !formState.company) return;
     
-    const units = parseInt(formState.unitsPerStrip);
-
-    onUpdateProduct(product.id, {
-        ...formState,
+    const productUpdate: Partial<Omit<Product, 'id' | 'batches'>> = {
+        name: formState.name,
+        company: formState.company,
+        hsnCode: formState.hsnCode,
         gst: parseFloat(formState.gst),
-        unitsPerStrip: units > 1 ? units : undefined
-    });
+    };
+    if (formState.composition) {
+        productUpdate.composition = formState.composition;
+    }
+    const units = parseInt(formState.unitsPerStrip);
+    if (!isNaN(units) && units > 1) {
+        productUpdate.unitsPerStrip = units;
+    }
+
+    onUpdateProduct(product.id, productUpdate);
     onClose();
   };
 
