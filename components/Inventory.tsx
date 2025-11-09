@@ -39,6 +39,23 @@ const exportToCsv = (filename: string, data: any[]) => {
   }
 };
 
+const formatStock = (stock: number, unitsPerStrip?: number): string => {
+    if (stock === 0) return '0 Units';
+    if (!unitsPerStrip || unitsPerStrip <= 1) {
+        return `${stock} Units`;
+    }
+    const strips = Math.floor(stock / unitsPerStrip);
+    const looseUnits = stock % unitsPerStrip;
+    let result = '';
+    if (strips > 0) {
+        result += `${strips} S`;
+    }
+    if (looseUnits > 0) {
+        result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`;
+    }
+    return result || '0 Units';
+};
+
 
 interface InventoryProps {
   products: Product[];
@@ -191,13 +208,15 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
             .map(product => {
                 let purchasesInPeriod = 0;
                 let salesInPeriod = 0;
+                const unitsPerStrip = product.unitsPerStrip || 1;
 
                 purchases.forEach(purchase => {
                     const purchaseDate = new Date(purchase.invoiceDate);
                     if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) {
                         purchase.items.forEach(item => {
                             if (item.productId === product.id) {
-                                purchasesInPeriod += item.quantity;
+                                const itemUnitsPerStrip = item.unitsPerStrip || unitsPerStrip;
+                                purchasesInPeriod += item.quantity * itemUnitsPerStrip;
                             }
                         });
                     }
@@ -216,13 +235,18 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                 
                 const currentStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0);
                 const openingStock = currentStock - purchasesInPeriod + salesInPeriod;
-                const stockValue = product.batches.reduce((sum, batch) => sum + (batch.mrp * batch.stock), 0);
+                const stockValue = product.batches.reduce((sum, batch) => {
+                    const unitPrice = batch.mrp / (product.unitsPerStrip || 1);
+                    return sum + (unitPrice * batch.stock);
+                }, 0);
+
 
                 return {
                     id: product.id,
                     name: product.name,
                     company: product.company,
                     composition: product.composition,
+                    unitsPerStrip: product.unitsPerStrip,
                     openingStock,
                     purchasedQty: purchasesInPeriod,
                     soldQty: salesInPeriod,
@@ -238,10 +262,10 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
             'Product Name': data.name,
             'Company': data.company,
             'Composition': data.composition,
-            'Opening Stock': data.openingStock,
-            'Purchased Qty (Period)': data.purchasedQty,
-            'Sold Qty (Period)': data.soldQty,
-            'Current Stock': data.currentStock,
+            'Opening Stock': formatStock(data.openingStock, data.unitsPerStrip),
+            'Purchased Qty (Period)': formatStock(data.purchasedQty, data.unitsPerStrip),
+            'Sold Qty (Period)': formatStock(data.soldQty, data.unitsPerStrip),
+            'Current Stock': formatStock(data.currentStock, data.unitsPerStrip),
             'Stock Value (MRP)': data.stockValue.toFixed(2),
         }));
         exportToCsv('all_item_stock_report', exportData);
@@ -300,10 +324,10 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">{item.company}</p>
                                     <p className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">{item.composition}</p>
                                 </td>
-                                <td className="px-6 py-4 text-center">{item.openingStock}</td>
-                                <td className="px-6 py-4 text-center">{item.purchasedQty}</td>
-                                <td className="px-6 py-4 text-center">{item.soldQty}</td>
-                                <td className="px-6 py-4 text-center font-bold">{item.currentStock}</td>
+                                <td className="px-6 py-4 text-center">{formatStock(item.openingStock, item.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center">{formatStock(item.purchasedQty, item.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center">{formatStock(item.soldQty, item.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.currentStock, item.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-right font-semibold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
@@ -369,12 +393,13 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
                         <div className="flex gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
                            <span>HSN: {selectedProduct.hsnCode}</span>
                            <span>GST: {selectedProduct.gst}%</span>
-                           <span className="font-semibold">Total Stock: {selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0)}</span>
+                           {selectedProduct.unitsPerStrip && <span>{selectedProduct.unitsPerStrip} Units/Strip</span>}
+                           <span className="font-semibold">Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</span>
                         </div>
                     </div>
                     <BatchListTable 
                       title="Batches for Selected Product" 
-                      batches={selectedProduct.batches.map(b => ({...b, productName: selectedProduct.name, company: selectedProduct.company, productId: selectedProduct.id}))} 
+                      batches={selectedProduct.batches.map(b => ({...b, productName: selectedProduct.name, company: selectedProduct.company, productId: selectedProduct.id, unitsPerStrip: selectedProduct.unitsPerStrip}))} 
                       showProductInfo={false}
                       onDeleteBatch={onDeleteBatch}
                     />
@@ -408,7 +433,7 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                     if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) {
                         purchase.items.forEach(item => {
                             if (item.batchId === batch.id) {
-                                purchasesInPeriod += item.quantity;
+                                purchasesInPeriod += item.quantity * (item.unitsPerStrip || product.unitsPerStrip || 1);
                             }
                         });
                     }
@@ -428,7 +453,8 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
 
                 const currentStock = batch.stock;
                 const openingStock = currentStock - purchasesInPeriod + salesInPeriod;
-                const stockValue = batch.mrp * currentStock;
+                const unitPrice = batch.mrp / (product.unitsPerStrip || 1);
+                const stockValue = unitPrice * currentStock;
                 
                 return {
                     id: batch.id,
@@ -437,6 +463,7 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                     mrp: batch.mrp,
                     productName: product.name,
                     company: product.company,
+                    unitsPerStrip: product.unitsPerStrip,
                     openingStock,
                     purchasedQty: purchasesInPeriod,
                     soldQty: salesInPeriod,
@@ -472,10 +499,10 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
             'Company': batch.company,
             'Batch No.': batch.batchNumber,
             'Expiry': batch.expiryDate,
-            'Opening Stock': batch.openingStock,
-            'Purchased (Period)': batch.purchasedQty,
-            'Sold (Period)': batch.soldQty,
-            'Current Stock': batch.currentStock,
+            'Opening Stock': formatStock(batch.openingStock, batch.unitsPerStrip),
+            'Purchased (Period)': formatStock(batch.purchasedQty, batch.unitsPerStrip),
+            'Sold (Period)': formatStock(batch.soldQty, batch.unitsPerStrip),
+            'Current Stock': formatStock(batch.currentStock, batch.unitsPerStrip),
             'Stock Value (MRP)': batch.stockValue.toFixed(2),
         }));
 
@@ -533,10 +560,10 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
                                 <td className="px-6 py-4">{batch.showProductInfo ? batch.company : ''}</td>
                                 <td className="px-6 py-4">{batch.batchNumber}</td>
                                 <td className="px-6 py-4">{batch.expiryDate}</td>
-                                <td className="px-6 py-4 text-center">{batch.openingStock}</td>
-                                <td className="px-6 py-4 text-center">{batch.purchasedQty}</td>
-                                <td className="px-6 py-4 text-center">{batch.soldQty}</td>
-                                <td className="px-6 py-4 text-center font-bold">{batch.currentStock}</td>
+                                <td className="px-6 py-4 text-center">{formatStock(batch.openingStock, batch.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center">{formatStock(batch.purchasedQty, batch.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center">{formatStock(batch.soldQty, batch.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center font-bold">{formatStock(batch.currentStock, batch.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-right font-semibold">₹{batch.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             </tr>
                         ))}
@@ -560,14 +587,14 @@ const getExpiryDate = (expiryString: string): Date => {
 };
 
 const BatchWiseStockView: React.FC<{products: Product[], onDeleteBatch: (productId: string, batchId: string) => void}> = ({ products, onDeleteBatch }) => {
-    const allBatches = useMemo(() => products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id }))), [products]);
+    const allBatches = useMemo(() => products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id, unitsPerStrip: p.unitsPerStrip }))), [products]);
     return <BatchListTable title="All Batches" batches={allBatches} onDeleteBatch={onDeleteBatch} />;
 };
 
 const ExpiredStockView: React.FC<{products: Product[], onDeleteBatch: (productId: string, batchId: string) => void}> = ({ products, onDeleteBatch }) => {
     const today = new Date();
     const expiredBatches = useMemo(() => 
-        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id })))
+        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id, unitsPerStrip: p.unitsPerStrip })))
                 .filter(b => getExpiryDate(b.expiryDate) < today), 
     [products]);
     return <BatchListTable title="Expired Stock" batches={expiredBatches} onDeleteBatch={onDeleteBatch} />;
@@ -579,7 +606,7 @@ const NearingExpiryStockView: React.FC<{products: Product[], onDeleteBatch: (pro
     thirtyDaysFromNow.setDate(today.getDate() + 30);
     
     const nearingExpiryBatches = useMemo(() => 
-        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id })))
+        products.flatMap(p => p.batches.map(b => ({ ...b, productName: p.name, company: p.company, productId: p.id, unitsPerStrip: p.unitsPerStrip })))
                 .filter(b => {
                     const expiry = getExpiryDate(b.expiryDate);
                     return expiry >= today && expiry <= thirtyDaysFromNow;
@@ -591,7 +618,7 @@ const NearingExpiryStockView: React.FC<{products: Product[], onDeleteBatch: (pro
 
 // --- Reusable & Helper Components ---
 
-interface BatchWithProductInfo extends Batch { productName: string; company: string; productId: string; }
+interface BatchWithProductInfo extends Batch { productName: string; company: string; productId: string; unitsPerStrip?: number }
 const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[], showProductInfo?: boolean; onDeleteBatch?: (productId: string, batchId: string) => void; }> = ({ title, batches, showProductInfo = true, onDeleteBatch }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const filteredBatches = useMemo(() =>
@@ -618,7 +645,7 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
             const baseData = {
                 'Batch No.': batch.batchNumber,
                 'Expiry': batch.expiryDate,
-                'Stock': batch.stock,
+                'Stock': formatStock(batch.stock, batch.unitsPerStrip),
                 'MRP': batch.mrp.toFixed(2),
             };
             if (showProductInfo) {
@@ -684,7 +711,7 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
                                 {showProductInfo && <td className="px-6 py-4">{batch.company}</td>}
                                 <td className="px-6 py-4">{batch.batchNumber}</td>
                                 <td className="px-6 py-4 flex items-center">{batch.expiryDate} {expiryBadge}</td>
-                                <td className="px-6 py-4 font-bold">{batch.stock}</td>
+                                <td className="px-6 py-4 font-bold">{formatStock(batch.stock, batch.unitsPerStrip)}</td>
                                 <td className="px-6 py-4">₹{batch.mrp.toFixed(2)}</td>
                                 <td className="px-6 py-4">
                                   {onDeleteBatch && (
@@ -717,7 +744,7 @@ const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[] }> = ({ isOpen, onClose, onAddProduct, companies }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', composition: '',
+    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '',
     batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
   });
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
@@ -745,16 +772,19 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, company, hsnCode, gst, composition, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
+    const { name, company, hsnCode, gst, composition, unitsPerStrip, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
     if (!name || !company || !batchNumber || !expiryDate || !stock || !mrp) return;
 
+    const units = parseInt(unitsPerStrip) || 1;
+    const stockInBaseUnits = parseInt(stock) * units;
+
     onAddProduct(
-      { name, company, hsnCode, gst: parseFloat(gst), composition },
-      { batchNumber, expiryDate, stock: parseInt(stock), mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) }
+      { name, company, hsnCode, gst: parseFloat(gst), composition, unitsPerStrip: units > 1 ? units : undefined },
+      { batchNumber, expiryDate, stock: stockInBaseUnits, mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) }
     );
     onClose();
     setFormState({
-        name: '', company: '', hsnCode: '', gst: '12', composition: '',
+        name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '',
         batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
     });
   };
@@ -798,6 +828,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
             <option value="12">GST 12%</option>
             <option value="18">GST 18%</option>
           </select>
+           <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units per Strip (e.g., 10)" className={formInputStyle} min="1" />
            <div className="sm:col-span-2">
                 <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
             </div>
@@ -806,9 +837,9 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />
             <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />
-            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty" className={formInputStyle} required min="0"/>
-            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} required min="0" step="0.01"/>
-            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01"/>
+            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty (in Strips/Boxes)" className={formInputStyle} required min="0"/>
+            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP (per Strip/Box)" className={formInputStyle} required min="0" step="0.01"/>
+            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price (per strip)" className={formInputStyle} min="0" step="0.01"/>
         </div>
         <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
@@ -821,7 +852,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
 
 const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; }> = ({ isOpen, onClose, product, onUpdateProduct }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', composition: ''
+    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: ''
   });
   
   useEffect(() => {
@@ -831,7 +862,8 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             company: product.company,
             hsnCode: product.hsnCode,
             gst: String(product.gst),
-            composition: product.composition || ''
+            composition: product.composition || '',
+            unitsPerStrip: String(product.unitsPerStrip || '')
         });
     }
   }, [product, isOpen]);
@@ -843,10 +875,13 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formState.name || !formState.company) return;
+    
+    const units = parseInt(formState.unitsPerStrip);
 
     onUpdateProduct(product.id, {
         ...formState,
-        gst: parseFloat(formState.gst)
+        gst: parseFloat(formState.gst),
+        unitsPerStrip: units > 1 ? units : undefined
     });
     onClose();
   };
@@ -863,6 +898,7 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             <option value="12">GST 12%</option>
             <option value="18">GST 18%</option>
           </select>
+          <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units per Strip (e.g., 10)" className={formInputStyle} min="1" />
           <div className="sm:col-span-2">
             <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
           </div>
@@ -889,9 +925,11 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
     const { batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
     if (!batchNumber || !expiryDate || !stock || !mrp) return;
 
+    const stockInBaseUnits = parseInt(stock) * (product.unitsPerStrip || 1);
+
     onAddBatch(
       product.id,
-      { batchNumber, expiryDate, stock: parseInt(stock), mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) }
+      { batchNumber, expiryDate, stock: stockInBaseUnits, mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice) }
     );
     onClose();
     setFormState({ batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: '' });
@@ -932,7 +970,7 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
                         <div className="flex items-center gap-4">
                             {statusBadge}
                             <span className="text-sm text-slate-600 dark:text-slate-400">MRP: ₹{batch.mrp.toFixed(2)}</span>
-                            <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {batch.stock}</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">Stock: {formatStock(batch.stock, product.unitsPerStrip)}</span>
                             <button
                               onClick={() => {
                                 if (window.confirm(`Are you sure you want to delete batch "${batch.batchNumber}"? This action cannot be undone.`)) {
@@ -955,9 +993,9 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: P
          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />
             <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />
-            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty" className={formInputStyle} required min="0"/>
-            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} required min="0" step="0.01"/>
-            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01"/>
+            <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock Qty (in Strips/Boxes)" className={formInputStyle} required min="0"/>
+            <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP (per Strip/Box)" className={formInputStyle} required min="0" step="0.01"/>
+            <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price (per strip)" className={formInputStyle} min="0" step="0.01"/>
         </div>
         <div className="flex justify-end gap-3 pt-4">
             <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>

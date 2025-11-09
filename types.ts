@@ -2,8 +2,8 @@ export interface Batch {
   id: string;
   batchNumber: string;
   expiryDate: string; // YYYY-MM format
-  stock: number;
-  mrp: number;
+  stock: number; // Total stock in smallest unit (e.g., tablets)
+  mrp: number; // MRP per strip/box
   purchasePrice: number;
 }
 
@@ -14,6 +14,7 @@ export interface Product {
   hsnCode: string;
   gst: number;
   composition?: string; // e.g., "Paracetamol 500mg"
+  unitsPerStrip?: number; // e.g., 10 tablets per strip
   batches: Batch[];
 }
 
@@ -25,8 +26,11 @@ export interface CartItem {
   batchNumber: string;
   expiryDate: string;
   hsnCode: string;
-  quantity: number;
-  mrp: number;
+  unitsPerStrip?: number;
+  stripQty: number;
+  looseQty: number;
+  quantity: number; // Total quantity in base units (stripQty * unitsPerStrip + looseQty)
+  mrp: number; // MRP per strip
   gst: number;
   total: number;
 }
@@ -50,15 +54,16 @@ export interface PurchaseLineItem {
   hsnCode: string;
   gst: number;
   composition?: string;
+  unitsPerStrip?: number;
   productId?: string; // Firestore document ID of existing product
   batchId?: string; // ID of the batch created by this line item
   
   // New batch details
   batchNumber: string;
   expiryDate: string; // YYYY-MM
-  quantity: number;
-  mrp: number;
-  purchasePrice: number;
+  quantity: number; // in strips/boxes
+  mrp: number; // MRP per strip/box
+  purchasePrice: number; // per strip/box
 }
 
 export interface Purchase {

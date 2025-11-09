@@ -24,6 +24,23 @@ const getExpiryDate = (expiryString: string): Date => {
     return new Date(year, month, 0); // Last day of the expiry month
 };
 
+const formatStock = (stock: number, unitsPerStrip?: number): string => {
+    if (stock === 0) return '0 U';
+    if (!unitsPerStrip || unitsPerStrip <= 1) {
+        return `${stock} U`;
+    }
+    const strips = Math.floor(stock / unitsPerStrip);
+    const looseUnits = stock % unitsPerStrip;
+    let result = '';
+    if (strips > 0) {
+        result += `${strips} S`;
+    }
+    if (looseUnits > 0) {
+        result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`;
+    }
+    return result || '0 U';
+};
+
 
 const SubstituteModal: React.FC<{
     isOpen: boolean;
@@ -85,6 +102,10 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
   const [substituteOptions, setSubstituteOptions] = useState<Product[]>([]);
   const [sourceProductForSub, setSourceProductForSub] = useState<Product | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const lastAddedBatchIdRef = useRef<string | null>(null);
+  const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+  const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
   const isEditing = !!editingBill;
 
@@ -92,6 +113,27 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
   const activeItemRef = useRef<HTMLLIElement>(null);
 
+  useEffect(() => {
+    if (lastAddedBatchIdRef.current) {
+        // Find the newly added item to decide which input to focus
+        const newItem = cart.find(item => item.batchId === lastAddedBatchIdRef.current);
+        let inputToFocus: HTMLInputElement | null | undefined = null;
+
+        if (newItem && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) {
+            // If it's a strip-based product, focus the strip input first
+            inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current);
+        } else {
+            // Otherwise, focus the main quantity (tab) input
+            inputToFocus = cartItemTabInputRefs.current.get(lastAddedBatchIdRef.current);
+        }
+        
+        if (inputToFocus) {
+            inputToFocus.focus();
+            inputToFocus.select();
+        }
+        lastAddedBatchIdRef.current = null; // Reset after focus
+    }
+  }, [cart]);
 
   useEffect(() => {
     if (editingBill) {
@@ -151,6 +193,38 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
   }, [activeIndices]);
 
 
+  const updateCartItem = (batchId: string, stripQty: number, looseQty: number) => {
+    setCart(currentCart => currentCart.map(item => {
+      if (item.batchId === batchId) {
+        const product = products.find(p => p.id === item.productId);
+        const batch = product?.batches.find(b => b.id === batchId);
+        if (!product || !batch) return item;
+
+        const unitsPerStrip = product.unitsPerStrip || 1;
+        
+        let sQty = Math.max(0, stripQty);
+        let lQty = Math.max(0, looseQty);
+        
+        // Auto-correct loose quantity if it exceeds strip size and it's a strip-based product
+        if (unitsPerStrip > 1 && lQty >= unitsPerStrip) {
+            sQty += Math.floor(lQty / unitsPerStrip);
+            lQty = lQty % unitsPerStrip;
+        }
+
+        const totalUnits = (sQty * unitsPerStrip) + lQty;
+
+        if (totalUnits > 0 && totalUnits <= batch.stock) {
+            const unitPrice = item.mrp / unitsPerStrip;
+            const newTotal = totalUnits * unitPrice;
+            return { ...item, stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: newTotal };
+        } else if (totalUnits === 0) {
+            return { ...item, stripQty: 0, looseQty: 0, quantity: 0, total: 0 };
+        }
+      }
+      return item;
+    }));
+  };
+
   const handleAddToCart = (product: Product, batch: Batch) => {
     const expiry = getExpiryDate(batch.expiryDate);
     if (expiry < today) {
@@ -160,10 +234,14 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
 
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id);
     if (existingItem) {
-      if (existingItem.quantity < batch.stock) {
-        updateCartItem(existingItem.batchId, existingItem.quantity + 1);
-      }
+      const newTotalUnits = existingItem.quantity + 1;
+      const unitsPerStrip = product.unitsPerStrip || 1;
+      const newStripQty = Math.floor(newTotalUnits / unitsPerStrip);
+      const newLooseQty = newTotalUnits % unitsPerStrip;
+      updateCartItem(existingItem.batchId, newStripQty, newLooseQty);
     } else {
+      const unitsPerStrip = product.unitsPerStrip || 1;
+      const unitPrice = batch.mrp / unitsPerStrip;
       const newItem: CartItem = {
         productId: product.id,
         productName: product.name,
@@ -172,27 +250,18 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         batchNumber: batch.batchNumber,
         expiryDate: batch.expiryDate,
         hsnCode: product.hsnCode,
+        unitsPerStrip: product.unitsPerStrip,
+        stripQty: 0,
+        looseQty: 1,
         quantity: 1,
         mrp: batch.mrp,
         gst: product.gst,
-        total: batch.mrp,
+        total: unitPrice,
       };
+      lastAddedBatchIdRef.current = newItem.batchId;
       setCart([...cart, newItem]);
     }
     setSearchTerm('');
-  };
-
-  const updateCartItem = (batchId: string, quantity: number) => {
-    setCart(cart.map(item => {
-      if (item.batchId === batchId) {
-        const product = products.find(p => p.id === item.productId);
-        const batch = product?.batches.find(b => b.id === batchId);
-        if (batch && quantity > 0 && quantity <= batch.stock) {
-          return { ...item, quantity, total: item.mrp * quantity };
-        }
-      }
-      return item;
-    }));
   };
 
   const removeFromCart = (batchId: string) => {
@@ -400,6 +469,23 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         }
     };
 
+    const handleStripQtyKeyDown = (e: React.KeyboardEvent, batchId: string) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const tabInput = cartItemTabInputRefs.current.get(batchId);
+            if (tabInput) {
+                tabInput.focus();
+                tabInput.select();
+            }
+        }
+    };
+
+    const handleTabQtyKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchInputRef.current?.focus();
+        }
+    };
 
   return (
     <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -407,6 +493,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         <Card title={isEditing ? `Editing Bill: ${editingBill?.billNumber}` : 'Create Bill'}>
           <div className="relative mb-4">
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="Search for products to add..."
               value={searchTerm}
@@ -434,6 +521,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                       <ul className="pl-4 pb-2">
                         {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => {
                           const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch;
+                          const unitsPerStrip = product.unitsPerStrip || 1;
                           return (
                             <li
                               key={batch.id}
@@ -450,9 +538,13 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                                 <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
                                 <span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span>
                               </div>
-                              <div>
-                                <span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
+                              <div className="flex items-center gap-4">
+                                <span className="text-slate-800 dark:text-slate-200">
+                                  MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span>
+                                  {unitsPerStrip > 1 && <span className="text-xs">/S</span>}
+                                  {unitsPerStrip > 1 && <span className="text-xs text-slate-500 dark:text-slate-400"> (₹{(batch.mrp / unitsPerStrip).toFixed(2)}/U)</span>}
+                                </span>
+                                <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {formatStock(batch.stock, product.unitsPerStrip)}</span>
                               </div>
                             </li>
                           );
@@ -474,7 +566,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                                 </div>
                                 <div>
                                     <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                    <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {batch.stock}</span>
+                                    <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {formatStock(batch.stock, product.unitsPerStrip)}</span>
                                 </div>
                                 </li>
                                 );
@@ -493,36 +585,52 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                 <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
                     <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0">
                     <tr>
-                        <th scope="col" className="px-4 py-3">Product</th>
-                        <th scope="col" className="px-4 py-3">Batch</th>
-                        <th scope="col" className="px-4 py-3">Qty</th>
-                        <th scope="col" className="px-4 py-3">MRP</th>
-                        <th scope="col" className="px-4 py-3">Total</th>
-                        <th scope="col" className="px-4 py-3">Action</th>
+                        <th scope="col" className="px-2 py-3">Product</th>
+                        <th scope="col" className="px-2 py-3">Pack</th>
+                        <th scope="col" className="px-2 py-3">Batch</th>
+                        <th scope="col" className="px-2 py-3">Stri</th>
+                        <th scope="col" className="px-2 py-3">Tab.</th>
+                        <th scope="col" className="px-2 py-3">M.R.P./S</th>
+                        <th scope="col" className="px-2 py-3">Amount</th>
+                        <th scope="col" className="px-2 py-3">Action</th>
                     </tr>
                     </thead>
                     <tbody>
                     {cart.map(item => (
                         <tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                        <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{item.productName}</td>
-                        <td className="px-4 py-3">{item.batchNumber}</td>
-                        <td className="px-4 py-3">
-                            <input 
-                                type="number" 
-                                value={item.quantity}
-                                onChange={e => updateCartItem(item.batchId, parseInt(e.target.value))}
-                                className={`w-20 p-1 text-center ${inputStyle}`}
-                                min="1"
-                                max={products.find(p => p.id === item.productId)?.batches.find(b => b.id === item.batchId)?.stock}
-                            />
-                        </td>
-                        <td className="px-4 py-3">₹{item.mrp.toFixed(2)}</td>
-                        <td className="px-4 py-3 font-semibold">₹{item.total.toFixed(2)}</td>
-                        <td className="px-4 py-3">
-                            <button onClick={() => removeFromCart(item.batchId)} className="text-red-500 hover:text-red-700">
-                                <TrashIcon className="h-5 w-5" />
-                            </button>
-                        </td>
+                            <td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}</td>
+                            <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>
+                            <td className="px-2 py-3">{item.batchNumber}</td>
+                            <td className="px-2 py-3">
+                                <input
+                                    ref={(el) => cartItemStripInputRefs.current.set(item.batchId, el)}
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={item.stripQty}
+                                    onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)}
+                                    onKeyDown={(e) => handleStripQtyKeyDown(e, item.batchId)}
+                                    className={`w-14 p-1 text-center ${inputStyle}`}
+                                    disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1}
+                                />
+                            </td>
+                            <td className="px-2 py-3">
+                                <input 
+                                    ref={(el) => cartItemTabInputRefs.current.set(item.batchId, el)}
+                                    type="text"
+                                    inputMode="numeric" 
+                                    value={item.looseQty}
+                                    onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)}
+                                    onKeyDown={handleTabQtyKeyDown}
+                                    className={`w-14 p-1 text-center ${inputStyle}`}
+                                />
+                            </td>
+                            <td className="px-2 py-3">₹{item.mrp.toFixed(2)}</td>
+                            <td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td>
+                            <td className="px-2 py-3">
+                                <button onClick={() => removeFromCart(item.batchId)} className="text-red-500 hover:text-red-700">
+                                    <TrashIcon className="h-5 w-5" />
+                                </button>
+                            </td>
                         </tr>
                     ))}
                     </tbody>

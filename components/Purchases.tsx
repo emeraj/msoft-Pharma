@@ -131,7 +131,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         isNewProduct: false,
         productSearch: '',
         selectedProduct: null as Product | null,
-        productName: '', company: '', hsnCode: '', gst: '12', composition: '',
+        productName: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '',
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: ''
     };
     const [formState, setFormState] = useState(initialFormState);
@@ -165,6 +165,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             company: product.company,
             hsnCode: product.hsnCode,
             gst: String(product.gst),
+            unitsPerStrip: String(product.unitsPerStrip || ''),
             isNewProduct: false,
         }));
     };
@@ -187,7 +188,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
+        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
 
         if (isNewProduct && (!productName || !company)) {
             alert('Product Name and Company are required for a new product.');
@@ -198,6 +199,8 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             return;
         }
 
+        const units = parseInt(unitsPerStrip) || 1;
+
         const item: PurchaseLineItem = {
             isNewProduct,
             productName: isNewProduct ? productName : selectedProduct!.name,
@@ -205,6 +208,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
             gst: parseFloat(gst),
             composition,
+            unitsPerStrip: units > 1 ? units : undefined,
             batchNumber,
             expiryDate,
             quantity: parseInt(quantity),
@@ -253,7 +257,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             {formState.isNewProduct && (
                  <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 animate-fade-in">
                     <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">New Product Details</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <input name="productName" value={formState.productName} onChange={handleChange} placeholder="Product Name*" className={formInputStyle} required />
                         <div className="relative">
                             <input
@@ -288,7 +292,8 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                             <option value="12">GST 12%</option>
                             <option value="18">GST 18%</option>
                         </select>
-                        <div className="col-span-2 md:col-span-4">
+                        <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units / Strip" className={formInputStyle} min="1"/>
+                        <div className="col-span-2 md:col-span-5">
                            <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
                         </div>
                     </div>
@@ -301,9 +306,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                          <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />
                          <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />
-                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder="Quantity*" className={formInputStyle} required min="1" />
-                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price*" className={formInputStyle} required min="0" step="0.01" />
-                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP*" className={formInputStyle} required min="0" step="0.01" />
+                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder="Qty (Strips)*" className={formInputStyle} required min="1" />
+                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Price / Strip*" className={formInputStyle} required min="0" step="0.01" />
+                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP / Strip*" className={formInputStyle} required min="0" step="0.01" />
                      </div>
                      <div className="flex justify-end mt-4">
                         <button type="submit" className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors">

@@ -450,17 +450,19 @@ const App: React.FC = () => {
 
     for (const item of purchaseData.items) {
         let finalItem = { ...item };
+        const unitsPerStrip = item.unitsPerStrip || 1;
+        const totalUnitsToAdd = item.quantity * unitsPerStrip;
 
         if (item.isNewProduct) {
             const newBatchId = `batch_${uniqueIdSuffix()}`;
             const newBatchData = {
                 id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
             };
             const newProductRef = doc(collection(db, `users/${uid}/products`));
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
-                composition: item.composition,
+                composition: item.composition, unitsPerStrip: item.unitsPerStrip,
                 batches: [newBatchData]
             });
             finalItem.productId = newProductRef.id;
@@ -482,7 +484,7 @@ const App: React.FC = () => {
                     b.id === existingBatch.id 
                     ? { 
                         ...b, 
-                        stock: b.stock + item.quantity,
+                        stock: b.stock + totalUnitsToAdd,
                         mrp: item.mrp,
                         purchasePrice: item.purchasePrice,
                         expiryDate: item.expiryDate
@@ -496,7 +498,7 @@ const App: React.FC = () => {
                 const newBatchId = `batch_${uniqueIdSuffix()}`;
                 const newBatchData = {
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                    stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                    stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
                 };
                 fbBatch.update(productRef, { batches: arrayUnion(newBatchData) });
                 finalItem.batchId = newBatchId; // Link purchase to the new batch
@@ -545,7 +547,9 @@ const App: React.FC = () => {
         
         const batchIndex = product.batches.findIndex(b => b.id === item.batchId);
         if (batchIndex > -1) {
-            product.batches[batchIndex].stock -= item.quantity;
+            const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
+            const totalUnitsToRevert = item.quantity * unitsPerStrip;
+            product.batches[batchIndex].stock -= totalUnitsToRevert;
         }
     }
 
@@ -556,13 +560,14 @@ const App: React.FC = () => {
         
         if (item.isNewProduct) {
             const newBatchId = `batch_${uniqueIdSuffix()}`;
+            const totalUnitsToAdd = item.quantity * (item.unitsPerStrip || 1);
             const newProductRef = doc(collection(db, `users/${uid}/products`));
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
-                composition: item.composition,
+                composition: item.composition, unitsPerStrip: item.unitsPerStrip,
                 batches: [{
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                    stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                    stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
                 }]
             });
             finalItem.productId = newProductRef.id;
@@ -571,11 +576,14 @@ const App: React.FC = () => {
         } else if (item.productId) {
             const product = getMutableProduct(item.productId);
             if (!product) continue;
+            
+            const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
+            const totalUnitsToAdd = item.quantity * unitsPerStrip;
 
             const batchIndex = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
 
             if (batchIndex > -1) { // Batch found, update it.
-                product.batches[batchIndex].stock += item.quantity;
+                product.batches[batchIndex].stock += totalUnitsToAdd;
                 product.batches[batchIndex].mrp = item.mrp;
                 product.batches[batchIndex].purchasePrice = item.purchasePrice;
                 product.batches[batchIndex].expiryDate = item.expiryDate;
@@ -584,7 +592,7 @@ const App: React.FC = () => {
                 const newBatchId = `batch_${uniqueIdSuffix()}`;
                 product.batches.push({
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                    stock: item.quantity, mrp: item.mrp, purchasePrice: item.purchasePrice,
+                    stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
                 });
                 finalItem.batchId = newBatchId;
             }
@@ -630,11 +638,14 @@ const App: React.FC = () => {
             console.warn(`Product with ID ${item.productId} not found while deleting purchase.`);
             continue;
         }
+        
+        const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
+        const totalUnitsToRevert = item.quantity * unitsPerStrip;
 
         // Find the batch and subtract the quantity
         const updatedBatches = product.batches.map(b => {
             if (b.id === item.batchId) {
-                const newStock = b.stock - item.quantity;
+                const newStock = b.stock - totalUnitsToRevert;
                 return { ...b, stock: newStock < 0 ? 0 : newStock }; // Prevent negative stock
             }
             return b;
