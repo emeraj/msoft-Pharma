@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
@@ -297,7 +297,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const executePrint = (billToPrint: Bill, onPrintDialogClosed?: () => void) => {
+  const executePrint = useCallback((billToPrint: Bill, onPrintDialogClosed?: () => void) => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
@@ -332,9 +332,9 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
             onPrintDialogClosed();
         }
     }
-  };
+  }, [companyProfile]);
 
-  const handleSaveBill = async () => {
+  const handleSaveBill = useCallback(async () => {
     if (cart.length === 0) {
       alert("Cart is empty!");
       return;
@@ -375,7 +375,26 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
           alert("There was an error generating the bill. Please try again.");
         }
     }
-  };
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, subTotal, totalGst, grandTotal, onGenerateBill, executePrint, onCancelEdit]);
+  
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        // The button is disabled when cart is empty, so this shortcut should
+        // also only work when there are items in the cart.
+        if (cart.length > 0) {
+          handleSaveBill();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [cart.length, handleSaveBill]);
   
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (searchResults.length === 0 || navigableBatchesByProduct.every(b => b.length === 0)) return;
@@ -679,6 +698,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                         onClick={handleSaveBill}
                         disabled={cart.length === 0}
                         className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+                        title="Quick save and print with Alt+P"
                     >
                        {isEditing ? 'Update Bill' : 'Save And Print Bill'}
                     </button>
