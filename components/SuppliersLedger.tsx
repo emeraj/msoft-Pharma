@@ -152,10 +152,8 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
             const supplierPurchases = purchases.filter(p => p.supplier === supplier.name);
             const supplierPayments = payments.filter(p => p.supplierName === supplier.name);
 
-            // Calculate Opening Balance for the period
-            // User convention: -ve is Credit (liability), +ve is Debit (asset)
-            // Internal calculation: +ve is Credit (liability), -ve is Debit (asset)
-            // So we invert the sign.
+            // Invert user-facing balance: -1000 (Credit) becomes +1000 internally.
+            // Internal representation: +ve means Credit (liability), -ve means Debit (asset).
             let openingBalanceForPeriod = (supplier.openingBalance || 0) * -1;
 
             const prePeriodPurchases = supplierPurchases.filter(p => startDate && new Date(p.invoiceDate) < startDate);
