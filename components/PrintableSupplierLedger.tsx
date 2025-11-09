@@ -114,20 +114,20 @@ const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ suppl
                     <tbody>
                         <tr>
                             <td style={styles.td}></td>
-                            <td style={{ ...styles.td, fontStyle: 'italic' }}>Opening Balance</td>
+                            <td style={{ ...styles.td, fontStyle: 'italic', fontWeight: 'bold' }}>Opening Balance</td>
                             <td style={styles.td}></td>
                             <td style={styles.td}></td>
-                            <td style={{ ...styles.td, textAlign: 'right' }}>{openingBalance.toFixed(2)}</td>
+                            <td style={{ ...styles.td, textAlign: 'right', fontWeight: 'bold' }}>{Math.abs(openingBalance).toFixed(2)} {openingBalance >= 0 ? 'Cr' : 'Dr'}</td>
                         </tr>
                         {transactions.map((tx, index) => {
-                            runningBalance = runningBalance + tx.debit - tx.credit;
+                            runningBalance = runningBalance + tx.credit - tx.debit;
                             return (
                                 <tr key={index}>
                                     <td style={styles.td}>{tx.date.toLocaleDateString()}</td>
                                     <td style={styles.td}>{tx.particulars}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{tx.debit > 0 ? tx.debit.toFixed(2) : '-'}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{tx.credit > 0 ? tx.credit.toFixed(2) : '-'}</td>
-                                    <td style={{ ...styles.td, textAlign: 'right' }}>{runningBalance.toFixed(2)}</td>
+                                    <td style={{ ...styles.td, textAlign: 'right' }}>{Math.abs(runningBalance).toFixed(2)} {runningBalance >= 0 ? 'Cr' : 'Dr'}</td>
                                 </tr>
                             );
                         })}
@@ -137,7 +137,7 @@ const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ suppl
                             <td style={{ ...styles.td, borderTop: '1.5pt solid #666'}} colSpan={2}>Closing Balance</td>
                             <td style={{ ...styles.td, textAlign: 'right', borderTop: '1.5pt solid #666' }}>{totalDebit.toFixed(2)}</td>
                             <td style={{ ...styles.td, textAlign: 'right', borderTop: '1.5pt solid #666' }}>{totalCredit.toFixed(2)}</td>
-                            <td style={{ ...styles.td, textAlign: 'right', borderTop: '1.5pt solid #666' }}>{runningBalance.toFixed(2)}</td>
+                            <td style={{ ...styles.td, textAlign: 'right', borderTop: '1.5pt solid #666' }}>{Math.abs(runningBalance).toFixed(2)} {runningBalance >= 0 ? 'Cr' : 'Dr'}</td>
                          </tr>
                     </tfoot>
                 </table>

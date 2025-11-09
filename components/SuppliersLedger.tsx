@@ -121,7 +121,7 @@ const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, 
                     </div>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance (-ve for Credit, +ve for Debit)</label>
                     <input name="openingBalance" value={formState.openingBalance} onChange={handleChange} type="number" step="0.01" className={formInputStyle} required />
                 </div>
                 <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
@@ -153,15 +153,19 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
             const supplierPayments = payments.filter(p => p.supplierName === supplier.name);
 
             // Calculate Opening Balance for the period
-            let openingBalanceForPeriod = supplier.openingBalance || 0;
+            // User convention: -ve is Credit (liability), +ve is Debit (asset)
+            // Internal calculation: +ve is Credit (liability), -ve is Debit (asset)
+            // So we invert the sign.
+            let openingBalanceForPeriod = (supplier.openingBalance || 0) * -1;
+
             const prePeriodPurchases = supplierPurchases.filter(p => startDate && new Date(p.invoiceDate) < startDate);
             const prePeriodPayments = supplierPayments.filter(p => startDate && new Date(p.date) < startDate);
 
             prePeriodPurchases.forEach(p => {
-                openingBalanceForPeriod += p.totalAmount;
+                openingBalanceForPeriod += p.totalAmount; // Purchase increases liability
             });
             prePeriodPayments.forEach(p => {
-                openingBalanceForPeriod -= p.amount;
+                openingBalanceForPeriod -= p.amount; // Payment decreases liability
             });
 
 
@@ -214,10 +218,10 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
     const handleExport = () => {
         const exportData = filteredLedger.map(s => ({
             'Supplier Name': s.name,
-            'Opening Balance': s.openingBalanceForPeriod.toFixed(2),
+            'Opening Balance': `${Math.abs(s.openingBalanceForPeriod).toFixed(2)} ${s.openingBalanceForPeriod >= 0 ? 'Cr' : 'Dr'}`,
             'Total Purchases (Period)': s.purchasesInPeriod.toFixed(2),
             'Total Payments (Period)': s.paymentsInPeriod.toFixed(2),
-            'Outstanding Balance': s.outstandingBalance.toFixed(2),
+            'Outstanding Balance': `${Math.abs(s.outstandingBalance).toFixed(2)} ${s.outstandingBalance >= 0 ? 'Cr' : 'Dr'}`,
             'Phone': s.phone,
             'GSTIN': s.gstin,
         }));
@@ -268,10 +272,10 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                             {filteredLedger.map(supplier => (
                                 <tr key={supplier.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                                     <td className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">{supplier.name}</td>
-                                    <td className="px-6 py-4 text-right">₹{supplier.openingBalanceForPeriod.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right">₹{Math.abs(supplier.openingBalanceForPeriod).toFixed(2)} {supplier.openingBalanceForPeriod >= 0 ? 'Cr' : 'Dr'}</td>
                                     <td className="px-6 py-4 text-right">₹{supplier.purchasesInPeriod.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right">₹{supplier.paymentsInPeriod.toFixed(2)}</td>
-                                    <td className="px-6 py-4 text-right font-bold">₹{supplier.outstandingBalance.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-right font-bold">₹{Math.abs(supplier.outstandingBalance).toFixed(2)} {supplier.outstandingBalance >= 0 ? 'Cr' : 'Dr'}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-4">
                                             <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
@@ -382,8 +386,8 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                 <PrintableSupplierLedger
                     supplier={supplier}
                     transactions={transactions.map(tx => tx.type === 'purchase' ? 
-                        { date: tx.date, particulars: `Purchase - Inv #${tx.data.invoiceNumber}`, debit: tx.data.totalAmount, credit: 0 } :
-                        { date: tx.date, particulars: `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`, debit: 0, credit: tx.data.amount }
+                        { date: tx.date, particulars: `Purchase - Inv #${tx.data.invoiceNumber}`, debit: 0, credit: tx.data.totalAmount } :
+                        { date: tx.date, particulars: `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`, debit: tx.data.amount, credit: 0 }
                     )}
                     companyProfile={companyProfile}
                     openingBalance={supplier.openingBalanceForPeriod}
@@ -397,20 +401,24 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
             }, 1000);
         }
     };
+
+    let runningBalance = supplier.openingBalanceForPeriod;
     
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Ledger for ${supplier.name}`}>
             <div className="space-y-4 text-slate-800 dark:text-slate-300">
                 <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     <div className="font-semibold text-slate-800 dark:text-slate-200">Opening Balance:</div>
-                    <div className="text-right">₹{supplier.openingBalanceForPeriod.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Purchases (Period):</div>
-                    <div className="text-right">₹{supplier.purchasesInPeriod.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Payments (Period):</div>
+                    <div className="text-right">
+                        ₹{Math.abs(supplier.openingBalanceForPeriod).toFixed(2)} {supplier.openingBalanceForPeriod >= 0 ? 'Cr' : 'Dr'}
+                    </div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Purchases (Credit):</div>
+                    <div className="text-right text-red-600 dark:text-red-400">₹{supplier.purchasesInPeriod.toFixed(2)}</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">Payments (Debit):</div>
                     <div className="text-right text-green-600 dark:text-green-400">₹{supplier.paymentsInPeriod.toFixed(2)}</div>
                     <div className="font-bold text-lg text-slate-800 dark:text-slate-100 col-span-2 border-t dark:border-slate-600 mt-2 pt-2 flex justify-between">
                         <span>Outstanding Balance:</span>
-                        <span>₹{supplier.outstandingBalance.toFixed(2)}</span>
+                        <span>₹{Math.abs(supplier.outstandingBalance).toFixed(2)} {supplier.outstandingBalance >= 0 ? 'Cr' : 'Dr'}</span>
                     </div>
                 </div>
 
@@ -422,26 +430,34 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                                 <tr>
                                     <th className="py-2 px-2">Date</th>
                                     <th className="py-2 px-2">Particulars</th>
-                                    <th className="py-2 px-2 text-right">Amount</th>
+                                    <th className="py-2 px-2 text-right">Debit (₹)</th>
+                                    <th className="py-2 px-2 text-right">Credit (₹)</th>
+                                    <th className="py-2 px-2 text-right">Balance (₹)</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {transactions.map((tx, idx) => (
-                                    <tr key={idx} className="border-b dark:border-slate-600">
-                                        <td className="py-2 px-2">{tx.date.toLocaleDateString()}</td>
-                                        {tx.type === 'purchase' ? (
-                                            <>
-                                                <td className="py-2 px-2">Purchase - Inv #{tx.data.invoiceNumber}</td>
-                                                <td className="py-2 px-2 text-right font-medium text-red-600 dark:text-red-400">₹{tx.data.totalAmount.toFixed(2)}</td>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <td className="py-2 px-2">Payment - {tx.data.method} (V: {tx.data.voucherNumber})</td>
-                                                <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">₹{tx.data.amount.toFixed(2)}</td>
-                                            </>
-                                        )}
-                                    </tr>
-                                ))}
+                                <tr>
+                                    <td colSpan={4} className="py-2 px-2 font-bold">Opening Balance</td>
+                                    <td className="py-2 px-2 text-right font-bold">{Math.abs(supplier.openingBalanceForPeriod).toFixed(2)} {supplier.openingBalanceForPeriod >= 0 ? 'Cr' : 'Dr'}</td>
+                                </tr>
+                                {transactions.map((tx, idx) => {
+                                    const debit = tx.type === 'payment' ? tx.data.amount : 0;
+                                    const credit = tx.type === 'purchase' ? tx.data.totalAmount : 0;
+                                    runningBalance = runningBalance + credit - debit;
+                                    const particulars = tx.type === 'purchase'
+                                        ? `Purchase - Inv #${tx.data.invoiceNumber}`
+                                        : `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`;
+                                    
+                                    return (
+                                        <tr key={idx} className="border-b dark:border-slate-600">
+                                            <td className="py-2 px-2">{tx.date.toLocaleDateString()}</td>
+                                            <td className="py-2 px-2">{particulars}</td>
+                                            <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">{debit > 0 ? debit.toFixed(2) : '-'}</td>
+                                            <td className="py-2 px-2 text-right font-medium text-red-600 dark:text-red-400">{credit > 0 ? credit.toFixed(2) : '-'}</td>
+                                            <td className="py-2 px-2 text-right font-semibold">{Math.abs(runningBalance).toFixed(2)} {runningBalance >= 0 ? 'Cr' : 'Dr'}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                         {transactions.length === 0 && <p className="text-center text-slate-500 dark:text-slate-400 py-4">No transactions found for this supplier in the selected period.</p>}
