@@ -15,6 +15,7 @@ export interface Product {
   gst: number;
   composition?: string; // e.g., "Paracetamol 500mg"
   unitsPerStrip?: number; // e.g., 10 tablets per strip
+  isScheduleH?: boolean;
   batches: Batch[];
 }
 
@@ -27,6 +28,7 @@ export interface CartItem {
   expiryDate: string;
   hsnCode: string;
   unitsPerStrip?: number;
+  isScheduleH?: boolean;
   stripQty: number;
   looseQty: number;
   quantity: number; // Total quantity in base units (stripQty * unitsPerStrip + looseQty)
@@ -40,6 +42,7 @@ export interface Bill {
   billNumber: string;
   date: string; // ISO string
   customerName: string;
+  doctorName?: string;
   items: CartItem[];
   subTotal: number;
   totalGst: number;
@@ -55,6 +58,7 @@ export interface PurchaseLineItem {
   gst: number;
   composition?: string;
   unitsPerStrip?: number;
+  isScheduleH?: boolean;
   productId?: string; // Firestore document ID of existing product
   batchId?: string; // ID of the batch created by this line item
   

@@ -8,6 +8,7 @@ import ThermalPrintableBill from './ThermalPrintableBill';
 
 interface BillingProps {
   products: Product[];
+  bills: Bill[];
   companyProfile: CompanyProfile;
   onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
   editingBill?: Bill | null;
@@ -95,10 +96,11 @@ const SubstituteModal: React.FC<{
 };
 
 
-const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProfile, editingBill, onUpdateBill, onCancelEdit }) => {
+const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, editingBill, onUpdateBill, onCancelEdit }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
+  const [doctorName, setDoctorName] = useState('');
   const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
   const [substituteOptions, setSubstituteOptions] = useState<Product[]>([]);
   const [sourceProductForSub, setSourceProductForSub] = useState<Product | null>(null);
@@ -139,11 +141,23 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
     if (editingBill) {
       setCart(editingBill.items);
       setCustomerName(editingBill.customerName);
+      setDoctorName(editingBill.doctorName || '');
     } else {
       setCart([]);
       setCustomerName('');
+      setDoctorName('');
     }
   }, [editingBill]);
+
+  const doctorList = useMemo(() => {
+    const doctors = new Set<string>();
+    bills.forEach(bill => {
+        if (bill.doctorName) {
+            doctors.add(bill.doctorName);
+        }
+    });
+    return Array.from(doctors).sort();
+  }, [bills]);
 
   const today = useMemo(() => {
     const d = new Date();
@@ -255,6 +269,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         mrp: batch.mrp,
         gst: product.gst,
         total: unitPrice,
+        ...(product.isScheduleH && { isScheduleH: product.isScheduleH }),
         ...(product.composition && { composition: product.composition }),
         ...(product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
       };
@@ -344,6 +359,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         const billData = {
             date: editingBill.date, // Keep original date on edit
             customerName: customerName || 'Walk-in',
+            doctorName: doctorName.trim(),
             items: cart,
             subTotal,
             totalGst,
@@ -358,6 +374,7 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         const billData = {
             date: new Date().toISOString(),
             customerName: customerName || 'Walk-in',
+            doctorName: doctorName.trim(),
             items: cart,
             subTotal,
             totalGst,
@@ -369,13 +386,14 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
           executePrint(newBill, () => {
               setCart([]);
               setCustomerName('');
+              setDoctorName('');
           });
         } else {
           console.error("onGenerateBill did not return a valid bill object.");
           alert("There was an error generating the bill. Please try again.");
         }
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, subTotal, totalGst, grandTotal, onGenerateBill, executePrint, onCancelEdit]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, executePrint, onCancelEdit]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -617,7 +635,10 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
                     <tbody>
                     {cart.map(item => (
                         <tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                            <td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}</td>
+                            <td className="px-2 py-3 font-medium text-slate-900 dark:text-white">
+                                {item.productName}
+                                {item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}
+                            </td>
                             <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>
                             <td className="px-2 py-3">{item.batchNumber}</td>
                             <td className="px-2 py-3">
@@ -669,15 +690,30 @@ const Billing: React.FC<BillingProps> = ({ products, onGenerateBill, companyProf
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
                 <div>
-                    <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Customer Name</label>
+                    <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Patient Name</label>
                     <input
                         type="text"
                         id="customerName"
                         value={customerName}
                         onChange={e => setCustomerName(e.target.value)}
-                        placeholder="Walk-in Customer"
+                        placeholder="Walk-in Patient"
                         className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
                     />
+                </div>
+                <div>
+                    <label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Doctor Name</label>
+                    <input
+                        type="text"
+                        id="doctorName"
+                        value={doctorName}
+                        onChange={e => setDoctorName(e.target.value)}
+                        placeholder="e.g. Dr. John Doe"
+                        className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
+                        list="doctor-list"
+                    />
+                    <datalist id="doctor-list">
+                        {doctorList.map(doc => <option key={doc} value={doc} />)}
+                    </datalist>
                 </div>
                 <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300">
                     <div className="flex justify-between">

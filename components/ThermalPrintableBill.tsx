@@ -49,6 +49,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
                 <p>Bill No: {bill.billNumber}</p>
                 <p>Date: {new Date(bill.date).toLocaleString()}</p>
                 <p>Customer: {bill.customerName}</p>
+                {bill.doctorName && <p>Doctor: {bill.doctorName}</p>}
             </div>
 
             <p>{line}</p>
@@ -71,6 +72,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
                         <div style={{ ...styles.flex, ...styles.justifyBetween }}>
                             <div style={{ flex: '1 1 0%', paddingRight: '4px' }}>
                                 {index + 1}. {item.productName}
+                                {item.isScheduleH && <span style={{ ...styles.fontBold }}> (Sch.H)</span>}
                             </div>
                             <div style={{ display: 'flex', flexShrink: 0 }}>
                                 <div style={{ ...styles.w8, ...styles.textCenter }}>{item.quantity}</div>

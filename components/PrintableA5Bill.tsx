@@ -121,6 +121,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> 
             <section style={{ padding: '3mm 0', borderBottom: '1px solid #cbd5e0' }}>
                 <h3 style={{ fontWeight: 600, margin: 0 }}>Bill To:</h3>
                 <p style={{ margin: '1mm 0 0 0', fontSize: '10pt' }}>{bill.customerName}</p>
+                {bill.doctorName && <p style={{ margin: '1mm 0 0 0', fontSize: '9pt', color: '#4a5568' }}><strong>Prescribed by:</strong> {bill.doctorName}</p>}
             </section>
 
             <main style={styles.main}>
@@ -143,6 +144,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> 
                                 <td style={styles.td}>{index + 1}</td>
                                 <td style={styles.td}>
                                     {item.productName}
+                                    {item.isScheduleH && <span style={{ fontWeight: 'bold', color: '#C05621', fontSize: '7pt' }}> (Sch. H)</span>}
                                     {item.composition && <div style={{ fontSize: '7pt', color: '#4a5568', fontStyle: 'italic' }}>{item.composition}</div>}
                                 </td>
                                 <td style={styles.td}>{item.hsnCode}</td>

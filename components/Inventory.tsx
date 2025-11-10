@@ -263,6 +263,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     company: product.company,
                     composition: product.composition,
                     unitsPerStrip: product.unitsPerStrip,
+                    isScheduleH: product.isScheduleH,
                     openingStock,
                     purchasedQty: purchasesInPeriod,
                     soldQty: salesInPeriod,
@@ -278,6 +279,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
             'Product Name': data.name,
             'Company': data.company,
             'Composition': data.composition,
+            'Schedule H': data.isScheduleH ? 'Yes' : 'No',
             'Opening Stock': formatStock(data.openingStock, data.unitsPerStrip),
             'Purchased Qty (Period)': formatStock(data.purchasedQty, data.unitsPerStrip),
             'Sold Qty (Period)': formatStock(data.soldQty, data.unitsPerStrip),
@@ -337,6 +339,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                             <tr key={item.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
                                 <td scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">
                                     {item.name}
+                                    {item.isScheduleH && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-orange-600 dark:bg-orange-700 rounded-full">Sch. H</span>}
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">{item.company}</p>
                                     <p className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">{item.composition}</p>
                                 </td>
@@ -406,10 +409,11 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
                         <h3 className="text-lg font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
                         <p className="text-sm text-slate-700 dark:text-slate-300">{selectedProduct.company}</p>
                         <p className="text-sm text-indigo-700 dark:text-indigo-300 font-medium mt-1">{selectedProduct.composition}</p>
-                        <div className="flex gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
+                        <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
                            <span>HSN: {selectedProduct.hsnCode}</span>
                            <span>GST: {selectedProduct.gst}%</span>
                            {selectedProduct.unitsPerStrip && <span>{selectedProduct.unitsPerStrip} Units/Strip</span>}
+                           {selectedProduct.isScheduleH && <span className="px-2 py-0.5 text-xs font-semibold text-white bg-orange-600 dark:bg-orange-700 rounded-full">Schedule H Drug</span>}
                            <span className="font-semibold">Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</span>
                         </div>
                     </div>
@@ -760,7 +764,7 @@ const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[] }> = ({ isOpen, onClose, onAddProduct, companies }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '',
+    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No',
     batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
   });
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
@@ -788,7 +792,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, company, hsnCode, gst, composition, unitsPerStrip, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
+    const { name, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
     if (!name || !company || !batchNumber || !expiryDate || !stock || !mrp) return;
 
     const units = parseInt(unitsPerStrip) || 1;
@@ -799,6 +803,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
       company,
       hsnCode,
       gst: parseFloat(gst),
+      isScheduleH: isScheduleH === 'Yes',
     };
 
     if (composition) {
@@ -814,7 +819,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
     );
     onClose();
     setFormState({
-        name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '',
+        name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No',
         batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
     });
   };
@@ -859,6 +864,10 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
             <option value="18">GST 18%</option>
           </select>
            <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units per Strip (e.g., 10)" className={formInputStyle} min="1" />
+           <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
+            <option value="No">Schedule H Drug? No</option>
+            <option value="Yes">Schedule H Drug? Yes</option>
+          </select>
            <div className="sm:col-span-2">
                 <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
             </div>
@@ -882,7 +891,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
 
 const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; }> = ({ isOpen, onClose, product, onUpdateProduct }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: ''
+    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No'
   });
   
   useEffect(() => {
@@ -893,7 +902,8 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             hsnCode: product.hsnCode,
             gst: String(product.gst),
             composition: product.composition || '',
-            unitsPerStrip: String(product.unitsPerStrip || '')
+            unitsPerStrip: String(product.unitsPerStrip || ''),
+            isScheduleH: product.isScheduleH ? 'Yes' : 'No',
         });
     }
   }, [product, isOpen]);
@@ -911,6 +921,7 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
         company: formState.company,
         hsnCode: formState.hsnCode,
         gst: parseFloat(formState.gst),
+        isScheduleH: formState.isScheduleH === 'Yes',
     };
     if (formState.composition) {
         productUpdate.composition = formState.composition;
@@ -937,6 +948,10 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             <option value="18">GST 18%</option>
           </select>
           <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units per Strip (e.g., 10)" className={formInputStyle} min="1" />
+          <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
+            <option value="No">Schedule H Drug? No</option>
+            <option value="Yes">Schedule H Drug? Yes</option>
+          </select>
           <div className="sm:col-span-2">
             <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
           </div>
@@ -1061,7 +1076,7 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
     const [importResult, setImportResult] = useState<{success: number; skipped: number} | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
-    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'ignore'];
+    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'isScheduleH', 'ignore'];
     
     const resetState = () => {
         setStep(1);
@@ -1140,6 +1155,12 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
                  }
             }
             
+            const isScheduleHRaw = (row as any)[mapping['isScheduleH']];
+            if (isScheduleHRaw) {
+                const isScheduleHValue = isScheduleHRaw.toLowerCase();
+                product.isScheduleH = isScheduleHValue === 'yes' || isScheduleHValue === 'true' || isScheduleHValue === '1';
+            }
+
             return product;
         }).filter(p => p.name && p.company); // Ensure mandatory fields are present
 

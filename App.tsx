@@ -403,6 +403,18 @@ const App: React.FC = () => {
         return null;
     }
   };
+  
+  const handleUpdateBillDetails = async (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => {
+    if (!currentUser) return;
+    const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
+    try {
+        await updateDoc(billRef, updates);
+        alert('Bill details updated successfully.');
+    } catch (error) {
+        console.error("Error updating bill details:", error);
+        alert("Failed to update bill details.");
+    }
+  };
 
   const handleDeleteBill = async (bill: Bill) => {
     if (!currentUser) return;
@@ -505,6 +517,7 @@ const App: React.FC = () => {
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
                 composition: item.composition, unitsPerStrip: item.unitsPerStrip,
+                isScheduleH: item.isScheduleH,
                 batches: [newBatchData]
             });
             finalItem.productId = newProductRef.id;
@@ -804,15 +817,15 @@ const App: React.FC = () => {
     }
     switch (activeView) {
       case 'dashboard': return <SalesDashboard bills={bills} products={products} />;
-      case 'billing': return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
+      case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
       case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} />;
-      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} />;
+      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
-      default: return <Billing products={products} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
+      default: return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
     }
   };
 

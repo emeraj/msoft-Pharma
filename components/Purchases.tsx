@@ -131,7 +131,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         isNewProduct: false,
         productSearch: '',
         selectedProduct: null as Product | null,
-        productName: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '',
+        productName: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No',
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: ''
     };
     const [formState, setFormState] = useState(initialFormState);
@@ -207,6 +207,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             hsnCode: product.hsnCode,
             gst: String(product.gst),
             unitsPerStrip: String(product.unitsPerStrip || ''),
+            isScheduleH: product.isScheduleH ? 'Yes' : 'No',
             isNewProduct: false,
         }));
         setActiveIndex(-1);
@@ -233,7 +234,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
+        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
 
         if (isNewProduct && (!productName || !company)) {
             alert('Product Name and Company are required for a new product.');
@@ -256,6 +257,10 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
         };
+
+        if (isNewProduct) {
+            item.isScheduleH = isScheduleH === 'Yes';
+        }
         
         if (composition) {
             item.composition = composition;
@@ -320,7 +325,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             {formState.isNewProduct && (
                  <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 animate-fade-in">
                     <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">New Product Details</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                         <input name="productName" value={formState.productName} onChange={handleChange} placeholder="Product Name*" className={formInputStyle} required />
                         <div className="relative">
                             <input
@@ -356,7 +361,11 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                             <option value="18">GST 18%</option>
                         </select>
                         <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units / Strip" className={formInputStyle} min="1"/>
-                        <div className="col-span-2 md:col-span-5">
+                        <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
+                            <option value="No">Sch. H? No</option>
+                            <option value="Yes">Sch. H? Yes</option>
+                        </select>
+                        <div className="col-span-2 md:col-span-6">
                            <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
                         </div>
                     </div>

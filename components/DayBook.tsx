@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Bill, CompanyProfile } from '../types';
 import Card from './common/Card';
@@ -47,9 +47,10 @@ interface DayBookProps {
   companyProfile: CompanyProfile;
   onDeleteBill: (bill: Bill) => void;
   onEditBill: (bill: Bill) => void;
+  onUpdateBillDetails: (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => void;
 }
 
-const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, onEditBill }) => {
+const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, onEditBill, onUpdateBillDetails }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -199,6 +200,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, 
           isOpen={!!selectedBill}
           onClose={() => setSelectedBill(null)}
           bill={selectedBill}
+          onUpdateBillDetails={onUpdateBillDetails}
         />
       )}
     </div>
@@ -206,7 +208,71 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, 
 };
 
 // --- Helper Component ---
-const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: Bill; }> = ({ isOpen, onClose, bill }) => {
+const EditableField: React.FC<{
+  label: string;
+  value: string;
+  onSave: (newValue: string) => void;
+}> = ({ label, value, onSave }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentValue, setCurrentValue] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setCurrentValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+  
+  const handleSave = () => {
+    setIsEditing(false);
+    if (currentValue.trim() !== value) {
+        onSave(currentValue.trim());
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 mt-1 py-1">
+      <p className="font-semibold text-slate-700 dark:text-slate-300 w-16">{label}:</p>
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={currentValue}
+          onChange={(e) => setCurrentValue(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSave();
+              if (e.key === 'Escape') {
+                  setIsEditing(false);
+                  setCurrentValue(value);
+              }
+          }}
+          className="p-1 -m-1 bg-yellow-100 text-slate-900 border border-indigo-400 rounded-md focus:ring-2 focus:ring-indigo-500"
+        />
+      ) : (
+        <span className="font-medium text-slate-800 dark:text-slate-200">{value || 'N/A'}</span>
+      )}
+      <button onClick={() => setIsEditing(!isEditing)} className="text-slate-500 hover:text-slate-800 dark:hover:text-white p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600" title={`Edit ${label}`}>
+        <PencilIcon className="h-4 w-4" />
+      </button>
+    </div>
+  );
+};
+
+
+interface BillDetailsModalProps { 
+    isOpen: boolean; 
+    onClose: () => void; 
+    bill: Bill;
+    onUpdateBillDetails: (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => void;
+}
+
+const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ isOpen, onClose, bill, onUpdateBillDetails }) => {
     
     const getExpiryDate = (expiryString: string): Date => {
         if (!expiryString) return new Date('9999-12-31');
@@ -222,11 +288,18 @@ const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: B
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Bill Details: ${bill.billNumber}`}>
             <div className="space-y-4 text-slate-800 dark:text-slate-300">
-                <div className="flex justify-between text-sm">
-                    <div>
-                        <p className="font-semibold text-slate-800 dark:text-slate-200">Customer: {bill.customerName}</p>
-                        <p className="text-slate-600 dark:text-slate-400">Date: {new Date(bill.date).toLocaleString()}</p>
-                    </div>
+                <div className="text-sm">
+                    <EditableField 
+                        label="Patient" 
+                        value={bill.customerName} 
+                        onSave={(newValue) => onUpdateBillDetails(bill.id, { customerName: newValue })}
+                    />
+                    <EditableField 
+                        label="Doctor" 
+                        value={bill.doctorName || ''} 
+                        onSave={(newValue) => onUpdateBillDetails(bill.id, { doctorName: newValue })}
+                    />
+                    <p className="text-slate-600 dark:text-slate-400 mt-2">Date: {new Date(bill.date).toLocaleString()}</p>
                 </div>
                 <div className="border-t dark:border-slate-700 pt-2">
                     <div className="max-h-60 overflow-y-auto">
@@ -260,6 +333,7 @@ const BillDetailsModal: React.FC<{ isOpen: boolean; onClose: () => void; bill: B
                                         <tr key={item.batchId} className={`border-b dark:border-slate-700 ${rowClass}`} title={rowTitle}>
                                             <td className="py-2">
                                                 {item.productName}
+                                                {item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}
                                                 {item.composition && <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">{item.composition}</div>}
                                                 <div className="text-slate-500 dark:text-slate-400">
                                                   Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
