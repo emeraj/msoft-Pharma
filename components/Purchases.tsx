@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Product, Purchase, PurchaseLineItem, Company, Supplier } from '../types';
+import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon } from './icons/Icons';
@@ -9,6 +9,7 @@ interface PurchasesProps {
     purchases: Purchase[];
     companies: Company[];
     suppliers: Supplier[];
+    systemConfig: SystemConfig;
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
     onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
     onDeletePurchase: (purchase: Purchase) => void;
@@ -126,7 +127,7 @@ const AddSupplierModal: React.FC<{
 };
 
 
-const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], disabled?: boolean }> = ({ products, onAddItem, companies, disabled = false }) => {
+const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, disabled?: boolean }> = ({ products, onAddItem, companies, systemConfig, disabled = false }) => {
     const initialFormState = {
         isNewProduct: false,
         productSearch: '',
@@ -138,6 +139,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
     const activeItemRef = useRef<HTMLLIElement>(null);
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
     const companySuggestions = useMemo(() => {
         if (!formState.company) return companies.slice(0, 5);
@@ -251,24 +253,25 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             company: company.trim(),
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
             gst: parseFloat(gst),
-            batchNumber,
-            expiryDate,
+            batchNumber: isPharmaMode ? batchNumber : 'DEFAULT',
+            expiryDate: isPharmaMode ? expiryDate : '9999-12',
             quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
         };
 
-        if (isNewProduct) {
+        if (isPharmaMode && isNewProduct) {
             item.isScheduleH = isScheduleH === 'Yes';
-        }
-        
-        if (composition) {
-            item.composition = composition;
-        }
-        
-        const units = parseInt(unitsPerStrip, 10);
-        if (!isNaN(units) && units > 1) {
-            item.unitsPerStrip = units;
+             if (composition) {
+                item.composition = composition;
+            }
+            const units = parseInt(unitsPerStrip, 10);
+            if (!isNaN(units) && units > 1) {
+                item.unitsPerStrip = units;
+            }
+        } else {
+            item.isScheduleH = false;
+            item.unitsPerStrip = 1;
         }
         
         if (!isNewProduct && selectedProduct) {
@@ -360,27 +363,31 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                             <option value="12">GST 12%</option>
                             <option value="18">GST 18%</option>
                         </select>
-                        <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units / Strip" className={formInputStyle} min="1"/>
-                        <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
-                            <option value="No">Sch. H? No</option>
-                            <option value="Yes">Sch. H? Yes</option>
-                        </select>
-                        <div className="col-span-2 md:col-span-6">
-                           <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
-                        </div>
+                        {isPharmaMode && (
+                           <>
+                                <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units / Strip" className={formInputStyle} min="1"/>
+                                <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
+                                    <option value="No">Sch. H? No</option>
+                                    <option value="Yes">Sch. H? Yes</option>
+                                </select>
+                                <div className="col-span-2 md:col-span-6">
+                                <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
+                                </div>
+                           </>
+                        )}
                     </div>
                 </div>
             )}
 
             {(formState.selectedProduct || formState.isNewProduct) && (
                 <div className="animate-fade-in">
-                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 pt-2 border-t dark:border-slate-600">Batch Details</h4>
+                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 pt-2 border-t dark:border-slate-600">Purchase Details</h4>
                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                         <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />
-                         <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />
-                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder="Qty (Strips)*" className={formInputStyle} required min="1" />
-                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Price / Strip*" className={formInputStyle} required min="0" step="0.01" />
-                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP / Strip*" className={formInputStyle} required min="0" step="0.01" />
+                         {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />}
+                         {isPharmaMode && <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />}
+                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder={`Qty ${isPharmaMode ? '(Strips)' : ''}*`} className={formInputStyle} required min="1" />
+                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder={`Price / ${isPharmaMode ? 'Strip' : 'Unit'}*`} className={formInputStyle} required min="0" step="0.01" />
+                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder={`MRP / ${isPharmaMode ? 'Strip' : 'Unit'}*`} className={formInputStyle} required min="0" step="0.01" />
                      </div>
                      <div className="flex justify-end mt-4">
                         <button type="submit" className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors">
@@ -401,7 +408,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 };
 
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
     const initialFormState = {
         supplierName: '',
         invoiceNumber: '',
@@ -413,6 +420,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
     const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
     // State for purchase history filtering
     const [fromDate, setFromDate] = useState('');
@@ -584,7 +592,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     </div>
                 </div>
 
-                <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} />
+                <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} systemConfig={systemConfig} />
                 
                 {formState.currentItems.length > 0 && (
                     <div className="mt-4">
@@ -594,7 +602,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
                                     <tr>
                                         <th className="px-4 py-2 text-left">Product</th>
-                                        <th className="px-4 py-2 text-left">Batch</th>
+                                        {isPharmaMode && <th className="px-4 py-2 text-left">Batch</th>}
                                         <th className="px-4 py-2">Qty</th>
                                         <th className="px-4 py-2 text-right">Purchase Price</th>
                                         <th className="px-4 py-2 text-right">Total</th>
@@ -605,7 +613,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                     {formState.currentItems.map((item, index) => (
                                         <tr key={index} className="border-b dark:border-slate-700">
                                             <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 dark:text-green-400 font-semibold">(New)</span>}</td>
-                                            <td className="px-4 py-2">{item.batchNumber}</td>
+                                            {isPharmaMode && <td className="px-4 py-2">{item.batchNumber}</td>}
                                             <td className="px-4 py-2 text-center">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
                                             <td className="px-4 py-2 text-right font-semibold">₹{(item.purchasePrice * item.quantity).toFixed(2)}</td>

@@ -16,6 +16,7 @@ interface SettingsModalProps {
 type SettingsTab = 'profile' | 'backup' | 'system';
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; icon: React.ReactNode; }> = ({ label, isActive, onClick, icon }) => (
     <button
@@ -62,7 +63,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onClose();
   };
   
-  const handleConfigChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleConfigChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setConfig(prev => ({ ...prev, [name]: value }));
   };
@@ -192,6 +193,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             </label>
                          </div>
                     </div>
+
                      <div className="flex justify-end pt-4">
                         <button onClick={handleSaveConfig} className="flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all">
                             <CheckCircleIcon className="h-5 w-5" />

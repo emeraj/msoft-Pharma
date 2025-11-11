@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Bill, Product } from '../types';
+import type { Bill, Product, SystemConfig } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { DownloadIcon } from './icons/Icons';
@@ -42,6 +42,7 @@ const exportToCsv = (filename: string, data: any[]) => {
 interface CompanyWiseSaleProps {
   bills: Bill[];
   products: Product[];
+  systemConfig: SystemConfig;
 }
 
 interface CompanySaleData {
@@ -60,7 +61,10 @@ const CompanySaleDetailsModal: React.FC<{
     bill: Bill; 
     companyName: string;
     productCompanyMap: Map<string, string>;
-}> = ({ isOpen, onClose, bill, companyName, productCompanyMap }) => {
+    systemConfig: SystemConfig;
+}> = ({ isOpen, onClose, bill, companyName, productCompanyMap, systemConfig }) => {
+    
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
     const companyItems = useMemo(() => {
         return bill.items.filter(item => productCompanyMap.get(item.productId) === companyName);
@@ -116,23 +120,27 @@ const CompanySaleDetailsModal: React.FC<{
                                     let statusBadge = null;
                                     let rowTitle = '';
 
-                                    if (expiry < today) {
-                                        rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
-                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
-                                        rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
-                                    } else if (expiry <= thirtyDaysFromNow) {
-                                        rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
-                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
-                                        rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
+                                    if (isPharmaMode) {
+                                        if (expiry < today) {
+                                            rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
+                                            statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
+                                            rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
+                                        } else if (expiry <= thirtyDaysFromNow) {
+                                            rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
+                                            statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
+                                            rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
+                                        }
                                     }
 
                                     return (
                                         <tr key={item.batchId} className={`border-b dark:border-slate-700 ${rowClass}`} title={rowTitle}>
                                             <td className="py-2">
                                                 {item.productName}
-                                                <div className="text-slate-500 dark:text-slate-400">
-                                                  Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
-                                                </div>
+                                                {isPharmaMode && (
+                                                    <div className="text-slate-500 dark:text-slate-400">
+                                                      Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="py-2 text-center">{item.quantity}</td>
                                             <td className="py-2 text-right">₹{item.mrp.toFixed(2)}</td>
@@ -167,7 +175,7 @@ const CompanySaleDetailsModal: React.FC<{
 };
 
 
-const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) => {
+const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products, systemConfig }) => {
   const [companyFilter, setCompanyFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -364,6 +372,7 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products }) =>
           bill={selectedBill}
           companyName={companyFilter}
           productCompanyMap={productCompanyMap}
+          systemConfig={systemConfig}
         />
       )}
     </div>

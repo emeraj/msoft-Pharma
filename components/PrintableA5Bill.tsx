@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import type { Bill, CompanyProfile } from '../types';
+import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
 // Utility to convert number to words (Indian numbering system)
 const toWords = (num: number): string => {
@@ -31,8 +31,9 @@ const toWords = (num: number): string => {
 };
 
 
-const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> = ({ bill, companyProfile }) => {
+const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; systemConfig: SystemConfig; }> = ({ bill, companyProfile, systemConfig }) => {
     const items = bill?.items || [];
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
     const gstSummary = useMemo(() => {
         const summary = new Map<number, { taxable: number; gst: number }>();
@@ -166,7 +167,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> 
             <section style={{ padding: '3mm 0', borderBottom: '1px solid #cbd5e0' }}>
                 <h3 style={{ fontWeight: 600, margin: 0 }}>Bill To:</h3>
                 <p style={{ margin: '1mm 0 0 0', fontSize: '10pt' }}>{bill.customerName}</p>
-                {bill.doctorName && <p style={{ margin: '1mm 0 0 0', fontSize: '9pt', color: '#4a5568' }}><strong>Prescribed by:</strong> {bill.doctorName}</p>}
+                {isPharmaMode && bill.doctorName && <p style={{ margin: '1mm 0 0 0', fontSize: '9pt', color: '#4a5568' }}><strong>Prescribed by:</strong> {bill.doctorName}</p>}
             </section>
 
             <main style={styles.main}>
@@ -174,10 +175,10 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> 
                     <thead>
                         <tr>
                             <th style={{...styles.th, width: '4%'}}>#</th>
-                            <th style={{...styles.th, width: '38%'}}>Item Description</th>
+                            <th style={{...styles.th, width: isPharmaMode ? '38%' : '58%'}}>Item Description</th>
                             <th style={{...styles.th, width: '10%'}}>HSN</th>
-                            <th style={{...styles.th, width: '10%'}}>Batch</th>
-                            <th style={{...styles.th, width: '10%'}}>Exp.</th>
+                            {isPharmaMode && <th style={{...styles.th, width: '10%'}}>Batch</th>}
+                            {isPharmaMode && <th style={{...styles.th, width: '10%'}}>Exp.</th>}
                             <th style={{...styles.th, textAlign: 'center', width: '6%'}}>Qty</th>
                             <th style={{...styles.th, textAlign: 'right', width: '11%'}}>MRP</th>
                             <th style={{...styles.th, textAlign: 'right', width: '11%'}}>Amount</th>
@@ -189,12 +190,12 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> 
                                 <td style={styles.td}>{index + 1}</td>
                                 <td style={{...styles.td, fontFamily: '"Arial Narrow", Arial, sans-serif', fontWeight: 'bold'}}>
                                     {item.productName}
-                                    {item.isScheduleH && <span style={{ fontWeight: 'bold', color: '#C05621', fontSize: '7pt' }}> (Sch. H)</span>}
-                                    {item.composition && <div style={{ fontSize: '7pt', color: '#4a5568', fontStyle: 'italic', fontWeight: 'normal' }}>{item.composition}</div>}
+                                    {isPharmaMode && item.isScheduleH && <span style={{ fontWeight: 'bold', color: '#C05621', fontSize: '7pt' }}> (Sch. H)</span>}
+                                    {isPharmaMode && item.composition && <div style={{ fontSize: '7pt', color: '#4a5568', fontStyle: 'italic', fontWeight: 'normal' }}>{item.composition}</div>}
                                 </td>
                                 <td style={styles.td}>{item.hsnCode}</td>
-                                <td style={styles.td}>{item.batchNumber}</td>
-                                <td style={styles.td}>{item.expiryDate}</td>
+                                {isPharmaMode && <td style={styles.td}>{item.batchNumber}</td>}
+                                {isPharmaMode && <td style={styles.td}>{item.expiryDate}</td>}
                                 <td style={{...styles.td, textAlign: 'center'}}>{item.quantity}</td>
                                 <td style={{...styles.td, textAlign: 'right'}}>{item.mrp.toFixed(2)}</td>
                                 <td style={{...styles.td, textAlign: 'right', fontWeight: 500}}>{item.total.toFixed(2)}</td>

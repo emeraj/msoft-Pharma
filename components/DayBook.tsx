@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Bill, CompanyProfile } from '../types';
+import type { Bill, CompanyProfile, SystemConfig } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { DownloadIcon, PencilIcon, TrashIcon, PrinterIcon } from './icons/Icons';
@@ -45,12 +45,13 @@ const exportToCsv = (filename: string, data: any[]) => {
 interface DayBookProps {
   bills: Bill[];
   companyProfile: CompanyProfile;
+  systemConfig: SystemConfig;
   onDeleteBill: (bill: Bill) => void;
   onEditBill: (bill: Bill) => void;
   onUpdateBillDetails: (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => void;
 }
 
-const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, onEditBill, onUpdateBillDetails }) => {
+const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, onDeleteBill, onEditBill, onUpdateBillDetails }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -102,6 +103,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, 
             <PrintableA5Bill
                 bill={bill}
                 companyProfile={companyProfile}
+                systemConfig={systemConfig}
             />
         );
         setTimeout(() => {
@@ -201,6 +203,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, onDeleteBill, 
           onClose={() => setSelectedBill(null)}
           bill={selectedBill}
           onUpdateBillDetails={onUpdateBillDetails}
+          systemConfig={systemConfig}
         />
       )}
     </div>
@@ -269,11 +272,14 @@ interface BillDetailsModalProps {
     isOpen: boolean; 
     onClose: () => void; 
     bill: Bill;
+    systemConfig: SystemConfig;
     onUpdateBillDetails: (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => void;
 }
 
-const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ isOpen, onClose, bill, onUpdateBillDetails }) => {
+const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ isOpen, onClose, bill, systemConfig, onUpdateBillDetails }) => {
     
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+
     const getExpiryDate = (expiryString: string): Date => {
         if (!expiryString) return new Date('9999-12-31');
         const [year, month] = expiryString.split('-').map(Number);
@@ -294,11 +300,13 @@ const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ isOpen, onClose, bi
                         value={bill.customerName} 
                         onSave={(newValue) => onUpdateBillDetails(bill.id, { customerName: newValue })}
                     />
-                    <EditableField 
-                        label="Doctor" 
-                        value={bill.doctorName || ''} 
-                        onSave={(newValue) => onUpdateBillDetails(bill.id, { doctorName: newValue })}
-                    />
+                    {isPharmaMode && (
+                        <EditableField 
+                            label="Doctor" 
+                            value={bill.doctorName || ''} 
+                            onSave={(newValue) => onUpdateBillDetails(bill.id, { doctorName: newValue })}
+                        />
+                    )}
                     <p className="text-slate-600 dark:text-slate-400 mt-2">Date: {new Date(bill.date).toLocaleString()}</p>
                 </div>
                 <div className="border-t dark:border-slate-700 pt-2">
@@ -319,25 +327,29 @@ const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ isOpen, onClose, bi
                                     let statusBadge = null;
                                     let rowTitle = '';
 
-                                    if (expiry < today) {
-                                        rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
-                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
-                                        rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
-                                    } else if (expiry <= thirtyDaysFromNow) {
-                                        rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
-                                        statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
-                                        rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
+                                    if (isPharmaMode) {
+                                        if (expiry < today) {
+                                            rowClass = 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200';
+                                            statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>;
+                                            rowTitle = `The batch for this item expired on ${expiry.toLocaleDateString()}`;
+                                        } else if (expiry <= thirtyDaysFromNow) {
+                                            rowClass = 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-200';
+                                            statusBadge = <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-slate-800 bg-yellow-400 dark:text-slate-900 dark:bg-yellow-500 rounded-full">Expires Soon</span>;
+                                            rowTitle = `The batch for this item expires on ${expiry.toLocaleDateString()}`;
+                                        }
                                     }
 
                                     return (
                                         <tr key={item.batchId} className={`border-b dark:border-slate-700 ${rowClass}`} title={rowTitle}>
                                             <td className="py-2">
                                                 {item.productName}
-                                                {item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}
-                                                {item.composition && <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">{item.composition}</div>}
-                                                <div className="text-slate-500 dark:text-slate-400">
-                                                  Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
-                                                </div>
+                                                {isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}
+                                                {isPharmaMode && item.composition && <div className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">{item.composition}</div>}
+                                                {isPharmaMode && (
+                                                    <div className="text-slate-500 dark:text-slate-400">
+                                                      Batch: {item.batchNumber} / Exp: {item.expiryDate} {statusBadge}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="py-2 text-center">{item.quantity}</td>
                                             <td className="py-2 text-right">₹{item.mrp.toFixed(2)}</td>

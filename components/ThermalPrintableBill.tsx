@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
-import type { Bill, CompanyProfile } from '../types';
+import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
-const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfile }> = ({ bill, companyProfile }) => {
+const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; systemConfig: SystemConfig; }> = ({ bill, companyProfile, systemConfig }) => {
     const items = bill?.items || [];
     const line = '-'.repeat(42);
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
     const gstSummary = useMemo(() => {
         const summary = new Map<number, { taxable: number; gst: number }>();
@@ -81,14 +82,14 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             <div style={styles.subHeader}>
                 <PaddedRow left={`Bill No: ${bill.billNumber}`} right={`Date: ${new Date(bill.date).toLocaleDateString()}`} />
                 <div>Customer: {bill.customerName}</div>
-                {bill.doctorName && <div>Doctor: {bill.doctorName}</div>}
+                {isPharmaMode && bill.doctorName && <div>Doctor: {bill.doctorName}</div>}
             </div>
 
             <div style={styles.line}>{line}</div>
 
             {/* Header */}
             <div style={{ ...styles.flex, ...styles.fontBold, ...styles.subHeader }}>
-                <div style={{width: '50%'}}>Item/Batch</div>
+                <div style={{width: '50%'}}>Item{isPharmaMode ? '/Batch' : ''}</div>
                 <div style={{width: '15%', textAlign: 'center'}}>Qty</div>
                 <div style={{width: '15%', textAlign: 'right'}}>Rate</div>
                 <div style={{width: '20%', textAlign: 'right'}}>Amount</div>
@@ -106,9 +107,11 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
                             <div style={{width: '15%', textAlign: 'right'}}>{item.mrp.toFixed(2)}</div>
                             <div style={{width: '20%', textAlign: 'right'}}>{item.total.toFixed(2)}</div>
                         </div>
-                        <div style={{ fontSize: '10px', paddingLeft: '12px', color: '#333' }}>
-                            B:{item.batchNumber} E:{item.expiryDate}
-                        </div>
+                        {isPharmaMode && (
+                            <div style={{ fontSize: '10px', paddingLeft: '12px', color: '#333' }}>
+                                B:{item.batchNumber} E:{item.expiryDate}
+                            </div>
+                        )}
                     </React.Fragment>
                 ))}
             </div>

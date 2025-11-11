@@ -49,7 +49,10 @@ const App: React.FC = () => {
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
-  const [systemConfig, setSystemConfig] = useState<SystemConfig>({ softwareMode: 'Pharma', invoicePrintingFormat: 'A5' });
+  const [systemConfig, setSystemConfig] = useState<SystemConfig>({
+    softwareMode: 'Pharma',
+    invoicePrintingFormat: 'A5',
+  });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
   useEffect(() => {
@@ -70,7 +73,10 @@ const App: React.FC = () => {
       setSuppliers([]);
       setPayments([]);
       setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
-      setSystemConfig({ softwareMode: 'Pharma', invoicePrintingFormat: 'A5' });
+      setSystemConfig({
+        softwareMode: 'Pharma',
+        invoicePrintingFormat: 'A5',
+      });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors
       return;
@@ -836,16 +842,16 @@ const App: React.FC = () => {
     }
     switch (activeView) {
       case 'dashboard': return <SalesDashboard bills={bills} products={products} />;
-      case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
-      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} />;
+      case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
+      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} systemConfig={systemConfig} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} />;
-      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} />;
+      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} systemConfig={systemConfig} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
-      case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
+      case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />;
       case 'companyWiseBillWiseProfit': return <CompanyWiseBillWiseProfit bills={bills} products={products} />;
-      default: return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
+      default: return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig}/>;
     }
   };
 

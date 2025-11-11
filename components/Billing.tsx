@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile } from '../types';
+import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons';
@@ -10,6 +10,7 @@ interface BillingProps {
   products: Product[];
   bills: Bill[];
   companyProfile: CompanyProfile;
+  systemConfig: SystemConfig;
   onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
   editingBill?: Bill | null;
   onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => Promise<Bill | null>;
@@ -96,7 +97,7 @@ const SubstituteModal: React.FC<{
 };
 
 
-const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, editingBill, onUpdateBill, onCancelEdit }) => {
+const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
@@ -109,6 +110,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
+  const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
 
   // --- Keyboard Navigation State ---
@@ -121,7 +123,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         const newItem = cart.find(item => item.batchId === lastAddedBatchIdRef.current);
         let inputToFocus: HTMLInputElement | null | undefined = null;
 
-        if (newItem && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) {
+        if (newItem && isPharmaMode && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) {
             // If it's a strip-based product, focus the strip input first
             inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current);
         } else {
@@ -135,7 +137,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         }
         lastAddedBatchIdRef.current = null; // Reset after focus
     }
-  }, [cart]);
+  }, [cart, isPharmaMode]);
 
   useEffect(() => {
     if (editingBill) {
@@ -170,18 +172,18 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return products
       .filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
-        p.batches.some(b => b.stock > 0 && getExpiryDate(b.expiryDate) >= today)
+        p.batches.some(b => b.stock > 0 && (isPharmaMode ? getExpiryDate(b.expiryDate) >= today : true))
       )
       .slice(0, 10);
-  }, [searchTerm, products, today]);
+  }, [searchTerm, products, today, isPharmaMode]);
   
   const navigableBatchesByProduct = useMemo(() => {
     return searchResults.map(p =>
         p.batches
-            .filter(b => b.stock > 0 && getExpiryDate(b.expiryDate) >= today)
-            .sort((a, b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime())
+            .filter(b => b.stock > 0 && (isPharmaMode ? getExpiryDate(b.expiryDate) >= today : true))
+            .sort((a, b) => isPharmaMode ? (getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()) : 0)
     );
-  }, [searchResults, today]);
+  }, [searchResults, today, isPharmaMode]);
 
   // --- Keyboard Navigation Effects ---
   useEffect(() => {
@@ -214,13 +216,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         const batch = product?.batches.find(b => b.id === batchId);
         if (!product || !batch) return item;
 
-        const unitsPerStrip = product.unitsPerStrip || 1;
+        const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
         
-        let sQty = Math.max(0, stripQty);
+        let sQty = isPharmaMode ? Math.max(0, stripQty) : 0;
         let lQty = Math.max(0, looseQty);
         
         // Auto-correct loose quantity if it exceeds strip size and it's a strip-based product
-        if (unitsPerStrip > 1 && lQty >= unitsPerStrip) {
+        if (isPharmaMode && unitsPerStrip > 1 && lQty >= unitsPerStrip) {
             sQty += Math.floor(lQty / unitsPerStrip);
             lQty = lQty % unitsPerStrip;
         }
@@ -228,7 +230,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         const totalUnits = (sQty * unitsPerStrip) + lQty;
 
         if (totalUnits > 0 && totalUnits <= batch.stock) {
-            const unitPrice = item.mrp / unitsPerStrip;
+            const unitPrice = item.mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1);
             const newTotal = totalUnits * unitPrice;
             return { ...item, stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: newTotal };
         } else if (totalUnits === 0) {
@@ -240,21 +242,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   };
 
   const handleAddToCart = (product: Product, batch: Batch) => {
-    const expiry = getExpiryDate(batch.expiryDate);
-    if (expiry < today) {
-      alert(`Cannot add expired batch.\nProduct: ${product.name}\nBatch: ${batch.batchNumber}\nExpired on: ${expiry.toLocaleDateString()}`);
-      return;
+    if (isPharmaMode) {
+        const expiry = getExpiryDate(batch.expiryDate);
+        if (expiry < today) {
+          alert(`Cannot add expired batch.\nProduct: ${product.name}\nBatch: ${batch.batchNumber}\nExpired on: ${expiry.toLocaleDateString()}`);
+          return;
+        }
     }
 
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id);
     if (existingItem) {
       const newTotalUnits = existingItem.quantity + 1;
-      const unitsPerStrip = product.unitsPerStrip || 1;
+      const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
       const newStripQty = Math.floor(newTotalUnits / unitsPerStrip);
       const newLooseQty = newTotalUnits % unitsPerStrip;
       updateCartItem(existingItem.batchId, newStripQty, newLooseQty);
     } else {
-      const unitsPerStrip = product.unitsPerStrip || 1;
+      const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
       const unitPrice = batch.mrp / unitsPerStrip;
       const newItem: CartItem = {
         productId: product.id,
@@ -269,9 +273,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         mrp: batch.mrp,
         gst: product.gst,
         total: unitPrice,
-        ...(product.isScheduleH && { isScheduleH: product.isScheduleH }),
-        ...(product.composition && { composition: product.composition }),
-        ...(product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
+        ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }),
+        ...(isPharmaMode && product.composition && { composition: product.composition }),
+        ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
       };
       lastAddedBatchIdRef.current = newItem.batchId;
       setCart([...cart, newItem]);
@@ -331,7 +335,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
         
-        root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} />);
+        root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
         
         setTimeout(() => {
             printWindow.document.title = ' ';
@@ -347,7 +351,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             onPrintDialogClosed();
         }
     }
-  }, [companyProfile]);
+  }, [companyProfile, systemConfig]);
 
   const handleSaveBill = useCallback(async () => {
     if (cart.length === 0) {
@@ -546,14 +550,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                     <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                       <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
                         <span>{product.name}</span>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
-                            className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2 py-1 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
-                            title="Find substitute medicines"
-                        >
-                            <SwitchHorizontalIcon className="h-4 w-4" />
-                            Substitutes
-                        </button>
+                        {isPharmaMode && product.composition && (
+                          <button
+                              onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
+                              className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2 py-1 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                              title="Find substitute medicines"
+                          >
+                              <SwitchHorizontalIcon className="h-4 w-4" />
+                              Substitutes
+                          </button>
+                        )}
                       </div>
                       <ul className="pl-4 pb-2">
                         {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => {
@@ -572,21 +578,25 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                               onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}
                             >
                               <div>
-                                <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                <span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span>
+                                {isPharmaMode && (
+                                  <>
+                                    <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                    <span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span>
+                                  </>
+                                )}
                               </div>
                               <div className="flex items-center gap-4">
                                 <span className="text-slate-800 dark:text-slate-200">
                                   MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span>
-                                  {unitsPerStrip > 1 && <span className="text-xs">/S</span>}
-                                  {unitsPerStrip > 1 && <span className="text-xs text-slate-500 dark:text-slate-400"> (₹{(batch.mrp / unitsPerStrip).toFixed(2)}/U)</span>}
+                                  {isPharmaMode && unitsPerStrip > 1 && <span className="text-xs">/S</span>}
+                                  {isPharmaMode && unitsPerStrip > 1 && <span className="text-xs text-slate-500 dark:text-slate-400"> (₹{(batch.mrp / unitsPerStrip).toFixed(2)}/U)</span>}
                                 </span>
-                                <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {formatStock(batch.stock, product.unitsPerStrip)}</span>
+                                <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span>
                               </div>
                             </li>
                           );
                         })}
-                        {product.batches
+                        {isPharmaMode && product.batches
                             .filter(b => b.stock > 0 && getExpiryDate(b.expiryDate) < today)
                             .map(batch => {
                                 const expiry = getExpiryDate(batch.expiryDate);
@@ -623,11 +633,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                     <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0">
                     <tr>
                         <th scope="col" className="px-2 py-3">Product</th>
-                        <th scope="col" className="px-2 py-3">Pack</th>
-                        <th scope="col" className="px-2 py-3">Batch</th>
-                        <th scope="col" className="px-2 py-3">Stri</th>
-                        <th scope="col" className="px-2 py-3">Tab.</th>
-                        <th scope="col" className="px-2 py-3">M.R.P./S</th>
+                        {isPharmaMode && <th scope="col" className="px-2 py-3">Pack</th>}
+                        {isPharmaMode && <th scope="col" className="px-2 py-3">Batch</th>}
+                        {isPharmaMode && <th scope="col" className="px-2 py-3">Strip</th>}
+                        <th scope="col" className="px-2 py-3">{isPharmaMode ? 'Tabs' : 'Qty'}</th>
+                        <th scope="col" className="px-2 py-3">MRP</th>
                         <th scope="col" className="px-2 py-3">Amount</th>
                         <th scope="col" className="px-2 py-3">Action</th>
                     </tr>
@@ -637,26 +647,26 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                         <tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
                             <td className="px-2 py-3 font-medium text-slate-900 dark:text-white">
                                 {item.productName}
-                                {item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}
+                                {isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}
                             </td>
-                            <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>
-                            <td className="px-2 py-3">{item.batchNumber}</td>
-                            <td className="px-2 py-3">
-                                <input
-                                    // FIX: The ref callback for an element should not return a value. Wrapped in braces to avoid implicit return.
-                                    ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }}
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={item.stripQty}
-                                    onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)}
-                                    onKeyDown={(e) => handleStripQtyKeyDown(e, item.batchId)}
-                                    className={`w-14 p-1 text-center ${inputStyle}`}
-                                    disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1}
-                                />
-                            </td>
+                            {isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}
+                            {isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}
+                            {isPharmaMode && (
+                                <td className="px-2 py-3">
+                                    <input
+                                        ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }}
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={item.stripQty}
+                                        onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)}
+                                        onKeyDown={(e) => handleStripQtyKeyDown(e, item.batchId)}
+                                        className={`w-14 p-1 text-center ${inputStyle}`}
+                                        disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1}
+                                    />
+                                </td>
+                            )}
                             <td className="px-2 py-3">
                                 <input 
-                                    // FIX: The ref callback for an element should not return a value. Wrapped in braces to avoid implicit return.
                                     ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }}
                                     type="text"
                                     inputMode="numeric" 
@@ -702,21 +712,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                         className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
                     />
                 </div>
-                <div>
-                    <label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Doctor Name</label>
-                    <input
-                        type="text"
-                        id="doctorName"
-                        value={doctorName}
-                        onChange={e => setDoctorName(e.target.value)}
-                        placeholder="e.g. Dr. John Doe"
-                        className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
-                        list="doctor-list"
-                    />
-                    <datalist id="doctor-list">
-                        {doctorList.map(doc => <option key={doc} value={doc} />)}
-                    </datalist>
-                </div>
+                {isPharmaMode && (
+                    <div>
+                        <label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Doctor Name</label>
+                        <input
+                            type="text"
+                            id="doctorName"
+                            value={doctorName}
+                            onChange={e => setDoctorName(e.target.value)}
+                            placeholder="e.g. Dr. John Doe"
+                            className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
+                            list="doctor-list"
+                        />
+                        <datalist id="doctor-list">
+                            {doctorList.map(doc => <option key={doc} value={doc} />)}
+                        </datalist>
+                    </div>
+                )}
                 <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300">
                     <div className="flex justify-between">
                         <span>Subtotal</span>
@@ -752,13 +764,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             </div>
         </Card>
       </div>
-      <SubstituteModal 
-        isOpen={isSubstituteModalOpen}
-        onClose={() => setSubstituteModalOpen(false)}
-        sourceProduct={sourceProductForSub}
-        substitutes={substituteOptions}
-        onAddToCart={handleAddToCart}
-      />
+      {isPharmaMode && (
+          <SubstituteModal 
+            isOpen={isSubstituteModalOpen}
+            onClose={() => setSubstituteModalOpen(false)}
+            sourceProduct={sourceProductForSub}
+            substitutes={substituteOptions}
+            onAddToCart={handleAddToCart}
+          />
+      )}
     </div>
   );
 };
