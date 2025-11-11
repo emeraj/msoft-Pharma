@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -49,6 +49,7 @@ const App: React.FC = () => {
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
+  const [systemConfig, setSystemConfig] = useState<SystemConfig>({ softwareMode: 'Pharma', invoicePrintingFormat: 'A5' });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ const App: React.FC = () => {
       setSuppliers([]);
       setPayments([]);
       setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
+      setSystemConfig({ softwareMode: 'Pharma', invoicePrintingFormat: 'A5' });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors
       return;
@@ -108,6 +110,15 @@ const App: React.FC = () => {
         }
     });
     unsubscribers.push(unsubProfile);
+    
+    const configRef = doc(db, `users/${uid}/systemConfig`, 'config');
+    const unsubConfig = onSnapshot(configRef, (doc) => {
+        if (doc.exists()) {
+            // Merge with defaults to avoid errors if new fields are added later
+            setSystemConfig(prev => ({...prev, ...doc.data()}));
+        }
+    });
+    unsubscribers.push(unsubConfig);
 
     // Check for initial data load / permission
     getDocs(collection(db, `users/${uid}/products`))
@@ -177,6 +188,13 @@ const App: React.FC = () => {
     const profileRef = doc(db, `users/${currentUser.uid}/companyProfile`, 'profile');
     setDoc(profileRef, profile);
     setCompanyProfile(profile);
+  };
+  
+  const handleSystemConfigChange = (config: SystemConfig) => {
+    if (!currentUser) return;
+    const configRef = doc(db, `users/${currentUser.uid}/systemConfig`, 'config');
+    setDoc(configRef, config);
+    setSystemConfig(config);
   };
 
   const handleAddProduct = async (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
@@ -856,6 +874,8 @@ const App: React.FC = () => {
           onClose={() => setSettingsModalOpen(false)}
           companyProfile={companyProfile}
           onProfileChange={handleProfileChange}
+          systemConfig={systemConfig}
+          onSystemConfigChange={handleSystemConfigChange}
           onBackupData={handleBackupData}
         />
       )}

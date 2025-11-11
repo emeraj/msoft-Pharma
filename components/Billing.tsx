@@ -643,7 +643,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                             <td className="px-2 py-3">{item.batchNumber}</td>
                             <td className="px-2 py-3">
                                 <input
-                                    ref={(el) => cartItemStripInputRefs.current.set(item.batchId, el)}
+                                    // FIX: The ref callback for an element should not return a value. Wrapped in braces to avoid implicit return.
+                                    ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }}
                                     type="text"
                                     inputMode="numeric"
                                     value={item.stripQty}
@@ -655,7 +656,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                             </td>
                             <td className="px-2 py-3">
                                 <input 
-                                    ref={(el) => cartItemTabInputRefs.current.set(item.batchId, el)}
+                                    // FIX: The ref callback for an element should not return a value. Wrapped in braces to avoid implicit return.
+                                    ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }}
                                     type="text"
                                     inputMode="numeric" 
                                     value={item.looseQty}

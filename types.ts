@@ -117,3 +117,8 @@ export interface CompanyProfile {
   email?: string;
   gstin: string;
 }
+
+export interface SystemConfig {
+  softwareMode: 'Retail' | 'Pharma';
+  invoicePrintingFormat: 'A4' | 'A5' | 'Thermal';
+}
