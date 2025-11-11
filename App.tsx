@@ -30,6 +30,7 @@ import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
 import PaymentEntry from './components/PaymentEntry';
 import SalesDashboard from './components/SalesDashboard';
+import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 
 
 const App: React.FC = () => {
@@ -825,6 +826,7 @@ const App: React.FC = () => {
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
       case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} />;
+      case 'companyWiseBillWiseProfit': return <CompanyWiseBillWiseProfit bills={bills} products={products} />;
       default: return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile}/>;
     }
   };

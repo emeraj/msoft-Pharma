@@ -105,7 +105,7 @@ export interface Payment {
 }
 
 // New Types for Reports
-export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale';
+export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit';
 
 export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 

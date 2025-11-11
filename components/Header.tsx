@@ -41,7 +41,7 @@ const ReportsDropdown: React.FC<{
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const reportViews: ReportView[] = ['dashboard', 'daybook', 'suppliersLedger', 'salesReport', 'companyWiseSale'];
+  const reportViews: ReportView[] = ['dashboard', 'daybook', 'suppliersLedger', 'salesReport', 'companyWiseSale', 'companyWiseBillWiseProfit'];
   const isReportsActive = reportViews.includes(activeView as ReportView);
 
   useEffect(() => {
@@ -62,6 +62,7 @@ const ReportsDropdown: React.FC<{
     suppliersLedger: 'Suppliers Ledger',
     salesReport: 'Sales Report',
     companyWiseSale: 'Company Wise Sale',
+    companyWiseBillWiseProfit: 'Company Wise-Bill Wise Profit',
   };
 
   return (
