@@ -227,11 +227,27 @@ const App: React.FC = () => {
         batch.set(newCompanyRef, { name: companyName });
     }
 
-    const newProductRef = doc(collection(db, `users/${uid}/products`));
     const newProductData = {
         ...productData,
         batches: [{ ...firstBatchData, id: `batch_${Date.now()}` }]
     };
+    
+    // Auto-generate barcode in Retail mode if left blank
+    if (systemConfig.softwareMode === 'Retail' && (!newProductData.barcode || newProductData.barcode.trim() === '')) {
+      let maxBarcodeNum = 0;
+      products.forEach(p => {
+        if (p.barcode && !isNaN(parseInt(p.barcode, 10))) {
+          const barcodeNum = parseInt(p.barcode, 10);
+          if (barcodeNum > maxBarcodeNum) {
+            maxBarcodeNum = barcodeNum;
+          }
+        }
+      });
+      const newBarcodeNum = maxBarcodeNum + 1;
+      newProductData.barcode = String(newBarcodeNum).padStart(6, '0');
+    }
+
+    const newProductRef = doc(collection(db, `users/${uid}/products`));
     batch.set(newProductRef, newProductData);
     
     await batch.commit();

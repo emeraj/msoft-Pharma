@@ -69,7 +69,7 @@ interface InventoryProps {
   companyProfile: CompanyProfile;
   gstRates: GstRate[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
-  onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => void;
+  onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches' | 'mrp' | 'purchasePrice'>>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
   onDeleteBatch: (productId: string, batchId: string) => void;
   onBulkAddProducts: (products: Omit<Product, 'id' | 'batches'>[]) => Promise<{success: number; skipped: number}>;
@@ -1002,15 +1002,26 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   );
 };
 
-const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; systemConfig: SystemConfig; gstRates: GstRate[]; }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
+interface EditProductModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    product: Product;
+    onUpdateProduct: InventoryProps['onUpdateProduct'];
+    systemConfig: SystemConfig;
+    gstRates: GstRate[];
+}
+
+const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No'
+    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No', mrp: '', purchasePrice: ''
   });
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
+  const showPriceFields = product?.batches.length === 1;
   
   useEffect(() => {
     if (product) {
+        const batch = product.batches[0];
         setFormState({
             name: product.name,
             company: product.company,
@@ -1020,9 +1031,11 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             composition: product.composition || '',
             unitsPerStrip: String(product.unitsPerStrip || ''),
             isScheduleH: product.isScheduleH ? 'Yes' : 'No',
+            mrp: showPriceFields ? String(batch.mrp) : '',
+            purchasePrice: showPriceFields ? String(batch.purchasePrice) : '',
         });
     }
-  }, [product, isOpen]);
+  }, [product, isOpen, showPriceFields]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormState({ ...formState, [e.target.name]: e.target.value });
@@ -1032,7 +1045,7 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
     e.preventDefault();
     if (!formState.name || !formState.company) return;
     
-    const productUpdate: Partial<Omit<Product, 'id' | 'batches'>> = {
+    const productUpdate: Partial<Omit<Product, 'id' | 'batches'> & {mrp?: number; purchasePrice?: number}> = {
         name: formState.name,
         company: formState.company,
         hsnCode: formState.hsnCode,
@@ -1050,6 +1063,13 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
         }
     } else {
         productUpdate.barcode = formState.barcode;
+    }
+
+    if (showPriceFields) {
+        const mrp = parseFloat(formState.mrp);
+        const pp = parseFloat(formState.purchasePrice);
+        if (!isNaN(mrp)) productUpdate.mrp = mrp;
+        if (!isNaN(pp)) productUpdate.purchasePrice = pp;
     }
 
     onUpdateProduct(product.id, productUpdate);
@@ -1081,7 +1101,15 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             </>
           )}
           {!isPharmaMode && (
-            <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
+            <div className="sm:col-span-2">
+                <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
+            </div>
+          )}
+           {showPriceFields && (
+            <>
+                <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} min="0" step="0.01" />
+                <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01" />
+            </>
           )}
         </div>
         <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
@@ -1414,7 +1442,7 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
             const width = isWide ? wideWidth : narrowWidth;
             
             if (isBar) {
-                barElements.push(<rect key={`${char}-${i}`} x={currentX} y="0" width={width} height="30" fill="black" shapeRendering="crispEdges" />);
+                barElements.push(<rect key={`${char}-${i}`} x={currentX} y="0" width={width} height="25" fill="black" shapeRendering="crispEdges" />);
             }
             currentX += width;
         }
@@ -1437,7 +1465,7 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
 
     return (
         <div className="flex flex-col items-center">
-            <svg width="100%" height="30" aria-hidden="true" viewBox={`0 0 ${svgWidth} 30`}>
+            <svg width="100%" height="25" aria-hidden="true" viewBox={`0 0 ${svgWidth} 25`}>
                 {barElements}
             </svg>
             <p className={textClassName} style={isPrinting ? textStyle : {}}>{spacedCode}</p>
@@ -1471,7 +1499,7 @@ const PrintableLabels: React.FC<{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
+                    justifyContent: 'space-around',
                     fontFamily: 'Arial, sans-serif',
                     textAlign: 'center',
                     overflow: 'hidden',
@@ -1574,7 +1602,7 @@ const PrintLabelModal: React.FC<{
 
                 <div className="p-4 border dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700/50">
                     <p className="text-sm text-center text-slate-600 dark:text-slate-400 mb-2">Label Preview (50mm x 25mm):</p>
-                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-between mx-auto" style={{ width: '189px', height: '94.5px' }}>
+                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-around mx-auto" style={{ width: '189px', height: '94.5px' }}>
                         <p style={{ fontWeight: 'bold', fontSize: '6.5pt', lineHeight: '1' }}>{companyProfile.name.substring(0, 25)}</p>
                         <p style={{ fontSize: '5.5pt', lineHeight: '1' }} className="uppercase truncate w-full px-1">{product.name.substring(0, 35)}</p>
                         <div style={{width: '90%'}}>
