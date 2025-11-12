@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig } from '../types';
+import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon } from './icons/Icons';
@@ -10,6 +10,7 @@ interface PurchasesProps {
     companies: Company[];
     suppliers: Supplier[];
     systemConfig: SystemConfig;
+    gstRates: GstRate[];
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
     onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
     onDeletePurchase: (purchase: Purchase) => void;
@@ -127,15 +128,19 @@ const AddSupplierModal: React.FC<{
 };
 
 
-const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, disabled?: boolean }> = ({ products, onAddItem, companies, systemConfig, disabled = false }) => {
-    const initialFormState = {
+const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], disabled?: boolean }> = ({ products, onAddItem, companies, systemConfig, gstRates, disabled = false }) => {
+    const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
+    const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
+    
+    const getInitialFormState = () => ({
         isNewProduct: false,
         productSearch: '',
         selectedProduct: null as Product | null,
-        productName: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No',
+        productName: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No',
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: ''
-    };
-    const [formState, setFormState] = useState(initialFormState);
+    });
+
+    const [formState, setFormState] = useState(getInitialFormState());
     const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
     const [activeIndex, setActiveIndex] = useState(0);
     const activeItemRef = useRef<HTMLLIElement>(null);
@@ -228,8 +233,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     };
 
     const handleToggleNewProduct = () => {
+        setFormState(getInitialFormState());
         setFormState(prev => ({
-            ...initialFormState,
+            ...prev,
             isNewProduct: true,
         }));
     };
@@ -279,7 +285,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         }
 
         onAddItem(item);
-        setFormState(initialFormState); // Reset form
+        setFormState(getInitialFormState()); // Reset form
     };
 
     return (
@@ -359,9 +365,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                         </div>
                         <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
                         <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
-                            <option value="5">GST 5%</option>
-                            <option value="12">GST 12%</option>
-                            <option value="18">GST 18%</option>
+                           {sortedGstRates.map(rate => (
+                            <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
+                            ))}
                         </select>
                         {isPharmaMode && (
                            <>
@@ -408,7 +414,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 };
 
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
     const initialFormState = {
         supplierName: '',
         invoiceNumber: '',
@@ -592,7 +598,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     </div>
                 </div>
 
-                <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} systemConfig={systemConfig} />
+                <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} systemConfig={systemConfig} gstRates={gstRates} />
                 
                 {formState.currentItems.length > 0 && (
                     <div className="mt-4">

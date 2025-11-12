@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, CloudIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon } from './icons/Icons';
 import { User } from 'firebase/auth';
 
 interface HeaderProps {
@@ -113,8 +113,17 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                <CloudIcon className="h-7 w-7 text-indigo-500" />
-                <span>Cloud<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
+              {systemConfig.softwareMode === 'Pharma' ? (
+                <>
+                  <PillIcon className="h-7 w-7 text-indigo-500" />
+                  <span>Medico<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
+                </>
+              ) : (
+                <>
+                  <CubeIcon className="h-7 w-7 text-indigo-500" />
+                  <span>Kirana<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
+                </>
+              )}
             </h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
@@ -124,8 +133,8 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
              <nav className="hidden sm:flex space-x-2">
               <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
               <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
-              <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
               <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
+              <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
               <ReportsDropdown activeView={activeView} setActiveView={setActiveView} />
             </nav>
              <button
@@ -146,8 +155,8 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
             <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
             <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
-            <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
             <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
+            <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
             <ReportsDropdown activeView={activeView} setActiveView={setActiveView} />
         </nav>
       </div>

@@ -104,6 +104,13 @@ export interface Payment {
   remarks?: string;
 }
 
+// New type for GST Master
+export interface GstRate {
+  id: string; // Firestore Document ID
+  rate: number;
+}
+
+
 // New Types for Reports
 export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit';
 

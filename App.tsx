@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -31,6 +31,7 @@ import CompanyWiseSale from './components/CompanyWiseSale';
 import PaymentEntry from './components/PaymentEntry';
 import SalesDashboard from './components/SalesDashboard';
 import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
+import GstMaster from './components/GstMaster';
 
 
 const App: React.FC = () => {
@@ -44,11 +45,12 @@ const App: React.FC = () => {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [gstRates, setGstRates] = useState<GstRate[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Cloud - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     softwareMode: 'Pharma',
     invoicePrintingFormat: 'A5',
@@ -64,8 +66,10 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-    document.title = 'Cloud - Retail';
-  }, []);
+    document.title = systemConfig.softwareMode === 'Pharma' 
+        ? 'Medico - Retail' 
+        : 'Kirana - Retail';
+  }, [systemConfig.softwareMode]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -76,7 +80,8 @@ const App: React.FC = () => {
       setCompanies([]);
       setSuppliers([]);
       setPayments([]);
-      setCompanyProfile({ name: 'Cloud - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
+      setGstRates([]);
+      setCompanyProfile({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
       setSystemConfig({
         softwareMode: 'Pharma',
         invoicePrintingFormat: 'A5',
@@ -111,6 +116,7 @@ const App: React.FC = () => {
         createListener('companies', setCompanies),
         createListener('suppliers', setSuppliers),
         createListener('payments', setPayments),
+        createListener('gstRates', setGstRates),
     ];
 
     const profileRef = doc(db, `users/${uid}/companyProfile`, 'profile');
@@ -447,7 +453,12 @@ const App: React.FC = () => {
 
   const handleDeleteBill = async (bill: Bill) => {
     if (!currentUser) return;
-    if (!window.confirm(`Are you sure you want to delete Bill #${bill.billNumber}? This will add the sold quantities back to your inventory.`)) return;
+
+    const confirm1 = window.confirm(`Are you sure you want to delete Bill #${bill.billNumber}? This action cannot be undone and will add the sold items back to your inventory.`);
+    if (!confirm1) return;
+    
+    const confirm2 = window.confirm(`FINAL CONFIRMATION: Permanently delete Bill #${bill.billNumber}?`);
+    if (!confirm2) return;
 
     const uid = currentUser.uid;
     const fbBatch = writeBatch(db);
@@ -706,7 +717,12 @@ const App: React.FC = () => {
 
   const handleDeletePurchase = async (purchase: Purchase) => {
     if (!currentUser || !purchase.id) return;
-    if (!window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This will subtract the purchased quantities from your inventory.`)) return;
+
+    const confirm1 = window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This action cannot be undone and will subtract the purchased items from your inventory.`);
+    if (!confirm1) return;
+
+    const confirm2 = window.confirm(`FINAL CONFIRMATION: Permanently delete Invoice #${purchase.invoiceNumber}?`);
+    if (!confirm2) return;
 
     const uid = currentUser.uid;
     const fbBatch = writeBatch(db);
@@ -791,6 +807,39 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddGstRate = async (rate: number) => {
+    if (!currentUser) return;
+    if (gstRates.some(r => r.rate === rate)) {
+      alert(`GST rate ${rate}% already exists.`);
+      return;
+    }
+    const ratesCollectionRef = collection(db, `users/${currentUser.uid}/gstRates`);
+    await addDoc(ratesCollectionRef, { rate });
+  };
+
+  const handleUpdateGstRate = async (rateId: string, newRate: number) => {
+    if (!currentUser) return;
+    if (gstRates.some(r => r.id !== rateId && r.rate === newRate)) {
+      alert(`GST rate ${newRate}% already exists.`);
+      return;
+    }
+    const rateRef = doc(db, `users/${currentUser.uid}/gstRates`, rateId);
+    await updateDoc(rateRef, { rate: newRate });
+  };
+
+  const handleDeleteGstRate = async (rateId: string, rateValue: number) => {
+    if (!currentUser) return;
+    const isGstRateInUse = products.some(p => p.gst === rateValue);
+    if (isGstRateInUse) {
+      alert(`Cannot delete GST rate ${rateValue}%. It is currently assigned to one or more products. Please update those products first.`);
+      return;
+    }
+    if (window.confirm(`Are you sure you want to delete the GST rate ${rateValue}%? This action cannot be undone.`)) {
+      const rateRef = doc(db, `users/${currentUser.uid}/gstRates`, rateId);
+      await deleteDoc(rateRef);
+    }
+  };
+
   const handleBackupData = () => {
     if (!currentUser) {
       alert("You must be logged in to back up data.");
@@ -847,9 +896,9 @@ const App: React.FC = () => {
     switch (activeView) {
       case 'dashboard': return <SalesDashboard bills={bills} products={products} />;
       case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
-      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} systemConfig={systemConfig} />;
+      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} systemConfig={systemConfig} gstRates={gstRates} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} companyProfile={companyProfile} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} companyProfile={companyProfile} gstRates={gstRates} />;
       case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} systemConfig={systemConfig} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
@@ -888,6 +937,10 @@ const App: React.FC = () => {
           systemConfig={systemConfig}
           onSystemConfigChange={handleSystemConfigChange}
           onBackupData={handleBackupData}
+          gstRates={gstRates}
+          onAddGstRate={handleAddGstRate}
+          onUpdateGstRate={handleUpdateGstRate}
+          onDeleteGstRate={handleDeleteGstRate}
         />
       )}
     </div>

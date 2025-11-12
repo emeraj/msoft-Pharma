@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import type { CompanyProfile, SystemConfig } from '../types';
+import type { CompanyProfile, SystemConfig, GstRate } from '../types';
 import Modal from './common/Modal';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon } from './icons/Icons';
+import GstMaster from './GstMaster';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,9 +12,13 @@ interface SettingsModalProps {
   systemConfig: SystemConfig;
   onSystemConfigChange: (config: SystemConfig) => void;
   onBackupData: () => void;
+  gstRates: GstRate[];
+  onAddGstRate: (rate: number) => void;
+  onUpdateGstRate: (id: string, newRate: number) => void;
+  onDeleteGstRate: (id: string, rateValue: number) => void;
 }
 
-type SettingsTab = 'profile' | 'backup' | 'system';
+type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster';
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
@@ -41,6 +46,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   systemConfig,
   onSystemConfigChange,
   onBackupData,
+  gstRates,
+  onAddGstRate,
+  onUpdateGstRate,
+  onDeleteGstRate,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [profile, setProfile] = useState<CompanyProfile>(companyProfile);
@@ -202,6 +211,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                 </div>
             );
+      case 'gstMaster':
+        return (
+            <div className="animate-fade-in -m-6 p-0">
+              <GstMaster
+                  gstRates={gstRates}
+                  onAdd={onAddGstRate}
+                  onUpdate={onUpdateGstRate}
+                  onDelete={onDeleteGstRate}
+              />
+            </div>
+        );
     }
   };
 
@@ -213,6 +233,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <TabButton label="Shop Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Backup & Restore" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<DownloadIcon className="h-5 w-5" />} />
             <TabButton label="System Configuration" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />
+            <TabButton label="GST Master" isActive={activeTab === 'gstMaster'} onClick={() => setActiveTab('gstMaster')} icon={<PercentIcon className="h-5 w-5" />} />
         </div>
         
         <div className="pt-4">

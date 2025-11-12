@@ -1,7 +1,8 @@
 
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile } from '../types';
+import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, BarcodeIcon } from './icons/Icons';
@@ -66,6 +67,7 @@ interface InventoryProps {
   purchases: Purchase[];
   systemConfig: SystemConfig;
   companyProfile: CompanyProfile;
+  gstRates: GstRate[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
   onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
@@ -76,7 +78,7 @@ interface InventoryProps {
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onBulkAddProducts }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, gstRates, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onBulkAddProducts }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
@@ -173,6 +175,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         onAddProduct={onAddProduct}
         companies={companies}
         systemConfig={systemConfig}
+        gstRates={gstRates}
       />
 
       {selectedProduct && (
@@ -193,6 +196,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
           product={selectedProduct}
           onUpdateProduct={onUpdateProduct}
           systemConfig={systemConfig}
+          gstRates={gstRates}
         />
       )}
 
@@ -840,11 +844,16 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
 const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[]; systemConfig: SystemConfig; }> = ({ isOpen, onClose, onAddProduct, companies, systemConfig }) => {
-  const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No',
+const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[]; systemConfig: SystemConfig; gstRates: GstRate[]; }> = ({ isOpen, onClose, onAddProduct, companies, systemConfig, gstRates }) => {
+  const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
+  const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
+
+  const getInitialFormState = () => ({
+    name: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No',
     batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
   });
+
+  const [formState, setFormState] = useState(getInitialFormState());
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
@@ -909,10 +918,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
       }
     );
     onClose();
-    setFormState({
-        name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No',
-        batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
-    });
+    setFormState(getInitialFormState());
   };
 
   return (
@@ -950,9 +956,9 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
           </div>
           <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
           <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
-            <option value="5">GST 5%</option>
-            <option value="12">GST 12%</option>
-            <option value="18">GST 18%</option>
+            {sortedGstRates.map(rate => (
+              <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
+            ))}
           </select>
           {isPharmaMode && (
             <>
@@ -984,11 +990,12 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   );
 };
 
-const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; systemConfig: SystemConfig; }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig }) => {
+const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; systemConfig: SystemConfig; gstRates: GstRate[]; }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
   const [formState, setFormState] = useState({
     name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No'
   });
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+  const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
   
   useEffect(() => {
     if (product) {
@@ -1042,9 +1049,9 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
           <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
           <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
           <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
-            <option value="5">GST 5%</option>
-            <option value="12">GST 12%</option>
-            <option value="18">GST 18%</option>
+             {sortedGstRates.map(rate => (
+              <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
+            ))}
           </select>
           {isPharmaMode && (
             <>
@@ -1398,8 +1405,8 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
 
     const textStyle: React.CSSProperties = {
         fontFamily: 'monospace',
-        letterSpacing: '2px',
-        fontSize: isPrinting ? '9pt' : '1em',
+        letterSpacing: '1.5px',
+        fontSize: isPrinting ? '7pt' : '1em',
         fontWeight: '500',
         textAlign: 'center',
     };
@@ -1423,7 +1430,7 @@ const PrintableLabels: React.FC<{
     productName: string;
     barcode: string;
     mrp: number;
-}> = ({ count, shopName, productName, barcode, mrp }) => {
+}> = ({ count, shopName, productName, mrp, barcode }) => {
     const labels = Array.from({ length: count });
 
     return (
@@ -1448,12 +1455,12 @@ const PrintableLabels: React.FC<{
                     overflow: 'hidden',
                     pageBreakInside: 'avoid',
                 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '11pt', lineHeight: '1' }}>{shopName}</div>
-                    <div style={{ fontSize: '9pt', textTransform: 'uppercase', lineHeight: '1.1' }}>{productName}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: '9pt', lineHeight: '1' }}>{shopName}</div>
+                    <div style={{ fontSize: '8pt', textTransform: 'uppercase', lineHeight: '1.1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{productName}</div>
                     <div style={{ width: '85%', transform: 'scaleY(0.8)' }}>
                         <Barcode code={barcode} isPrinting={true} />
                     </div>
-                    <div style={{ fontWeight: 'bold', fontSize: '14pt', lineHeight: '1' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '12pt', lineHeight: '1' }}>
                         ₹{mrp.toFixed(2)}
                     </div>
                 </div>
@@ -1543,12 +1550,12 @@ const PrintLabelModal: React.FC<{
                 <div className="p-4 border dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700/50">
                     <p className="text-sm text-center text-slate-600 dark:text-slate-400 mb-2">Label Preview (50mm x 25mm):</p>
                     <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-around mx-auto" style={{ width: '189px', height: '94.5px' }}>
-                        <p className="font-bold text-sm leading-tight">{companyProfile.name}</p>
-                        <p className="text-xs my-1 uppercase leading-tight">{product.name}</p>
+                        <p className="font-bold text-xs leading-tight">{companyProfile.name}</p>
+                        <p className="text-[10px] my-1 uppercase leading-tight truncate w-full px-1">{product.name}</p>
                         <div style={{width: '85%', transform: 'scaleY(0.8)'}}>
                              <Barcode code={barcode} />
                         </div>
-                        <p className="font-bold text-xl leading-tight">₹{mrp.toFixed(2)}</p>
+                        <p className="font-bold text-base leading-tight">₹{mrp.toFixed(2)}</p>
                     </div>
                 </div>
 
