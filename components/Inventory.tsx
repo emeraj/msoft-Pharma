@@ -1453,22 +1453,29 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
     const svgWidth = currentX;
     const spacedCode = code.split('').join(' ');
 
-    const textStyle: React.CSSProperties = {
+    const printingTextStyle: React.CSSProperties = {
         fontFamily: 'monospace',
         letterSpacing: '1px',
-        fontSize: isPrinting ? '5.5pt' : '1em',
+        fontSize: '5.5pt',
         fontWeight: '500',
         textAlign: 'center',
     };
-    
-    const textClassName = isPrinting ? '' : 'text-sm font-mono tracking-widest mt-1';
+
+    const previewTextStyle: React.CSSProperties = {
+        fontFamily: 'monospace',
+        letterSpacing: '1px',
+        fontSize: '8px', // Equivalent to roughly 6pt
+        fontWeight: '500',
+        textAlign: 'center',
+        marginTop: '2px',
+    };
 
     return (
         <div className="flex flex-col items-center">
             <svg width="100%" height="25" aria-hidden="true" viewBox={`0 0 ${svgWidth} 25`}>
                 {barElements}
             </svg>
-            <p className={textClassName} style={isPrinting ? textStyle : {}}>{spacedCode}</p>
+            <p style={isPrinting ? printingTextStyle : previewTextStyle}>{spacedCode}</p>
         </div>
     );
 };
@@ -1499,18 +1506,19 @@ const PrintableLabels: React.FC<{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'space-around',
+                    justifyContent: 'center',
                     fontFamily: 'Arial, sans-serif',
                     textAlign: 'center',
                     overflow: 'hidden',
                     pageBreakInside: 'avoid',
+                    gap: '0.5mm'
                 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '6.5pt', lineHeight: '1' }}>{shopName.substring(0, 25)}</div>
-                    <div style={{ fontSize: '5.5pt', textTransform: 'uppercase', lineHeight: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{productName.substring(0, 35)}</div>
-                    <div style={{ width: '90%' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '10pt', lineHeight: '1' }}>{shopName.substring(0, 25)}</div>
+                    <div style={{ fontSize: '7pt', lineHeight: '1' }}>{productName.substring(0, 35)}</div>
+                    <div style={{ width: '90%', marginTop: '1mm', marginBottom: '0.5mm' }}>
                         <Barcode code={barcode} isPrinting={true} />
                     </div>
-                    <div style={{ fontWeight: 'bold', fontSize: '8.5pt', lineHeight: '1' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '11pt', lineHeight: '1' }}>
                         ₹{mrp.toFixed(2)}
                     </div>
                 </div>
@@ -1602,13 +1610,13 @@ const PrintLabelModal: React.FC<{
 
                 <div className="p-4 border dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700/50">
                     <p className="text-sm text-center text-slate-600 dark:text-slate-400 mb-2">Label Preview (50mm x 25mm):</p>
-                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-around mx-auto" style={{ width: '189px', height: '94.5px' }}>
-                        <p style={{ fontWeight: 'bold', fontSize: '6.5pt', lineHeight: '1' }}>{companyProfile.name.substring(0, 25)}</p>
-                        <p style={{ fontSize: '5.5pt', lineHeight: '1' }} className="uppercase truncate w-full px-1">{product.name.substring(0, 35)}</p>
-                        <div style={{width: '90%'}}>
+                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-center gap-1 mx-auto" style={{ width: '189px', height: '94.5px', fontFamily: 'Arial, sans-serif' }}>
+                        <p style={{ fontWeight: 'bold', fontSize: '13px', lineHeight: '1' }} className="truncate w-full text-center">{companyProfile.name.substring(0, 25)}</p>
+                        <p style={{ fontSize: '9px', lineHeight: '1' }} className="w-full text-center truncate">{product.name.substring(0, 35)}</p>
+                        <div style={{width: '90%', margin: '4px 0 2px 0'}}>
                              <Barcode code={barcode} />
                         </div>
-                        <p style={{ fontWeight: 'bold', fontSize: '8.5pt', lineHeight: '1' }}>₹{mrp.toFixed(2)}</p>
+                        <p style={{ fontWeight: 'bold', fontSize: '15px', lineHeight: '1' }}>₹{mrp.toFixed(2)}</p>
                     </div>
                 </div>
 
