@@ -149,6 +149,11 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
       alert("Please select a company to export data.");
       return;
     }
+    if (reportData.length === 0) {
+        alert("No data to export.");
+        return;
+    }
+
     const exportData = reportData.map(d => ({
       'Date': new Date(d.date).toLocaleDateString(),
       'Bill No.': d.billNumber,
@@ -157,8 +162,49 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
       'Cost of Goods': d.cogs.toFixed(2),
       'Profit': d.profit.toFixed(2),
     }));
-    const filename = `profit_report_${companyFilter.replace(/ /g, '_')}_${fromDate || 'all'}_to_${toDate}`;
-    exportToCsv(filename, exportData);
+
+    const headers = Object.keys(exportData[0]);
+
+    // Custom CSV generation to include footer
+    const escapeCell = (cell: any) => {
+        let strCell = cell === null || cell === undefined ? '' : String(cell);
+        if (/[",\n]/.test(strCell)) {
+            strCell = `"${strCell.replace(/"/g, '""')}"`;
+        }
+        return strCell;
+    };
+
+    const headerRow = headers.join(',');
+    const dataRows = exportData.map(row => 
+        headers.map(header => escapeCell((row as any)[header])).join(',')
+    );
+
+    const footerCells = new Array(headers.length).fill('');
+    footerCells[2] = 'Totals'; // Align 'Totals' with 'Customer Name'
+    footerCells[3] = summary.totalValue.toFixed(2); // 'Sale Value (w/o Tax)'
+    footerCells[4] = summary.totalCogs.toFixed(2); // 'Cost of Goods'
+    footerCells[5] = summary.totalProfit.toFixed(2); // 'Profit'
+    const footerRow = footerCells.join(',');
+
+    const csvContent = [
+        headerRow,
+        ...dataRows,
+        '', // Empty row for spacing
+        footerRow
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob);
+        const filename = `profit_report_${companyFilter.replace(/ /g, '_')}_${fromDate || 'all'}_to_${toDate}.csv`;
+        link.setAttribute("href", url);
+        link.setAttribute("download", filename);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
   };
   
   const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
