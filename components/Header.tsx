@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import type { AppView, ReportView } from '../types';
+import type { AppView, ReportView, SystemConfig } from '../types';
 import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon } from './icons/Icons';
 import { User } from 'firebase/auth';
 
@@ -9,6 +9,7 @@ interface HeaderProps {
   onOpenSettings: () => void;
   user: User;
   onLogout: () => void;
+  systemConfig: SystemConfig;
 }
 
 const NavButton: React.FC<{
@@ -105,14 +106,16 @@ const ReportsDropdown: React.FC<{
 };
 
 
-const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout }) => {
+const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout, systemConfig }) => {
+  const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+
   return (
     <header className="bg-white dark:bg-slate-800 shadow-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200">
-              Pharma<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span>
+              {isPharmaMode ? 'Medico' : 'Pharma'}<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span>
             </h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">

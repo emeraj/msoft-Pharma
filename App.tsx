@@ -48,7 +48,7 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Medico - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     softwareMode: 'Pharma',
     invoicePrintingFormat: 'A5',
@@ -64,6 +64,11 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    document.title = isPharmaMode ? 'Medico - Retail' : 'Pharma - Retail';
+  }, [systemConfig.softwareMode]);
+
+  useEffect(() => {
     if (!currentUser) {
       // Clear data when user logs out
       setProducts([]);
@@ -72,7 +77,7 @@ const App: React.FC = () => {
       setCompanies([]);
       setSuppliers([]);
       setPayments([]);
-      setCompanyProfile({ name: 'Pharma - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
+      setCompanyProfile({ name: 'Medico - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
       setSystemConfig({
         softwareMode: 'Pharma',
         invoicePrintingFormat: 'A5',
@@ -845,7 +850,7 @@ const App: React.FC = () => {
       case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} systemConfig={systemConfig} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} companyProfile={companyProfile} />;
       case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} systemConfig={systemConfig} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;
@@ -864,6 +869,7 @@ const App: React.FC = () => {
           activeView={activeView} 
           setActiveView={setActiveView} 
           onOpenSettings={() => setSettingsModalOpen(true)} 
+          systemConfig={systemConfig}
         />
       )}
       <main className="flex-grow flex flex-col">

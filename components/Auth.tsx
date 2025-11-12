@@ -54,7 +54,7 @@ const Auth: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2">
-                Pharma - Retail
+                Medico - Retail
             </h1>
             <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
         </div>

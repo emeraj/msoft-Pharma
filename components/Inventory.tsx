@@ -1,11 +1,10 @@
 
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, Company, Bill, Purchase, SystemConfig } from '../types';
+import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, QrcodeIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, BarcodeIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -66,6 +65,7 @@ interface InventoryProps {
   bills: Bill[];
   purchases: Purchase[];
   systemConfig: SystemConfig;
+  companyProfile: CompanyProfile;
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
   onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
@@ -76,14 +76,14 @@ interface InventoryProps {
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onBulkAddProducts }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onBulkAddProducts }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isImportModalOpen, setImportModalOpen] = useState(false);
+  const [isPrintLabelModalOpen, setPrintLabelModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isScannerOpen, setScannerOpen] = useState(false);
 
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
@@ -97,15 +97,15 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
     setEditModalOpen(true);
   };
   
-  const handleScanSuccess = (barcodeValue: string) => {
-    setSearchTerm(barcodeValue);
-    setScannerOpen(false);
+  const handleOpenPrintLabelModal = (product: Product) => {
+    setSelectedProduct(product);
+    setPrintLabelModalOpen(true);
   };
 
   const renderSubView = () => {
     switch (activeSubView) {
       case 'all':
-        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onOpenScanner={() => setScannerOpen(true)} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} />;
       case 'selected':
         return <SelectedItemStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} />;
       case 'batch':
@@ -117,7 +117,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
       case 'nearing_expiry':
         return isPharmaMode ? <NearingExpiryStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} /> : null;
       default:
-        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onOpenScanner={() => setScannerOpen(true)} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} />;
     }
   };
   const [activeSubView, setActiveSubView] = useState<InventorySubView>('all');
@@ -196,17 +196,21 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         />
       )}
 
+      {selectedProduct && (
+        <PrintLabelModal
+          isOpen={isPrintLabelModalOpen}
+          onClose={() => { setPrintLabelModalOpen(false); setSelectedProduct(null); }}
+          product={selectedProduct}
+          companyProfile={companyProfile}
+        />
+      )}
+
       <ImportProductsModal
         isOpen={isImportModalOpen}
         onClose={() => setImportModalOpen(false)}
         onBulkAddProducts={onBulkAddProducts}
       />
 
-      <BarcodeScannerModal
-          isOpen={isScannerOpen}
-          onClose={() => setScannerOpen(false)}
-          onScan={handleScanSuccess}
-      />
     </div>
   );
 };
@@ -222,12 +226,12 @@ interface AllItemStockViewProps {
     systemConfig: SystemConfig;
     searchTerm: string;
     onSearchTermChange: (term: string) => void;
-    onOpenScanner: () => void;
     onOpenBatchModal: (product: Product) => void;
     onOpenEditModal: (product: Product) => void;
+    onOpenPrintLabelModal: (product: Product) => void;
 }
 
-const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, systemConfig, searchTerm, onSearchTermChange, onOpenScanner, onOpenBatchModal, onOpenEditModal }) => {
+const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, systemConfig, searchTerm, onSearchTermChange, onOpenBatchModal, onOpenEditModal, onOpenPrintLabelModal }) => {
     const [companyFilter, setCompanyFilter] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -320,23 +324,14 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     return (
         <Card title="All Item Stock Report">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div className="relative flex items-center">
+                <div className="flex items-center">
                     <input
                         type="text"
-                        placeholder="Search by product name or scan barcode..."
+                        placeholder="Search by product name..."
                         value={searchTerm}
                         onChange={e => onSearchTermChange(e.target.value)}
-                        className={`${inputStyle} pr-10`}
+                        className={inputStyle}
                     />
-                    {!isPharmaMode && (
-                        <button 
-                          onClick={onOpenScanner} 
-                          className="absolute right-2 p-2 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 rounded-full transition-colors"
-                          title="Scan Barcode"
-                        >
-                            <QrcodeIcon className="h-6 w-6" />
-                        </button>
-                    )}
                 </div>
                 <select
                     value={companyFilter}
@@ -394,6 +389,9 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                         </button>
                                         <button onClick={() => onOpenEditModal(item.product)} title="Edit Product" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50">
                                             <PencilIcon className="h-4 w-4" />
+                                        </button>
+                                        <button onClick={() => onOpenPrintLabelModal(item.product)} title="Print Barcode Label" className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900/50">
+                                            <BarcodeIcon className="h-5 w-5" />
                                         </button>
                                     </div>
                                 </td>
@@ -971,7 +969,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         </div>
         <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">Initial Stock Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No." className={formInputStyle} required />}
+            {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />}
             {isPharmaMode && <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" placeholder="Expiry (YYYY-MM)" className={formInputStyle} required />}
             <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder={`Stock Qty ${isPharmaMode ? '(in Strips/Boxes)' : ''}`} className={formInputStyle} required min="0"/>
             <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder={`MRP ${isPharmaMode ? '(per Strip/Box)' : ''}`} className={formInputStyle} required min="0" step="0.01"/>
@@ -1350,102 +1348,225 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
     );
 };
 
-const BarcodeScannerModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  onScan: (barcode: string) => void;
-}> = ({ isOpen, onClose, onScan }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [error, setError] = useState<string | null>(null);
+// --- Barcode Printing Components ---
 
-  useEffect(() => {
-    if (!isOpen) return;
+// Encoding for Code 39. '1' is wide, '0' is narrow.
+const CODE39_MAP: { [key: string]: string } = {
+    '0': '000110100', '1': '100100001', '2': '001100001', '3': '101100000',
+    '4': '000110001', '5': '100110000', '6': '001110000', '7': '000100101',
+    '8': '100100100', '9': '001100100', 'A': '100001001', 'B': '001001001',
+    'C': '101001000', 'D': '000011001', 'E': '100011000', 'F': '001011000',
+    'G': '000001101', 'H': '100001100', 'I': '001001100', 'J': '000011100',
+    'K': '100000011', 'L': '001000011', 'M': '101000010', 'N': '000010011',
+    'O': '100010010', 'P': '001010010', 'Q': '000000111', 'R': '100000110',
+    'S': '001000110', 'T': '000010110', 'U': '110000001', 'V': '011000001',
+    'W': '111000000', 'X': '010010001', 'Y': '110010000', 'Z': '011010000',
+    '-': '010000101', '.': '110000100', ' ': '011000100', '$': '010101000',
+    '/': '010100010', '+': '010001010', '%': '000101010', '*': '010010100'
+};
 
-    let stream: MediaStream | null = null;
-    let animationFrameId: number;
+const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPrinting = false }) => {
+    // Validate and prepare code for Code 39
+    const validCode = `*${code.toUpperCase().replace(/[^A-Z0-9-.\s$/+%]/g, '')}*`;
+    
+    const narrowWidth = 1;
+    const wideWidth = 3;
+    
+    const barElements = [];
+    let currentX = 0;
+    
+    for (const char of validCode) {
+        const pattern = CODE39_MAP[char];
+        if (!pattern) continue;
 
-    const startScanner = async () => {
-      setError(null);
+        for (let i = 0; i < pattern.length; i++) {
+            const isBar = i % 2 === 0;
+            const isWide = pattern[i] === '1';
+            const width = isWide ? wideWidth : narrowWidth;
+            
+            if (isBar) {
+                barElements.push(<rect key={`${char}-${i}`} x={currentX} y="0" width={width} height="45" fill="black" />);
+            }
+            currentX += width;
+        }
+        // Add narrow space between characters
+        currentX += narrowWidth;
+    }
 
-      if (!('BarcodeDetector' in window)) {
-        setError('Barcode detection is not supported by your browser.');
-        return;
-      }
+    const svgWidth = currentX;
+    const spacedCode = code.split('').join(' ');
 
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        });
+    const textStyle: React.CSSProperties = {
+        fontFamily: 'monospace',
+        letterSpacing: '2px',
+        fontSize: isPrinting ? '9pt' : '1em',
+        fontWeight: '500',
+        textAlign: 'center',
+    };
+    
+    const textClassName = isPrinting ? '' : 'text-sm font-mono tracking-widest mt-1';
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+    return (
+        <div className="flex flex-col items-center">
+            <svg width="100%" height="45" aria-hidden="true" viewBox={`0 0 ${svgWidth} 45`}>
+                {barElements}
+            </svg>
+            <p className={textClassName} style={isPrinting ? textStyle : {}}>{spacedCode}</p>
+        </div>
+    );
+};
+
+// Component to be rendered for printing
+const PrintableLabels: React.FC<{
+    count: number;
+    shopName: string;
+    productName: string;
+    barcode: string;
+    mrp: number;
+}> = ({ count, shopName, productName, barcode, mrp }) => {
+    const labels = Array.from({ length: count });
+
+    return (
+        <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '2mm'
+        }}>
+            {labels.map((_, i) => (
+                <div key={i} style={{
+                    width: '50mm',
+                    height: '25mm',
+                    border: '1px dotted #ccc',
+                    boxSizing: 'border-box',
+                    padding: '1mm',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'space-around',
+                    fontFamily: 'Arial, sans-serif',
+                    textAlign: 'center',
+                    overflow: 'hidden',
+                    pageBreakInside: 'avoid',
+                }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '11pt', lineHeight: '1' }}>{shopName}</div>
+                    <div style={{ fontSize: '9pt', textTransform: 'uppercase', lineHeight: '1.1' }}>{productName}</div>
+                    <div style={{ width: '85%', transform: 'scaleY(0.8)' }}>
+                        <Barcode code={barcode} isPrinting={true} />
+                    </div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14pt', lineHeight: '1' }}>
+                        ₹{mrp.toFixed(2)}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
+
+
+// The Modal component
+const PrintLabelModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    product: Product;
+    companyProfile: CompanyProfile;
+}> = ({ isOpen, onClose, product, companyProfile }) => {
+    const [labelCount, setLabelCount] = useState(1);
+    
+    // Use the product ID for a consistent barcode. Last 6 chars for brevity.
+    const barcode = useMemo(() => {
+        if (!product?.id) return '000000';
+        return product.id.slice(-6).toUpperCase();
+    }, [product]);
+
+    useEffect(() => {
+        if (isOpen) {
+            setLabelCount(1); // Reset count on open
+        }
+    }, [isOpen]);
+
+    const mrp = useMemo(() => {
+        if (!product.batches || product.batches.length === 0) return 0;
+        // Use the highest MRP from available batches for the label
+        return Math.max(...product.batches.map(b => b.mrp));
+    }, [product]);
+
+    const handlePrint = () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert("Please allow popups to print labels.");
+            return;
         }
 
-        const barcodeDetector = new (window as any).BarcodeDetector({ formats: ['code_39', 'code_128', 'ean_13'] });
+        printWindow.document.write('<html><head><title>Print Labels</title>');
+        printWindow.document.write('<style>@page { margin: 2mm; } body { margin: 0; }</style>');
+        printWindow.document.write('</head><body><div id="print-root"></div></body></html>');
+        printWindow.document.close();
 
-        const detectBarcode = async () => {
-          if (!videoRef.current || videoRef.current.readyState < 2) {
-            animationFrameId = requestAnimationFrame(detectBarcode);
-            return;
-          }
-          try {
-            const barcodes = await barcodeDetector.detect(videoRef.current);
-            if (barcodes.length > 0) {
-              onScan(barcodes[0].rawValue);
-              onClose(); // Automatically close on successful scan
-            } else {
-              animationFrameId = requestAnimationFrame(detectBarcode);
-            }
-          } catch(e) {
-            console.error('Barcode detection error:', e);
-            animationFrameId = requestAnimationFrame(detectBarcode);
-          }
-        };
-        detectBarcode();
+        const printRoot = printWindow.document.getElementById('print-root');
+        if (printRoot) {
+            const root = ReactDOM.createRoot(printRoot);
+            root.render(
+                <PrintableLabels
+                    count={labelCount}
+                    shopName={companyProfile.name}
+                    productName={product.name}
+                    barcode={barcode}
+                    mrp={mrp}
+                />
+            );
+        }
 
-      } catch (err) {
-        console.error('Error accessing camera:', err);
-        setError('Could not access camera. Please grant permission and try again.');
-      }
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+            onClose();
+        }, 500);
     };
 
-    const stopScanner = () => {
-      cancelAnimationFrame(animationFrameId);
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Print Label for ${product.name}`}>
+            <div className="space-y-4">
+                <div>
+                    <label htmlFor="label-count" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                        Number of labels to print
+                    </label>
+                    <input
+                        id="label-count"
+                        type="number"
+                        min="1"
+                        value={labelCount}
+                        onChange={(e) => setLabelCount(Math.max(1, parseInt(e.target.value) || 1))}
+                        className={inputStyle}
+                    />
+                </div>
 
-    startScanner();
+                <div className="p-4 border dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700/50">
+                    <p className="text-sm text-center text-slate-600 dark:text-slate-400 mb-2">Label Preview (50mm x 25mm):</p>
+                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-around mx-auto" style={{ width: '189px', height: '94.5px' }}>
+                        <p className="font-bold text-sm leading-tight">{companyProfile.name}</p>
+                        <p className="text-xs my-1 uppercase leading-tight">{product.name}</p>
+                        <div style={{width: '85%', transform: 'scaleY(0.8)'}}>
+                             <Barcode code={barcode} />
+                        </div>
+                        <p className="font-bold text-xl leading-tight">₹{mrp.toFixed(2)}</p>
+                    </div>
+                </div>
 
-    return () => {
-      stopScanner();
-    };
-  }, [isOpen, onScan, onClose]);
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Scan Product Barcode">
-      <div>
-        {error ? (
-          <p className="text-red-500 text-center py-4">{error}</p>
-        ) : (
-          <div className="relative bg-black rounded-lg overflow-hidden">
-            <video ref={videoRef} className="w-full h-auto" />
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-3/4 h-1/3 border-4 border-dashed border-green-400 rounded-lg animate-pulse" />
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500">
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handlePrint}
+                        className="px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700"
+                    >
+                        Print {labelCount} Label{labelCount > 1 ? 's' : ''}
+                    </button>
+                </div>
             </div>
-          </div>
-        )}
-        <div className="flex justify-end mt-4">
-            <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
-        </div>
-      </div>
-    </Modal>
-  );
+        </Modal>
+    );
 };
 
 

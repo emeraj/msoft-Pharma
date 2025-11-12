@@ -102,7 +102,11 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
                 {items.map((item, index) => (
                     <React.Fragment key={item.batchId}>
                         <div style={{ ...styles.flex, fontSize: '11px', fontWeight: 'bold' }}>
-                            <div style={{width: '50%', fontFamily: '"Arial Narrow", Arial, sans-serif'}}>{index + 1}. {item.productName}</div>
+                            <div style={{
+                                width: '50%', 
+                                fontFamily: '"Arial Narrow", Arial, sans-serif',
+                                ...(isPharmaMode && { fontSize: '10px' })
+                            }}>{index + 1}. {isPharmaMode ? item.productName.substring(0, 25) : item.productName}</div>
                             <div style={{width: '15%', textAlign: 'center'}}>{item.quantity}</div>
                             <div style={{width: '15%', textAlign: 'right'}}>{item.mrp.toFixed(2)}</div>
                             <div style={{width: '20%', textAlign: 'right'}}>{item.total.toFixed(2)}</div>

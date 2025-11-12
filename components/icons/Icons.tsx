@@ -115,8 +115,9 @@ export const AdjustmentsIcon: React.FC<{ className?: string }> = ({ className })
     </svg>
 );
 
-export const QrcodeIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6.5 6.5v-1m-6.5-5.5H4M4 12V6a2 2 0 012-2h6v12H6a2 2 0 01-2-2zm8-10V4a2 2 0 012-2h4a2 2 0 012 2v4a2 2 0 01-2 2h-4a2 2 0 01-2-2z" />
-  </svg>
+export const BarcodeIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M4 8v8m2-8v8m3-8v8m3-8v8m3-8v8m2-8v8" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 8v8m11-8v8" />
+    </svg>
 );

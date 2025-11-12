@@ -188,7 +188,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                         {items.map((item, index) => (
                             <tr key={item.batchId}>
                                 <td style={styles.td}>{index + 1}</td>
-                                <td style={{...styles.td, fontFamily: '"Arial Narrow", Arial, sans-serif', fontWeight: 'bold'}}>
+                                <td style={{...styles.td, fontFamily: '"Arial Narrow", Arial, sans-serif', fontWeight: 'bold', ...(isPharmaMode && {fontSize: '7.5pt'})}}>
                                     {item.productName}
                                     {isPharmaMode && item.isScheduleH && <span style={{ fontWeight: 'bold', color: '#C05621', fontSize: '7pt' }}> (Sch. H)</span>}
                                     {isPharmaMode && item.composition && <div style={{ fontSize: '7pt', color: '#4a5568', fontStyle: 'italic', fontWeight: 'normal' }}>{item.composition}</div>}
