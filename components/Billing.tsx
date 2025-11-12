@@ -218,7 +218,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
         const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
         
-        let sQty = isPharmaMode ? Math.max(0, stripQty) : 0;
+        // If it's not a strip-based product, strip quantity should always be 0.
+        let sQty = isPharmaMode && unitsPerStrip > 1 ? Math.max(0, stripQty) : 0;
         let lQty = Math.max(0, looseQty);
         
         // Auto-correct loose quantity if it exceeds strip size and it's a strip-based product
@@ -251,14 +252,20 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
 
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id);
+    const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
+    
     if (existingItem) {
-      const newTotalUnits = existingItem.quantity + 1;
-      const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
-      const newStripQty = Math.floor(newTotalUnits / unitsPerStrip);
-      const newLooseQty = newTotalUnits % unitsPerStrip;
-      updateCartItem(existingItem.batchId, newStripQty, newLooseQty);
+        // If it's not a strip-based product, just increment loose quantity.
+        if (unitsPerStrip <= 1) {
+            updateCartItem(existingItem.batchId, 0, existingItem.looseQty + 1);
+        } else {
+            // Otherwise, calculate based on total units
+            const newTotalUnits = existingItem.quantity + 1;
+            const newStripQty = Math.floor(newTotalUnits / unitsPerStrip);
+            const newLooseQty = newTotalUnits % unitsPerStrip;
+            updateCartItem(existingItem.batchId, newStripQty, newLooseQty);
+        }
     } else {
-      const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
       const unitPrice = batch.mrp / unitsPerStrip;
       const newItem: CartItem = {
         productId: product.id,
@@ -278,7 +285,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
       };
       lastAddedBatchIdRef.current = newItem.batchId;
-      setCart([...cart, newItem]);
+      setCart(currentCart => [newItem, ...currentCart]);
     }
     setSearchTerm('');
   };
