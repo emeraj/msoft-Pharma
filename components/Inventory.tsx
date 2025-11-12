@@ -296,6 +296,8 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     const unitPrice = batch.mrp / (product.unitsPerStrip || 1);
                     return sum + (unitPrice * batch.stock);
                 }, 0);
+                
+                const latestMrp = product.batches.length > 0 ? Math.max(...product.batches.map(b => b.mrp)) : 0;
 
 
                 return {
@@ -311,12 +313,20 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     soldQty: salesInPeriod,
                     currentStock,
                     stockValue,
+                    latestMrp,
                     product // Pass the original product object for the action button
                 };
             }).sort((a,b) => a.name.localeCompare(b.name));
     }, [products, purchases, bills, searchTerm, companyFilter, fromDate, toDate, isPharmaMode]);
     
     const handleExport = () => {
+        if (reportData.length === 0) {
+            alert("No data to export.");
+            return;
+        }
+
+        const totalStockValue = reportData.reduce((sum, item) => sum + item.stockValue, 0);
+
         const exportData = reportData.map(data => ({
             'Product Name': data.name,
             'Company': data.company,
@@ -327,9 +337,47 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
             'Purchased Qty (Period)': formatStock(data.purchasedQty, data.unitsPerStrip),
             'Sold Qty (Period)': formatStock(data.soldQty, data.unitsPerStrip),
             'Current Stock': formatStock(data.currentStock, data.unitsPerStrip),
+            'MRP': data.latestMrp.toFixed(2),
             'Stock Value (MRP)': data.stockValue.toFixed(2),
         }));
-        exportToCsv('all_item_stock_report', exportData);
+
+        const headers = Object.keys(exportData[0]);
+        const escapeCell = (cell: any) => {
+            let strCell = cell === null || cell === undefined ? '' : String(cell);
+            if (/[",\n]/.test(strCell)) {
+                strCell = `"${strCell.replace(/"/g, '""')}"`;
+            }
+            return strCell;
+        };
+
+        const headerRow = headers.join(',');
+        const dataRows = exportData.map(row => 
+            headers.map(header => escapeCell((row as any)[header])).join(',')
+        );
+
+        const footerCells = new Array(headers.length).fill('');
+        footerCells[headers.length - 2] = 'Total Stock Value';
+        footerCells[headers.length - 1] = totalStockValue.toFixed(2);
+        const footerRow = footerCells.join(',');
+
+        const csvContent = [
+            headerRow,
+            ...dataRows,
+            '', // Add an empty row for spacing
+            footerRow
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", 'all_item_stock_report.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     };
 
     return (
@@ -375,6 +423,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                             <th scope="col" className="px-6 py-3 text-center">Purchased</th>
                             <th scope="col" className="px-6 py-3 text-center">Sold</th>
                             <th scope="col" className="px-6 py-3 text-center">Current Stock</th>
+                            <th scope="col" className="px-6 py-3 text-right">MRP</th>
                             <th scope="col" className="px-6 py-3 text-right">Stock Value</th>
                             <th scope="col" className="px-6 py-3">Actions</th>
                         </tr>
@@ -393,6 +442,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                 <td className="px-6 py-4 text-center">{formatStock(item.purchasedQty, item.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-center">{formatStock(item.soldQty, item.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-center font-bold">{formatStock(item.currentStock, item.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-right font-semibold">₹{item.latestMrp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4 text-right font-semibold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4">
                                     <div className="flex items-center gap-2">
