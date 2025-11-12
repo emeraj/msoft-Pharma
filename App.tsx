@@ -66,10 +66,8 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-    document.title = systemConfig.softwareMode === 'Pharma' 
-        ? 'Medico - Retail' 
-        : 'Kirana - Retail';
-  }, [systemConfig.softwareMode]);
+    document.title = 'Cloud - Retail';
+  }, []);
 
   useEffect(() => {
     if (!currentUser) {
