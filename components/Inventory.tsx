@@ -1088,40 +1088,68 @@ const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, pr
     onUpdateProduct(product.id, productUpdate);
     onClose();
   };
+  
+  const labelStyle = "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1";
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Edit Product: ${product.name}`}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
-          <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
-          <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
-          <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
+          <div>
+            <label className={labelStyle}>Product Name*</label>
+            <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
+          </div>
+          <div>
+            <label className={labelStyle}>Company*</label>
+            <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
+          </div>
+          <div>
+            <label className={labelStyle}>HSN Code</label>
+            <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
+          </div>
+          <div>
+            <label className={labelStyle}>GST Rate</label>
+            <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
              {sortedGstRates.map(rate => (
               <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
             ))}
-          </select>
+            </select>
+          </div>
           {isPharmaMode && (
             <>
-                <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units per Strip (e.g., 10)" className={formInputStyle} min="1" />
-                <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
-                    <option value="No">Schedule H Drug? No</option>
-                    <option value="Yes">Schedule H Drug? Yes</option>
-                </select>
+                <div>
+                    <label className={labelStyle}>Units per Strip</label>
+                    <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="e.g., 10" className={formInputStyle} min="1" />
+                </div>
+                <div>
+                    <label className={labelStyle}>Schedule H Drug?</label>
+                    <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
+                        <option value="No">No</option>
+                        <option value="Yes">Yes</option>
+                    </select>
+                </div>
                 <div className="sm:col-span-2">
-                    <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
+                    <label className={labelStyle}>Composition</label>
+                    <input name="composition" value={formState.composition} onChange={handleChange} placeholder="e.g., Paracetamol 500mg" className={formInputStyle} />
                 </div>
             </>
           )}
           {!isPharmaMode && (
             <div className="sm:col-span-2">
+                <label className={labelStyle}>Barcode</label>
                 <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
             </div>
           )}
            {showPriceFields && (
             <>
-                <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} min="0" step="0.01" />
-                <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01" />
+                <div>
+                    <label className={labelStyle}>MRP</label>
+                    <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} min="0" step="0.01" />
+                </div>
+                <div>
+                    <label className={labelStyle}>Purchase Price</label>
+                    <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01" />
+                </div>
             </>
           )}
         </div>
