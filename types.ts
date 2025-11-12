@@ -13,6 +13,7 @@ export interface Product {
   company: string;
   hsnCode: string;
   gst: number;
+  barcode?: string;
   composition?: string; // e.g., "Paracetamol 500mg"
   unitsPerStrip?: number; // e.g., 10 tablets per strip
   isScheduleH?: boolean;
@@ -56,6 +57,7 @@ export interface PurchaseLineItem {
   company: string;
   hsnCode: string;
   gst: number;
+  barcode?: string;
   composition?: string;
   unitsPerStrip?: number;
   isScheduleH?: boolean;

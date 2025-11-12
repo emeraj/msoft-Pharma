@@ -206,6 +206,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
           onClose={() => { setPrintLabelModalOpen(false); setSelectedProduct(null); }}
           product={selectedProduct}
           companyProfile={companyProfile}
+          systemConfig={systemConfig}
         />
       )}
 
@@ -254,7 +255,9 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
 
         return products
             .filter(product =>
-                (product.name.toLowerCase().includes(lowerSearchTerm) || product.id.toLowerCase() === lowerSearchTerm) &&
+                (product.name.toLowerCase().includes(lowerSearchTerm) || 
+                 product.id.toLowerCase() === lowerSearchTerm ||
+                 (!isPharmaMode && product.barcode && product.barcode.includes(searchTerm))) &&
                 (companyFilter === '' || product.company === companyFilter)
             )
             .map(product => {
@@ -300,6 +303,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     composition: product.composition,
                     unitsPerStrip: product.unitsPerStrip,
                     isScheduleH: product.isScheduleH,
+                    barcode: product.barcode,
                     openingStock,
                     purchasedQty: purchasesInPeriod,
                     soldQty: salesInPeriod,
@@ -308,12 +312,13 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     product // Pass the original product object for the action button
                 };
             }).sort((a,b) => a.name.localeCompare(b.name));
-    }, [products, purchases, bills, searchTerm, companyFilter, fromDate, toDate]);
+    }, [products, purchases, bills, searchTerm, companyFilter, fromDate, toDate, isPharmaMode]);
     
     const handleExport = () => {
         const exportData = reportData.map(data => ({
             'Product Name': data.name,
             'Company': data.company,
+            'Barcode': data.barcode,
             'Composition': data.composition,
             'Schedule H': data.isScheduleH ? 'Yes' : 'No',
             'Opening Stock': formatStock(data.openingStock, data.unitsPerStrip),
@@ -331,7 +336,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                 <div className="flex items-center">
                     <input
                         type="text"
-                        placeholder="Search by product name..."
+                        placeholder={`Search by product name ${isPharmaMode ? '' : 'or barcode'}...`}
                         value={searchTerm}
                         onChange={e => onSearchTermChange(e.target.value)}
                         className={inputStyle}
@@ -379,6 +384,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                     {item.name}
                                     {isPharmaMode && item.isScheduleH && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-orange-600 dark:bg-orange-700 rounded-full">Sch. H</span>}
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">{item.company}</p>
+                                    {!isPharmaMode && item.barcode && <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">Barcode: {item.barcode}</p>}
                                     {isPharmaMode && <p className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">{item.composition}</p>}
                                 </td>
                                 <td className="px-6 py-4 text-center">{formatStock(item.openingStock, item.unitsPerStrip)}</td>
@@ -456,6 +462,7 @@ const SelectedItemStockView: React.FC<{products: Product[], onDeleteBatch: (prod
                         <div className="flex flex-wrap gap-4 mt-2 text-sm text-slate-800 dark:text-slate-300">
                            <span>HSN: {selectedProduct.hsnCode}</span>
                            <span>GST: {selectedProduct.gst}%</span>
+                           {!isPharmaMode && selectedProduct.barcode && <span>Barcode: {selectedProduct.barcode}</span>}
                            {isPharmaMode && selectedProduct.unitsPerStrip && <span>{selectedProduct.unitsPerStrip} Units/Strip</span>}
                            {isPharmaMode && selectedProduct.isScheduleH && <span className="px-2 py-0.5 text-xs font-semibold text-white bg-orange-600 dark:bg-orange-700 rounded-full">Schedule H Drug</span>}
                            <span className="font-semibold">Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</span>
@@ -849,7 +856,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
 
   const getInitialFormState = () => ({
-    name: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No',
+    name: '', company: '', hsnCode: '', gst: defaultGst, barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No',
     batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
   });
 
@@ -880,7 +887,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
+    const { name, company, hsnCode, gst, barcode, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
     if (!name || !company || !stock || !mrp) return;
     if (isPharmaMode && (!batchNumber || !expiryDate)) {
         alert("Batch Number and Expiry Date are required in Pharma Mode.");
@@ -905,6 +912,8 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         if (units > 1) {
           productDetails.unitsPerStrip = units;
         }
+    } else {
+        productDetails.barcode = barcode;
     }
 
     onAddProduct(
@@ -972,6 +981,9 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
                     </div>
             </>
           )}
+          {!isPharmaMode && (
+             <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode (auto-generated if empty)" className={formInputStyle} />
+          )}
         </div>
         <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">Initial Stock Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -992,7 +1004,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
 
 const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product; onUpdateProduct: InventoryProps['onUpdateProduct']; systemConfig: SystemConfig; gstRates: GstRate[]; }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', composition: '', unitsPerStrip: '', isScheduleH: 'No'
+    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No'
   });
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
@@ -1004,6 +1016,7 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
             company: product.company,
             hsnCode: product.hsnCode,
             gst: String(product.gst),
+            barcode: product.barcode || '',
             composition: product.composition || '',
             unitsPerStrip: String(product.unitsPerStrip || ''),
             isScheduleH: product.isScheduleH ? 'Yes' : 'No',
@@ -1035,6 +1048,8 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
         if (!isNaN(units) && units > 1) {
             productUpdate.unitsPerStrip = units;
         }
+    } else {
+        productUpdate.barcode = formState.barcode;
     }
 
     onUpdateProduct(product.id, productUpdate);
@@ -1064,6 +1079,9 @@ const EditProductModal: React.FC<{ isOpen: boolean; onClose: () => void; product
                     <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
                 </div>
             </>
+          )}
+          {!isPharmaMode && (
+            <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
           )}
         </div>
         <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
@@ -1193,7 +1211,7 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
     const [importResult, setImportResult] = useState<{success: number; skipped: number} | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
-    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'isScheduleH', 'ignore'];
+    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'barcode', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'isScheduleH', 'ignore'];
     
     const resetState = () => {
         setStep(1);
@@ -1260,6 +1278,10 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
                 gst: parseFloat((row as any)[mapping['gst']]) || 12,
             };
             
+            const barcode = (row as any)[mapping['barcode']];
+            if (barcode) {
+                product.barcode = barcode;
+            }
             const composition = (row as any)[mapping['composition']];
             if (composition) {
                 product.composition = composition;
@@ -1376,8 +1398,8 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
     // Validate and prepare code for Code 39
     const validCode = `*${code.toUpperCase().replace(/[^A-Z0-9-.\s$/+%]/g, '')}*`;
     
-    const narrowWidth = 1;
-    const wideWidth = 3;
+    const narrowWidth = 1.5;
+    const wideWidth = 3.5;
     
     const barElements = [];
     let currentX = 0;
@@ -1392,7 +1414,7 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
             const width = isWide ? wideWidth : narrowWidth;
             
             if (isBar) {
-                barElements.push(<rect key={`${char}-${i}`} x={currentX} y="0" width={width} height="45" fill="black" />);
+                barElements.push(<rect key={`${char}-${i}`} x={currentX} y="0" width={width} height="30" fill="black" shapeRendering="crispEdges" />);
             }
             currentX += width;
         }
@@ -1405,8 +1427,8 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
 
     const textStyle: React.CSSProperties = {
         fontFamily: 'monospace',
-        letterSpacing: '1.5px',
-        fontSize: isPrinting ? '7pt' : '1em',
+        letterSpacing: '1px',
+        fontSize: isPrinting ? '5.5pt' : '1em',
         fontWeight: '500',
         textAlign: 'center',
     };
@@ -1415,7 +1437,7 @@ const Barcode: React.FC<{ code: string; isPrinting?: boolean }> = ({ code, isPri
 
     return (
         <div className="flex flex-col items-center">
-            <svg width="100%" height="45" aria-hidden="true" viewBox={`0 0 ${svgWidth} 45`}>
+            <svg width="100%" height="30" aria-hidden="true" viewBox={`0 0 ${svgWidth} 30`}>
                 {barElements}
             </svg>
             <p className={textClassName} style={isPrinting ? textStyle : {}}>{spacedCode}</p>
@@ -1449,18 +1471,18 @@ const PrintableLabels: React.FC<{
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'space-around',
+                    justifyContent: 'space-between',
                     fontFamily: 'Arial, sans-serif',
                     textAlign: 'center',
                     overflow: 'hidden',
                     pageBreakInside: 'avoid',
                 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '9pt', lineHeight: '1' }}>{shopName}</div>
-                    <div style={{ fontSize: '8pt', textTransform: 'uppercase', lineHeight: '1.1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{productName}</div>
-                    <div style={{ width: '85%', transform: 'scaleY(0.8)' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '6.5pt', lineHeight: '1' }}>{shopName.substring(0, 25)}</div>
+                    <div style={{ fontSize: '5.5pt', textTransform: 'uppercase', lineHeight: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{productName.substring(0, 35)}</div>
+                    <div style={{ width: '90%' }}>
                         <Barcode code={barcode} isPrinting={true} />
                     </div>
-                    <div style={{ fontWeight: 'bold', fontSize: '12pt', lineHeight: '1' }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '8.5pt', lineHeight: '1' }}>
                         ₹{mrp.toFixed(2)}
                     </div>
                 </div>
@@ -1476,14 +1498,17 @@ const PrintLabelModal: React.FC<{
     onClose: () => void;
     product: Product;
     companyProfile: CompanyProfile;
-}> = ({ isOpen, onClose, product, companyProfile }) => {
+    systemConfig: SystemConfig;
+}> = ({ isOpen, onClose, product, companyProfile, systemConfig }) => {
     const [labelCount, setLabelCount] = useState(1);
     
-    // Use the product ID for a consistent barcode. Last 6 chars for brevity.
     const barcode = useMemo(() => {
+        if (systemConfig.softwareMode === 'Retail' && product?.barcode) {
+            return product.barcode;
+        }
         if (!product?.id) return '000000';
         return product.id.slice(-6).toUpperCase();
-    }, [product]);
+    }, [product, systemConfig.softwareMode]);
 
     useEffect(() => {
         if (isOpen) {
@@ -1549,13 +1574,13 @@ const PrintLabelModal: React.FC<{
 
                 <div className="p-4 border dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-700/50">
                     <p className="text-sm text-center text-slate-600 dark:text-slate-400 mb-2">Label Preview (50mm x 25mm):</p>
-                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-around mx-auto" style={{ width: '189px', height: '94.5px' }}>
-                        <p className="font-bold text-xs leading-tight">{companyProfile.name}</p>
-                        <p className="text-[10px] my-1 uppercase leading-tight truncate w-full px-1">{product.name}</p>
-                        <div style={{width: '85%', transform: 'scaleY(0.8)'}}>
+                    <div className="bg-white dark:bg-slate-800 p-1 rounded-md shadow-inner flex flex-col items-center justify-between mx-auto" style={{ width: '189px', height: '94.5px' }}>
+                        <p style={{ fontWeight: 'bold', fontSize: '6.5pt', lineHeight: '1' }}>{companyProfile.name.substring(0, 25)}</p>
+                        <p style={{ fontSize: '5.5pt', lineHeight: '1' }} className="uppercase truncate w-full px-1">{product.name.substring(0, 35)}</p>
+                        <div style={{width: '90%'}}>
                              <Barcode code={barcode} />
                         </div>
-                        <p className="font-bold text-base leading-tight">₹{mrp.toFixed(2)}</p>
+                        <p style={{ fontWeight: 'bold', fontSize: '8.5pt', lineHeight: '1' }}>₹{mrp.toFixed(2)}</p>
                     </div>
                 </div>
 

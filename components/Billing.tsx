@@ -169,9 +169,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const searchResults = useMemo(() => {
     if (!searchTerm) return [];
+    const lowerSearchTerm = searchTerm.toLowerCase();
     return products
       .filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) && 
+        (p.name.toLowerCase().includes(lowerSearchTerm) ||
+         (!isPharmaMode && p.barcode && p.barcode.includes(searchTerm))) &&
         p.batches.some(b => b.stock > 0 && (isPharmaMode ? getExpiryDate(b.expiryDate) >= today : true))
       )
       .slice(0, 10);
@@ -543,7 +545,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search for products to add..."
+              placeholder={`Search for products by name ${isPharmaMode ? '' : 'or barcode'}...`}
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -556,7 +558,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                     navigableBatchesByProduct[productIndex]?.length > 0 &&
                     <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                       <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
-                        <span>{product.name}</span>
+                        <span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span>
                         {isPharmaMode && product.composition && (
                           <button
                               onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
