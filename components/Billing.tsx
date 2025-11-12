@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
@@ -287,7 +288,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
       };
       lastAddedBatchIdRef.current = newItem.batchId;
-      setCart(currentCart => [newItem, ...currentCart]);
+      setCart(currentCart => [...currentCart, newItem]);
     }
     setSearchTerm('');
   };
