@@ -314,6 +314,33 @@ const App: React.FC = () => {
     }
   };
 
+  const handleDeleteProduct = async (productId: string, productName: string) => {
+    if (!currentUser) return;
+
+    // Check if product exists in any bills
+    const inBill = bills.some(bill => bill.items.some(item => item.productId === productId));
+    if (inBill) {
+        alert(`Cannot delete "${productName}": This product is part of one or more sales records. Deleting it would corrupt your sales history.`);
+        return;
+    }
+
+    // Check if product exists in any purchases
+    const inPurchase = purchases.some(purchase => purchase.items.some(item => item.productId === productId));
+    if (inPurchase) {
+        alert(`Cannot delete "${productName}": This product is part of one or more purchase records. Deleting it would corrupt your purchase history.`);
+        return;
+    }
+
+    try {
+        const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+        await deleteDoc(productRef);
+        alert(`Product "${productName}" has been deleted successfully.`);
+    } catch (error) {
+        console.error("Error deleting product:", error);
+        alert(`Failed to delete product "${productName}".`);
+    }
+  };
+
   const handleBulkAddProducts = async (newProducts: Omit<Product, 'id' | 'batches'>[]): Promise<{success: number; skipped: number}> => {
     if (!currentUser) return { success: 0, skipped: 0 };
     const uid = currentUser.uid;
@@ -914,7 +941,7 @@ const App: React.FC = () => {
       case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
       case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} systemConfig={systemConfig} gstRates={gstRates} />;
       case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} companyProfile={companyProfile} gstRates={gstRates} />;
+      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} onDeleteProduct={handleDeleteProduct} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} companyProfile={companyProfile} gstRates={gstRates} />;
       case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} systemConfig={systemConfig} />;
       case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
       case 'salesReport': return <SalesReport bills={bills} />;

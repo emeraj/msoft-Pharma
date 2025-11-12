@@ -72,13 +72,14 @@ interface InventoryProps {
   onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches' | 'mrp' | 'purchasePrice'>>) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
   onDeleteBatch: (productId: string, batchId: string) => void;
+  onDeleteProduct: (productId: string, productName: string) => void;
   onBulkAddProducts: (products: Omit<Product, 'id' | 'batches'>[]) => Promise<{success: number; skipped: number}>;
 }
 
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
 // --- Main Inventory Component ---
-const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, gstRates, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onBulkAddProducts }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, gstRates, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onDeleteProduct, onBulkAddProducts }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
@@ -107,7 +108,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
   const renderSubView = () => {
     switch (activeSubView) {
       case 'all':
-        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onDeleteProduct={onDeleteProduct} />;
       case 'selected':
         return <SelectedItemStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} />;
       case 'batch':
@@ -119,7 +120,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
       case 'nearing_expiry':
         return isPharmaMode ? <NearingExpiryStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} /> : null;
       default:
-        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} />;
+        return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onDeleteProduct={onDeleteProduct} />;
     }
   };
   const [activeSubView, setActiveSubView] = useState<InventorySubView>('all');
@@ -234,9 +235,10 @@ interface AllItemStockViewProps {
     onOpenBatchModal: (product: Product) => void;
     onOpenEditModal: (product: Product) => void;
     onOpenPrintLabelModal: (product: Product) => void;
+    onDeleteProduct: (productId: string, productName: string) => void;
 }
 
-const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, systemConfig, searchTerm, onSearchTermChange, onOpenBatchModal, onOpenEditModal, onOpenPrintLabelModal }) => {
+const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases, bills, systemConfig, searchTerm, onSearchTermChange, onOpenBatchModal, onOpenEditModal, onOpenPrintLabelModal, onDeleteProduct }) => {
     const [companyFilter, setCompanyFilter] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -402,6 +404,17 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                         </button>
                                         <button onClick={() => onOpenPrintLabelModal(item.product)} title="Print Barcode Label" className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900/50">
                                             <BarcodeIcon className="h-5 w-5" />
+                                        </button>
+                                        <button 
+                                            onClick={() => {
+                                                if (window.confirm(`Are you sure you want to delete the product "${item.name}"? This action cannot be undone.`)) {
+                                                    onDeleteProduct(item.product.id, item.product.name);
+                                                }
+                                            }}
+                                            title="Delete Product" 
+                                            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50"
+                                        >
+                                            <TrashIcon className="h-4 w-4" />
                                         </button>
                                     </div>
                                 </td>
