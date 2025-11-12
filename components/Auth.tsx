@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { auth } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, AuthError } from 'firebase/auth';
 import Card from './common/Card';
+import { CloudIcon } from './icons/Icons';
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -53,8 +54,9 @@ const Auth: React.FC = () => {
     <div className="flex-grow flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2">
-                Medico - Retail
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
+                <CloudIcon className="h-8 w-8 text-indigo-500" />
+                <span>Cloud - Retail</span>
             </h1>
             <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
         </div>

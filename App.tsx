@@ -48,7 +48,7 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Medico - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Cloud - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     softwareMode: 'Pharma',
     invoicePrintingFormat: 'A5',
@@ -64,9 +64,8 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
-    document.title = isPharmaMode ? 'Medico - Retail' : 'Pharma - Retail';
-  }, [systemConfig.softwareMode]);
+    document.title = 'Cloud - Retail';
+  }, []);
 
   useEffect(() => {
     if (!currentUser) {
@@ -77,7 +76,7 @@ const App: React.FC = () => {
       setCompanies([]);
       setSuppliers([]);
       setPayments([]);
-      setCompanyProfile({ name: 'Medico - Retail', address: '123 Health St, Wellness City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
+      setCompanyProfile({ name: 'Cloud - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
       setSystemConfig({
         softwareMode: 'Pharma',
         invoicePrintingFormat: 'A5',
