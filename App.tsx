@@ -33,6 +33,14 @@ import SalesDashboard from './components/SalesDashboard';
 import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 import GstMaster from './components/GstMaster';
 
+const initialCompanyProfile: CompanyProfile = {
+  name: 'Medico - Retail',
+  address: '123 Cloud Ave, Tech City',
+  phone: '',
+  email: '',
+  gstin: 'ABCDE12345FGHIJ',
+  upiId: ''
+};
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -50,7 +58,7 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ', upiId: ''});
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(initialCompanyProfile);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     softwareMode: 'Pharma',
     invoicePrintingFormat: 'A5',
@@ -79,7 +87,7 @@ const App: React.FC = () => {
       setSuppliers([]);
       setPayments([]);
       setGstRates([]);
-      setCompanyProfile({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ', upiId: '' });
+      setCompanyProfile(initialCompanyProfile);
       setSystemConfig({
         softwareMode: 'Pharma',
         invoicePrintingFormat: 'A5',
@@ -120,7 +128,23 @@ const App: React.FC = () => {
     const profileRef = doc(db, `users/${uid}/companyProfile`, 'profile');
     const unsubProfile = onSnapshot(profileRef, (doc) => {
         if (doc.exists()) {
-            setCompanyProfile(doc.data() as CompanyProfile);
+            const dbProfile = doc.data() as CompanyProfile;
+            
+            // Create a new object from dbProfile, excluding any keys with `undefined` values.
+            // This prevents an undefined `upiId` from the database from overwriting the default empty string.
+            const cleanDbProfile: Partial<CompanyProfile> = {};
+            for (const key in dbProfile) {
+                if (Object.prototype.hasOwnProperty.call(dbProfile, key)) {
+                    const value = (dbProfile as any)[key];
+                    if (value !== undefined) {
+                        (cleanDbProfile as any)[key] = value;
+                    }
+                }
+            }
+
+            setCompanyProfile({ ...initialCompanyProfile, ...cleanDbProfile });
+        } else {
+            setCompanyProfile(initialCompanyProfile);
         }
     });
     unsubscribers.push(unsubProfile);

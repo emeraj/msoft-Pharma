@@ -1,4 +1,5 @@
 
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
@@ -712,13 +713,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
                 <div>
-                    <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">Patient Name</label>
+                    <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">
+                        {isPharmaMode ? 'Patient Name' : 'Customer Name'}
+                    </label>
                     <input
                         type="text"
                         id="customerName"
                         value={customerName}
                         onChange={e => setCustomerName(e.target.value)}
-                        placeholder="Walk-in Patient"
+                        placeholder={isPharmaMode ? 'Walk-in Patient' : 'Walk-in Customer'}
                         className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
                     />
                 </div>

@@ -35,6 +35,16 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
     const items = bill?.items || [];
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
+    const showUpiQr = companyProfile.upiId && companyProfile.upiId.trim() !== '' && bill.grandTotal > 0;
+
+    const upiUrl = showUpiQr
+        ? `upi://pay?pa=${companyProfile.upiId}&pn=${encodeURIComponent(companyProfile.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`
+        : '';
+
+    const qrCodeUrl = showUpiQr
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiUrl)}`
+        : '';
+
     const gstSummary = useMemo(() => {
         const summary = new Map<number, { taxable: number; gst: number }>();
         bill.items.forEach(item => {
@@ -258,6 +268,16 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                             <li>Please check expiry before leaving the counter.</li>
                         </ol>
                     </div>
+                    {showUpiQr && (
+                        <div style={{textAlign: 'center'}}>
+                            <p style={{fontSize: '8pt', margin: '0 0 1mm 0'}}>Scan to Pay using UPI</p>
+                            <img
+                                src={qrCodeUrl}
+                                alt="UPI QR Code"
+                                style={{ width: '25mm', height: '25mm' }}
+                            />
+                        </div>
+                    )}
                     <div style={{textAlign: 'center', fontSize: '9pt'}}>
                         <p style={{marginBottom: '15mm'}}>For {companyProfile.name}</p>
                         <p style={{borderTop: '1px solid #4a5568', paddingTop: '1mm', margin: 0}}>Authorised Signatory</p>

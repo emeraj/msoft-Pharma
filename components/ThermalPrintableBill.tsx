@@ -5,16 +5,15 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
     const items = bill?.items || [];
     const line = '-'.repeat(42);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
-    const isRetailMode = systemConfig.softwareMode === 'Retail';
 
-    const showUpiQr = isRetailMode && companyProfile.upiId && companyProfile.upiId.trim() !== '';
+    const showUpiQr = companyProfile.upiId && companyProfile.upiId.trim() !== '' && bill.grandTotal > 0;
 
     const upiUrl = showUpiQr
         ? `upi://pay?pa=${companyProfile.upiId}&pn=${encodeURIComponent(companyProfile.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`
         : '';
 
     const qrCodeUrl = showUpiQr
-        ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(upiUrl)}&size=150x150&margin=0`
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiUrl)}`
         : '';
 
     const gstSummary = useMemo(() => {
