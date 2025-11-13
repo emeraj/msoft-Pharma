@@ -125,6 +125,7 @@ export interface CompanyProfile {
   phone?: string;
   email?: string;
   gstin: string;
+  upiId?: string;
 }
 
 export interface SystemConfig {

@@ -50,7 +50,7 @@ const App: React.FC = () => {
   const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [isSettingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ'});
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ', upiId: ''});
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     softwareMode: 'Pharma',
     invoicePrintingFormat: 'A5',
@@ -79,7 +79,7 @@ const App: React.FC = () => {
       setSuppliers([]);
       setPayments([]);
       setGstRates([]);
-      setCompanyProfile({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ' });
+      setCompanyProfile({ name: 'Medico - Retail', address: '123 Cloud Ave, Tech City', phone: '', email: '', gstin: 'ABCDE12345FGHIJ', upiId: '' });
       setSystemConfig({
         softwareMode: 'Pharma',
         invoicePrintingFormat: 'A5',

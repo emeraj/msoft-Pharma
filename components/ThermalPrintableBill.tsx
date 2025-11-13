@@ -7,11 +7,13 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const isRetailMode = systemConfig.softwareMode === 'Retail';
 
-    const upiUrl = isRetailMode
-        ? `upi://pay?pa=emeraj@oksbi&pn=${encodeURIComponent(companyProfile.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`
+    const showUpiQr = isRetailMode && companyProfile.upiId && companyProfile.upiId.trim() !== '';
+
+    const upiUrl = showUpiQr
+        ? `upi://pay?pa=${companyProfile.upiId}&pn=${encodeURIComponent(companyProfile.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`
         : '';
 
-    const qrCodeUrl = isRetailMode
+    const qrCodeUrl = showUpiQr
         ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(upiUrl)}&size=150x150&margin=0`
         : '';
 
@@ -166,7 +168,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
 
             <div style={styles.line}>{line}</div>
 
-            {isRetailMode && (
+            {showUpiQr && (
                 <div style={{...styles.textCenter, margin: '8px 0'}}>
                     <p style={{...styles.subHeader, margin: '0 0 4px 0'}}>Scan to Pay using UPI</p>
                     <img

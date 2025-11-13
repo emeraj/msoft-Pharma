@@ -109,6 +109,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
                         <input type="text" name="gstin" value={profile.gstin || ''} onChange={handleProfileChange} className={formInputStyle} />
                     </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">UPI ID (for QR Code on Bill)</label>
+                        <input type="text" name="upiId" value={profile.upiId || ''} onChange={handleProfileChange} className={formInputStyle} placeholder="e.g., yourname@oksbi" />
+                    </div>
                      <div className="flex justify-end pt-4">
                         <button onClick={handleSaveProfile} className="flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all">
                             <CheckCircleIcon className="h-5 w-5" />
