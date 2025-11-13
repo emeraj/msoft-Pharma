@@ -62,6 +62,8 @@ const App: React.FC = () => {
   const [systemConfig, setSystemConfig] = useState<SystemConfig>({
     softwareMode: 'Pharma',
     invoicePrintingFormat: 'A5',
+    remarkLine1: 'Thank you for your visit!',
+    remarkLine2: 'Get Well Soon.',
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -91,6 +93,8 @@ const App: React.FC = () => {
       setSystemConfig({
         softwareMode: 'Pharma',
         invoicePrintingFormat: 'A5',
+        remarkLine1: 'Thank you for your visit!',
+        remarkLine2: 'Get Well Soon.',
       });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors

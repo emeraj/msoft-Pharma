@@ -207,6 +207,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                          </div>
                     </div>
 
+                    <div className="border-t dark:border-slate-700 pt-4">
+                        <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Bill Footer Remarks</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                            Customize the two lines of text that appear at the bottom of printed bills.
+                        </p>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Remark Line 1</label>
+                                <input
+                                    type="text"
+                                    name="remarkLine1"
+                                    value={config.remarkLine1 || ''}
+                                    onChange={handleConfigChange}
+                                    className={formInputStyle}
+                                    placeholder="e.g., Thank you for your visit!"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Remark Line 2</label>
+                                <input
+                                    type="text"
+                                    name="remarkLine2"
+                                    value={config.remarkLine2 || ''}
+                                    onChange={handleConfigChange}
+                                    className={formInputStyle}
+                                    placeholder="e.g., Get Well Soon."
+                                />
+                            </div>
+                        </div>
+                    </div>
+
                      <div className="flex justify-end pt-4">
                         <button onClick={handleSaveConfig} className="flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all">
                             <CheckCircleIcon className="h-5 w-5" />

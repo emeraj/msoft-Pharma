@@ -179,8 +179,8 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             )}
 
             <div style={{ ...styles.textCenter, ...styles.mt2, fontSize: '11px' }}>
-                <p style={{margin: '2px 0'}}>Thank you for your visit!</p>
-                <p style={{margin: '2px 0'}}>Get Well Soon.</p>
+                {systemConfig.remarkLine1 && <p style={{margin: '2px 0'}}>{systemConfig.remarkLine1}</p>}
+                {systemConfig.remarkLine2 && <p style={{margin: '2px 0'}}>{systemConfig.remarkLine2}</p>}
             </div>
         </pre>
     );

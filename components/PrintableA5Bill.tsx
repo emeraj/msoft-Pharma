@@ -267,6 +267,10 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                             <li>Goods once sold cannot be returned.</li>
                             <li>Please check expiry before leaving the counter.</li>
                         </ol>
+                        <div style={{ marginTop: '5mm', fontStyle: 'italic', fontSize: '9pt' }}>
+                            {systemConfig.remarkLine1 && <p style={{ margin: 0 }}>{systemConfig.remarkLine1}</p>}
+                            {systemConfig.remarkLine2 && <p style={{ margin: '1mm 0 0 0' }}>{systemConfig.remarkLine2}</p>}
+                        </div>
                     </div>
                     {showUpiQr && (
                         <div style={{textAlign: 'center'}}>

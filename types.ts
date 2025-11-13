@@ -131,4 +131,6 @@ export interface CompanyProfile {
 export interface SystemConfig {
   softwareMode: 'Retail' | 'Pharma';
   invoicePrintingFormat: 'A4' | 'A5' | 'Thermal';
+  remarkLine1?: string;
+  remarkLine2?: string;
 }
