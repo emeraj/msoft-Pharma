@@ -5,6 +5,15 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
     const items = bill?.items || [];
     const line = '-'.repeat(42);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    const isRetailMode = systemConfig.softwareMode === 'Retail';
+
+    const upiUrl = isRetailMode
+        ? `upi://pay?pa=emeraj@oksbi&pn=${encodeURIComponent(companyProfile.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`
+        : '';
+
+    const qrCodeUrl = isRetailMode
+        ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(upiUrl)}&size=150x150&margin=0`
+        : '';
 
     const gstSummary = useMemo(() => {
         const summary = new Map<number, { taxable: number; gst: number }>();
@@ -156,6 +165,17 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
 
 
             <div style={styles.line}>{line}</div>
+
+            {isRetailMode && (
+                <div style={{...styles.textCenter, margin: '8px 0'}}>
+                    <p style={{...styles.subHeader, margin: '0 0 4px 0'}}>Scan to Pay using UPI</p>
+                    <img
+                        src={qrCodeUrl}
+                        alt="UPI QR Code"
+                        style={{ width: '40mm', height: '40mm', margin: '0 auto' }}
+                    />
+                </div>
+            )}
 
             <div style={{ ...styles.textCenter, ...styles.mt2, fontSize: '11px' }}>
                 <p style={{margin: '2px 0'}}>Thank you for your visit!</p>
