@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile, GstRate } from '../types';
@@ -176,6 +177,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         companies={companies}
         systemConfig={systemConfig}
         gstRates={gstRates}
+        products={products}
       />
 
       {selectedProduct && (
@@ -913,7 +915,7 @@ const BatchListTable: React.FC<{ title: string; batches: BatchWithProductInfo[],
 const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[]; systemConfig: SystemConfig; gstRates: GstRate[]; }> = ({ isOpen, onClose, onAddProduct, companies, systemConfig, gstRates }) => {
+const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[]; systemConfig: SystemConfig; gstRates: GstRate[]; products: Product[]; }> = ({ isOpen, onClose, onAddProduct, companies, systemConfig, gstRates, products }) => {
   const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
   const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
 
@@ -955,6 +957,16 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const { name, company, hsnCode, gst, barcode, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
+    
+    // Duplicate Barcode Check for Retail Mode
+    if (!isPharmaMode && barcode && barcode.trim() !== '') {
+        const exists = products.some(p => p.barcode === barcode.trim());
+        if (exists) {
+            alert('Barcode already exist!');
+            return;
+        }
+    }
+
     if (!name || !company || !stock || !mrp) return;
     if (isPharmaMode && (!batchNumber || !expiryDate)) {
         alert("Batch Number and Expiry Date are required in Pharma Mode.");
