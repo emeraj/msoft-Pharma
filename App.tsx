@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate } from './types';
 import Header from './components/Header';
@@ -622,12 +623,27 @@ const App: React.FC = () => {
                 id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
                 stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
             };
+
+            // Barcode logic: Auto-generate if empty in Retail mode
+            let barcode = item.barcode;
+            if (systemConfig.softwareMode === 'Retail' && (!barcode || barcode.trim() === '')) {
+                 let maxBarcodeNum = 0;
+                 products.forEach(p => {
+                    if (p.barcode && !isNaN(parseInt(p.barcode, 10))) {
+                      const barcodeNum = parseInt(p.barcode, 10);
+                      if (barcodeNum > maxBarcodeNum) maxBarcodeNum = barcodeNum;
+                    }
+                  });
+                  barcode = String(maxBarcodeNum + 1).padStart(6, '0');
+            }
+
             const newProductRef = doc(collection(db, `users/${uid}/products`));
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
                 composition: item.composition, unitsPerStrip: item.unitsPerStrip,
                 isScheduleH: item.isScheduleH,
-                batches: [newBatchData]
+                batches: [newBatchData],
+                barcode: barcode || null
             });
             finalItem.productId = newProductRef.id;
             finalItem.batchId = newBatchId;
@@ -725,14 +741,30 @@ const App: React.FC = () => {
         if (item.isNewProduct) {
             const newBatchId = `batch_${uniqueIdSuffix()}`;
             const totalUnitsToAdd = item.quantity * (item.unitsPerStrip || 1);
+
+             // Barcode logic: Auto-generate if empty in Retail mode
+            let barcode = item.barcode;
+            if (systemConfig.softwareMode === 'Retail' && (!barcode || barcode.trim() === '')) {
+                 let maxBarcodeNum = 0;
+                 products.forEach(p => {
+                    if (p.barcode && !isNaN(parseInt(p.barcode, 10))) {
+                      const barcodeNum = parseInt(p.barcode, 10);
+                      if (barcodeNum > maxBarcodeNum) maxBarcodeNum = barcodeNum;
+                    }
+                  });
+                  barcode = String(maxBarcodeNum + 1).padStart(6, '0');
+            }
+
             const newProductRef = doc(collection(db, `users/${uid}/products`));
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
                 composition: item.composition, unitsPerStrip: item.unitsPerStrip,
+                isScheduleH: item.isScheduleH,
                 batches: [{
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
                     stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
-                }]
+                }],
+                barcode: barcode || null
             });
             finalItem.productId = newProductRef.id;
             finalItem.batchId = newBatchId;

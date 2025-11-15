@@ -1,8 +1,10 @@
+
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon } from './icons/Icons';
 
 interface PurchasesProps {
     products: Product[];
@@ -137,7 +139,8 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         productSearch: '',
         selectedProduct: null as Product | null,
         productName: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No',
-        batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: ''
+        batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '',
+        barcode: ''
     });
 
     const [formState, setFormState] = useState(getInitialFormState());
@@ -145,6 +148,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const [activeIndex, setActiveIndex] = useState(0);
     const activeItemRef = useRef<HTMLLIElement>(null);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    const [isScanning, setIsScanning] = useState(false);
 
     const companySuggestions = useMemo(() => {
         if (!formState.company) return companies.slice(0, 5);
@@ -162,8 +166,12 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
     const searchResults = useMemo(() => {
         if (!formState.productSearch || formState.selectedProduct) return [];
-        return products.filter(p => p.name.toLowerCase().includes(formState.productSearch.toLowerCase())).slice(0, 5);
-    }, [formState.productSearch, products, formState.selectedProduct]);
+        const term = formState.productSearch.toLowerCase();
+        return products.filter(p => 
+            p.name.toLowerCase().includes(term) || 
+            (!isPharmaMode && p.barcode && p.barcode.includes(term))
+        ).slice(0, 5);
+    }, [formState.productSearch, products, formState.selectedProduct, isPharmaMode]);
 
     useEffect(() => {
         setActiveIndex(0);
@@ -175,6 +183,51 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             block: 'nearest',
         });
     }, [activeIndex]);
+
+    // --- Scanner Logic ---
+    useEffect(() => {
+        if (isScanning) {
+            const script = document.createElement('script');
+            script.src = "https://unpkg.com/html5-qrcode";
+            script.async = true;
+            document.body.appendChild(script);
+
+            script.onload = () => {
+                startScanner();
+            };
+
+             // If already loaded
+             if ((window as any).Html5QrcodeScanner) {
+                startScanner();
+             }
+             
+            return () => {
+                // Cleanup logic if needed, but scanner clears on close
+                const element = document.getElementById('reader');
+                if (element) element.innerHTML = '';
+            };
+        }
+    }, [isScanning]);
+
+    const startScanner = () => {
+        const Html5QrcodeScanner = (window as any).Html5QrcodeScanner;
+        if (!Html5QrcodeScanner) return;
+
+        const scanner = new Html5QrcodeScanner(
+            "reader",
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            /* verbose= */ false
+        );
+
+        scanner.render((decodedText: string) => {
+            setFormState(prev => ({ ...prev, barcode: decodedText }));
+            scanner.clear();
+            setIsScanning(false);
+        }, (error: any) => {
+            // console.warn(`Code scan error = ${error}`);
+        });
+    };
+    // --------------------
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (searchResults.length === 0) return;
@@ -242,7 +295,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, quantity, mrp, purchasePrice } = formState;
+        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, quantity, mrp, purchasePrice, barcode } = formState;
 
         if (isNewProduct && (!productName || !company)) {
             alert('Product Name and Company are required for a new product.');
@@ -264,6 +317,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
+            barcode: isNewProduct && !isPharmaMode ? barcode : undefined,
         };
 
         if (isPharmaMode && isNewProduct) {
@@ -299,7 +353,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                         value={formState.productSearch}
                         onChange={handleChange}
                         onKeyDown={handleKeyDown}
-                        placeholder="Type to search..."
+                        placeholder={isPharmaMode ? "Type to search..." : "Scan barcode or type name..."}
                         className={`mt-1 w-full ${formInputStyle}`}
                         disabled={formState.isNewProduct || disabled}
                         autoComplete="off"
@@ -318,7 +372,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                                             : 'hover:bg-indigo-100 dark:hover:bg-indigo-900'
                                     }`}
                                 >
-                                    {p.name} ({p.company})
+                                    {p.name} ({p.company}) {!isPharmaMode && p.barcode && <span className="text-xs text-gray-500">[{p.barcode}]</span>}
                                 </li>
                             ))}
                         </ul>
@@ -364,6 +418,19 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                             )}
                         </div>
                         <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
+                        {!isPharmaMode && (
+                            <div className="relative flex gap-1 items-center col-span-2 md:col-span-1">
+                                <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
+                                <button
+                                    type="button"
+                                    onClick={() => setIsScanning(true)}
+                                    className="p-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-300"
+                                    title="Scan Barcode"
+                                >
+                                    <CameraIcon className="h-5 w-5" />
+                                </button>
+                            </div>
+                        )}
                         <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
                            {sortedGstRates.map(rate => (
                             <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
@@ -402,6 +469,12 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                      </div>
                 </div>
             )}
+             <Modal isOpen={isScanning} onClose={() => setIsScanning(false)} title="Scan Barcode">
+                <div id="reader" className="w-full"></div>
+                <div className="mt-4 flex justify-end">
+                    <button type="button" onClick={() => setIsScanning(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
+                </div>
+            </Modal>
             <style>{`
                 @keyframes fade-in {
                     0% { opacity: 0; transform: translateY(-10px); }

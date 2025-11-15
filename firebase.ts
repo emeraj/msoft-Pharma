@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import admin from "firebase-admin";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
