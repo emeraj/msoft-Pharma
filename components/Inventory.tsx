@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, BarcodeIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, BarcodeIcon, CameraIcon } from './icons/Icons';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -925,6 +925,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
 
   const [formState, setFormState] = useState(getInitialFormState());
   const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
   const companySuggestions = useMemo(() => {
@@ -943,6 +944,49 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
     setShowCompanySuggestions(false);
   };
 
+  // --- Scanner Logic ---
+  useEffect(() => {
+    if (isScanning) {
+        const script = document.createElement('script');
+        script.src = "https://unpkg.com/html5-qrcode";
+        script.async = true;
+        document.body.appendChild(script);
+
+        script.onload = () => {
+            startScanner();
+        };
+
+         // If already loaded
+         if ((window as any).Html5QrcodeScanner) {
+            startScanner();
+         }
+         
+        return () => {
+            // Cleanup logic if needed, but scanner clears on close
+            const element = document.getElementById('reader-inventory');
+            if (element) element.innerHTML = '';
+        };
+    }
+  }, [isScanning]);
+
+  const startScanner = () => {
+    const Html5QrcodeScanner = (window as any).Html5QrcodeScanner;
+    if (!Html5QrcodeScanner) return;
+
+    const scanner = new Html5QrcodeScanner(
+        "reader-inventory",
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        /* verbose= */ false
+    );
+
+    scanner.render((decodedText: string) => {
+        setFormState(prev => ({ ...prev, barcode: decodedText }));
+        scanner.clear();
+        setIsScanning(false);
+    }, (error: any) => {
+        // console.warn(`Code scan error = ${error}`);
+    });
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormState({ ...formState, [e.target.name]: e.target.value });
@@ -994,6 +1038,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   };
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title="Add New Product">
       <form onSubmit={handleSubmit} className="space-y-4">
         <h4 className="font-semibold text-slate-700 dark:text-slate-300">Product Details</h4>
@@ -1045,7 +1090,17 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
             </>
           )}
           {!isPharmaMode && (
-             <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode (auto-generated if empty)" className={formInputStyle} />
+             <div className="flex gap-2 items-center">
+                <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode (auto-generated if empty)" className={formInputStyle} />
+                <button
+                    type="button"
+                    onClick={() => setIsScanning(true)}
+                    className="p-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-300 flex-shrink-0"
+                    title="Scan Barcode"
+                >
+                    <CameraIcon className="h-5 w-5" />
+                </button>
+             </div>
           )}
         </div>
         <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">Initial Stock Details</h4>
@@ -1062,6 +1117,14 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         </div>
       </form>
     </Modal>
+
+    <Modal isOpen={isScanning} onClose={() => setIsScanning(false)} title="Scan Barcode">
+        <div id="reader-inventory" className="w-full"></div>
+        <div className="mt-4 flex justify-end">
+            <button type="button" onClick={() => setIsScanning(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
+        </div>
+    </Modal>
+    </>
   );
 };
 
@@ -1146,19 +1209,19 @@ const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, pr
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className={labelStyle}>Product Name*</label>
+            <label className="labelStyle">Product Name*</label>
             <input name="name" value={formState.name} onChange={handleChange} placeholder="Product Name" className={formInputStyle} required />
           </div>
           <div>
-            <label className={labelStyle}>Company*</label>
+            <label className="labelStyle">Company*</label>
             <input name="company" value={formState.company} onChange={handleChange} placeholder="Company" className={formInputStyle} required />
           </div>
           <div>
-            <label className={labelStyle}>HSN Code</label>
+            <label className="labelStyle">HSN Code</label>
             <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
           </div>
           <div>
-            <label className={labelStyle}>GST Rate</label>
+            <label className="labelStyle">GST Rate</label>
             <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
              {sortedGstRates.map(rate => (
               <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
@@ -1168,36 +1231,36 @@ const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, pr
           {isPharmaMode && (
             <>
                 <div>
-                    <label className={labelStyle}>Units per Strip</label>
+                    <label className="labelStyle">Units per Strip</label>
                     <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="e.g., 10" className={formInputStyle} min="1" />
                 </div>
                 <div>
-                    <label className={labelStyle}>Schedule H Drug?</label>
+                    <label className="labelStyle">Schedule H Drug?</label>
                     <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
                         <option value="No">No</option>
                         <option value="Yes">Yes</option>
                     </select>
                 </div>
                 <div className="sm:col-span-2">
-                    <label className={labelStyle}>Composition</label>
+                    <label className="labelStyle">Composition</label>
                     <input name="composition" value={formState.composition} onChange={handleChange} placeholder="e.g., Paracetamol 500mg" className={formInputStyle} />
                 </div>
             </>
           )}
           {!isPharmaMode && (
             <div className="sm:col-span-2">
-                <label className={labelStyle}>Barcode</label>
+                <label className="labelStyle">Barcode</label>
                 <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
             </div>
           )}
            {showPriceFields && (
             <>
                 <div>
-                    <label className={labelStyle}>MRP</label>
+                    <label className="labelStyle">MRP</label>
                     <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} min="0" step="0.01" />
                 </div>
                 <div>
-                    <label className={labelStyle}>Purchase Price</label>
+                    <label className="labelStyle">Purchase Price</label>
                     <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01" />
                 </div>
             </>
@@ -1730,3 +1793,4 @@ const PrintLabelModal: React.FC<{
 
 
 export default Inventory;
+

@@ -5,7 +5,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 
 interface BillingProps {
@@ -112,6 +112,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
+  const [isScanning, setIsScanning] = useState(false);
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
 
@@ -152,6 +153,51 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
       setDoctorName('');
     }
   }, [editingBill]);
+
+  // --- Scanner Logic ---
+  useEffect(() => {
+    if (isScanning) {
+        const script = document.createElement('script');
+        script.src = "https://unpkg.com/html5-qrcode";
+        script.async = true;
+        document.body.appendChild(script);
+
+        script.onload = () => {
+            startScanner();
+        };
+
+         // If already loaded
+         if ((window as any).Html5QrcodeScanner) {
+            startScanner();
+         }
+         
+        return () => {
+            // Cleanup logic if needed, but scanner clears on close
+            const element = document.getElementById('reader-billing');
+            if (element) element.innerHTML = '';
+        };
+    }
+  }, [isScanning]);
+
+  const startScanner = () => {
+    const Html5QrcodeScanner = (window as any).Html5QrcodeScanner;
+    if (!Html5QrcodeScanner) return;
+
+    const scanner = new Html5QrcodeScanner(
+        "reader-billing",
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        /* verbose= */ false
+    );
+
+    scanner.render((decodedText: string) => {
+        setSearchTerm(decodedText);
+        scanner.clear();
+        setIsScanning(false);
+    }, (error: any) => {
+        // console.warn(`Code scan error = ${error}`);
+    });
+  };
+  // --------------------
 
   const doctorList = useMemo(() => {
     const doctors = new Set<string>();
@@ -543,97 +589,108 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2">
         <Card title={isEditing ? `Editing Bill: ${editingBill?.billNumber}` : 'Create Bill'}>
-          <div className="relative mb-4">
-            <input
-              ref={searchInputRef}
-              type="text"
-              placeholder={`Search for products by name ${isPharmaMode ? '' : 'or barcode'}...`}
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className={`${inputStyle} w-full px-4 py-3 text-lg`}
-            />
-            {searchResults.length > 0 && searchTerm && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                <ul>
-                  {searchResults.map((product, productIndex) => (
-                    navigableBatchesByProduct[productIndex]?.length > 0 &&
-                    <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
-                      <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
-                        <span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span>
-                        {isPharmaMode && product.composition && (
-                          <button
-                              onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
-                              className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2 py-1 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
-                              title="Find substitute medicines"
-                          >
-                              <SwitchHorizontalIcon className="h-4 w-4" />
-                              Substitutes
-                          </button>
-                        )}
-                      </div>
-                      <ul className="pl-4 pb-2">
-                        {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => {
-                          const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch;
-                          const unitsPerStrip = product.unitsPerStrip || 1;
-                          return (
-                            <li
-                              key={batch.id}
-                              ref={isActive ? activeItemRef : null}
-                              className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${
-                                isActive
-                                  ? 'bg-indigo-200 dark:bg-indigo-700'
-                                  : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'
-                              }`}
-                              onClick={() => handleAddToCart(product, batch)}
-                              onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}
+          <div className="flex gap-2 mb-4">
+            <div className="relative flex-grow">
+                <input
+                ref={searchInputRef}
+                type="text"
+                placeholder={`Search for products by name ${isPharmaMode ? '' : 'or barcode'}...`}
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className={`${inputStyle} w-full px-4 py-3 text-lg`}
+                />
+                {searchResults.length > 0 && searchTerm && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
+                    <ul>
+                    {searchResults.map((product, productIndex) => (
+                        navigableBatchesByProduct[productIndex]?.length > 0 &&
+                        <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
+                        <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
+                            <span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span>
+                            {isPharmaMode && product.composition && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleFindSubstitutes(product); }}
+                                className="flex items-center gap-1 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-2 py-1 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+                                title="Find substitute medicines"
                             >
-                              <div>
-                                {isPharmaMode && (
-                                  <>
-                                    <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                    <span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span>
-                                  </>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-4">
-                                <span className="text-slate-800 dark:text-slate-200">
-                                  MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span>
-                                  {isPharmaMode && unitsPerStrip > 1 && <span className="text-xs">/S</span>}
-                                  {isPharmaMode && unitsPerStrip > 1 && <span className="text-xs text-slate-500 dark:text-slate-400"> (₹{(batch.mrp / unitsPerStrip).toFixed(2)}/U)</span>}
-                                </span>
-                                <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span>
-                              </div>
-                            </li>
-                          );
-                        })}
-                        {isPharmaMode && product.batches
-                            .filter(b => b.stock > 0 && getExpiryDate(b.expiryDate) < today)
-                            .map(batch => {
-                                const expiry = getExpiryDate(batch.expiryDate);
-                                return (
+                                <SwitchHorizontalIcon className="h-4 w-4" />
+                                Substitutes
+                            </button>
+                            )}
+                        </div>
+                        <ul className="pl-4 pb-2">
+                            {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => {
+                            const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch;
+                            const unitsPerStrip = product.unitsPerStrip || 1;
+                            return (
                                 <li
-                                    key={batch.id}
-                                    className={'px-4 py-2 flex justify-between items-center transition-colors bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 cursor-not-allowed rounded-md mx-2 my-1'}
-                                    title={`This batch expired on ${expiry.toLocaleDateString()}`}
+                                key={batch.id}
+                                ref={isActive ? activeItemRef : null}
+                                className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${
+                                    isActive
+                                    ? 'bg-indigo-200 dark:bg-indigo-700'
+                                    : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'
+                                }`}
+                                onClick={() => handleAddToCart(product, batch)}
+                                onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}
                                 >
                                 <div>
-                                    <span>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                    <span className={`text-sm ml-3`}>Exp: {batch.expiryDate}</span>
-                                    <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>
+                                    {isPharmaMode && (
+                                    <>
+                                        <span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                        <span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span>
+                                    </>
+                                    )}
                                 </div>
-                                <div>
-                                    <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                    <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {formatStock(batch.stock, product.unitsPerStrip)}</span>
+                                <div className="flex items-center gap-4">
+                                    <span className="text-slate-800 dark:text-slate-200">
+                                    MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span>
+                                    {isPharmaMode && unitsPerStrip > 1 && <span className="text-xs">/S</span>}
+                                    {isPharmaMode && unitsPerStrip > 1 && <span className="text-xs text-slate-500 dark:text-slate-400"> (₹{(batch.mrp / unitsPerStrip).toFixed(2)}/U)</span>}
+                                    </span>
+                                    <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span>
                                 </div>
                                 </li>
-                                );
+                            );
                             })}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                            {isPharmaMode && product.batches
+                                .filter(b => b.stock > 0 && getExpiryDate(b.expiryDate) < today)
+                                .map(batch => {
+                                    const expiry = getExpiryDate(batch.expiryDate);
+                                    return (
+                                    <li
+                                        key={batch.id}
+                                        className={'px-4 py-2 flex justify-between items-center transition-colors bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 cursor-not-allowed rounded-md mx-2 my-1'}
+                                        title={`This batch expired on ${expiry.toLocaleDateString()}`}
+                                    >
+                                    <div>
+                                        <span>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
+                                        <span className={`text-sm ml-3`}>Exp: {batch.expiryDate}</span>
+                                        <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-red-600 dark:bg-red-700 rounded-full">Expired</span>
+                                    </div>
+                                    <div>
+                                        <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
+                                        <span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {formatStock(batch.stock, product.unitsPerStrip)}</span>
+                                    </div>
+                                    </li>
+                                    );
+                                })}
+                        </ul>
+                        </li>
+                    ))}
+                    </ul>
+                </div>
+                )}
+            </div>
+            {!isPharmaMode && (
+                <button
+                    onClick={() => setIsScanning(true)}
+                    className="p-3 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors"
+                    title="Scan Barcode"
+                >
+                    <CameraIcon className="h-6 w-6" />
+                </button>
             )}
           </div>
           <div className="mt-6">
@@ -786,6 +843,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             onAddToCart={handleAddToCart}
           />
       )}
+      
+      <Modal isOpen={isScanning} onClose={() => setIsScanning(false)} title="Scan Barcode">
+        <div id="reader-billing" className="w-full"></div>
+        <div className="mt-4 flex justify-end">
+            <button type="button" onClick={() => setIsScanning(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
+        </div>
+      </Modal>
+
     </div>
   );
 };
