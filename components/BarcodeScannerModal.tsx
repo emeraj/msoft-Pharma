@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import Modal from './common/Modal';
 
@@ -17,6 +18,23 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
   const lastScanRef = useRef<{text: string, time: number}>({text: '', time: 0});
   const readerId = "reader-barcode-scanner";
   const isMounted = useRef(false);
+
+  // Refs for callbacks and props to avoid restarting scanner on re-renders
+  const onScanSuccessRef = useRef(onScanSuccess);
+  const onCloseRef = useRef(onClose);
+  const closeOnScanRef = useRef(closeOnScan);
+
+  useEffect(() => {
+    onScanSuccessRef.current = onScanSuccess;
+  }, [onScanSuccess]);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    closeOnScanRef.current = closeOnScan;
+  }, [closeOnScan]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -88,14 +106,15 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
                     if (isCancelled || !isMounted.current) return;
 
                     const now = Date.now();
+                    // 1.5s debounce to prevent multiple scans of the same code
                     if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 1500) {
                         return;
                     }
                     lastScanRef.current = { text: decodedText, time: now };
 
-                    onScanSuccess(decodedText);
-                    if (closeOnScan) {
-                        onClose();
+                    onScanSuccessRef.current(decodedText);
+                    if (closeOnScanRef.current) {
+                        onCloseRef.current();
                     }
                 },
                 () => {
@@ -129,7 +148,8 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
              scannerRef.current = null;
         }
     };
-  }, [isOpen, onScanSuccess, closeOnScan, onClose]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // Only restart if isOpen changes
 
   if (!isOpen) return null;
 

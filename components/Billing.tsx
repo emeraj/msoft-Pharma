@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
@@ -153,11 +154,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
   }, [editingBill]);
 
-  const handleScanSuccess = (decodedText: string) => {
-      setSearchTerm(decodedText);
-      setIsScanning(false);
-  };
-
   const doctorList = useMemo(() => {
     const doctors = new Set<string>();
     bills.forEach(bill => {
@@ -301,6 +297,28 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const removeFromCart = (batchId: string) => {
     setCart(cart.filter(item => item.batchId !== batchId));
+  };
+
+  const handleScanSuccess = (decodedText: string) => {
+      if (isPharmaMode) {
+          setSearchTerm(decodedText);
+          setIsScanning(false);
+      } else {
+          // Retail Mode Logic: Continuous scan & auto-add
+          const product = products.find(p => p.barcode === decodedText);
+          if (product) {
+               // Find first batch with stock
+               const availableBatches = product.batches.filter(b => b.stock > 0);
+               if (availableBatches.length > 0) {
+                   handleAddToCart(product, availableBatches[0]);
+               } else {
+                   alert(`Product "${product.name}" is out of stock.`);
+               }
+          } else {
+              alert(`Product with barcode "${decodedText}" not found.`);
+          }
+          // In retail mode, do NOT close the scanner to allow continuous scanning
+      }
   };
 
   const handleFindSubstitutes = (product: Product) => {
@@ -807,6 +825,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         isOpen={isScanning}
         onClose={() => setIsScanning(false)}
         onScanSuccess={handleScanSuccess}
+        closeOnScan={isPharmaMode}
       />
 
     </div>
