@@ -1,10 +1,9 @@
-
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon } from './icons/Icons';
+import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface PurchasesProps {
     products: Product[];
@@ -184,50 +183,10 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         });
     }, [activeIndex]);
 
-    // --- Scanner Logic ---
-    useEffect(() => {
-        if (isScanning) {
-            const script = document.createElement('script');
-            script.src = "https://unpkg.com/html5-qrcode";
-            script.async = true;
-            document.body.appendChild(script);
-
-            script.onload = () => {
-                startScanner();
-            };
-
-             // If already loaded
-             if ((window as any).Html5QrcodeScanner) {
-                startScanner();
-             }
-             
-            return () => {
-                // Cleanup logic if needed, but scanner clears on close
-                const element = document.getElementById('reader');
-                if (element) element.innerHTML = '';
-            };
-        }
-    }, [isScanning]);
-
-    const startScanner = () => {
-        const Html5QrcodeScanner = (window as any).Html5QrcodeScanner;
-        if (!Html5QrcodeScanner) return;
-
-        const scanner = new Html5QrcodeScanner(
-            "reader",
-            { fps: 10, qrbox: { width: 250, height: 250 } },
-            /* verbose= */ false
-        );
-
-        scanner.render((decodedText: string) => {
-            setFormState(prev => ({ ...prev, barcode: decodedText }));
-            scanner.clear();
-            setIsScanning(false);
-        }, (error: any) => {
-            // console.warn(`Code scan error = ${error}`);
-        });
+    const handleScanSuccess = (decodedText: string) => {
+        setFormState(prev => ({ ...prev, barcode: decodedText }));
+        setIsScanning(false);
     };
-    // --------------------
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (searchResults.length === 0) return;
@@ -469,12 +428,11 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                      </div>
                 </div>
             )}
-             <Modal isOpen={isScanning} onClose={() => setIsScanning(false)} title="Scan Barcode">
-                <div id="reader" className="w-full"></div>
-                <div className="mt-4 flex justify-end">
-                    <button type="button" onClick={() => setIsScanning(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
-                </div>
-            </Modal>
+             <BarcodeScannerModal 
+                isOpen={isScanning} 
+                onClose={() => setIsScanning(false)} 
+                onScanSuccess={handleScanSuccess} 
+             />
             <style>{`
                 @keyframes fade-in {
                     0% { opacity: 0; transform: translateY(-10px); }

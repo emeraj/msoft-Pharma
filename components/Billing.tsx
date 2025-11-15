@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
@@ -7,6 +5,7 @@ import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
+import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface BillingProps {
   products: Product[];
@@ -154,50 +153,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
   }, [editingBill]);
 
-  // --- Scanner Logic ---
-  useEffect(() => {
-    if (isScanning) {
-        const script = document.createElement('script');
-        script.src = "https://unpkg.com/html5-qrcode";
-        script.async = true;
-        document.body.appendChild(script);
-
-        script.onload = () => {
-            startScanner();
-        };
-
-         // If already loaded
-         if ((window as any).Html5QrcodeScanner) {
-            startScanner();
-         }
-         
-        return () => {
-            // Cleanup logic if needed, but scanner clears on close
-            const element = document.getElementById('reader-billing');
-            if (element) element.innerHTML = '';
-        };
-    }
-  }, [isScanning]);
-
-  const startScanner = () => {
-    const Html5QrcodeScanner = (window as any).Html5QrcodeScanner;
-    if (!Html5QrcodeScanner) return;
-
-    const scanner = new Html5QrcodeScanner(
-        "reader-billing",
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        /* verbose= */ false
-    );
-
-    scanner.render((decodedText: string) => {
-        setSearchTerm(decodedText);
-        scanner.clear();
-        setIsScanning(false);
-    }, (error: any) => {
-        // console.warn(`Code scan error = ${error}`);
-    });
+  const handleScanSuccess = (decodedText: string) => {
+      setSearchTerm(decodedText);
+      setIsScanning(false);
   };
-  // --------------------
 
   const doctorList = useMemo(() => {
     const doctors = new Set<string>();
@@ -844,12 +803,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           />
       )}
       
-      <Modal isOpen={isScanning} onClose={() => setIsScanning(false)} title="Scan Barcode">
-        <div id="reader-billing" className="w-full"></div>
-        <div className="mt-4 flex justify-end">
-            <button type="button" onClick={() => setIsScanning(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
-        </div>
-      </Modal>
+      <BarcodeScannerModal 
+        isOpen={isScanning}
+        onClose={() => setIsScanning(false)}
+        onScanSuccess={handleScanSuccess}
+      />
 
     </div>
   );
