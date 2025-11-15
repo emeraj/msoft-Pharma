@@ -302,9 +302,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const handleScanSuccess = (decodedText: string) => {
       if (isPharmaMode) {
           setSearchTerm(decodedText);
-          setIsScanning(false);
+          // setIsScanning(false); // closeOnScan=true handles this
       } else {
-          // Retail Mode Logic: Continuous scan & auto-add
+          // Retail Mode Logic: Auto-add to cart
           const product = products.find(p => p.barcode === decodedText);
           if (product) {
                // Find first batch with stock
@@ -317,7 +317,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           } else {
               alert(`Product with barcode "${decodedText}" not found.`);
           }
-          // In retail mode, do NOT close the scanner to allow continuous scanning
       }
   };
 
@@ -825,7 +824,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         isOpen={isScanning}
         onClose={() => setIsScanning(false)}
         onScanSuccess={handleScanSuccess}
-        closeOnScan={isPharmaMode}
+        closeOnScan={true}
       />
 
     </div>
