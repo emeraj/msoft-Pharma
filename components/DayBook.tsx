@@ -11,6 +11,7 @@ import PrintableBill from './PrintableBill';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { printBillOverBluetooth } from '../utils/bluetoothPrinter';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -99,8 +100,20 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
      }
   };
 
-  const handlePrinterSelection = (printer: PrinterProfile) => {
+  const handlePrinterSelection = async (printer: PrinterProfile) => {
       if (billToPrint) {
+         // Use Bluetooth Plugin if available and format is Thermal
+        if (window.bluetoothSerial && printer.format === 'Thermal' && printer.id && printer.id.includes(':')) {
+            try {
+                await printBillOverBluetooth(billToPrint, companyProfile, systemConfig, printer.id);
+                setBillToPrint(null);
+                return;
+            } catch (err) {
+                console.error("Bluetooth Print Failed", err);
+                alert("Bluetooth Print Failed: " + err + ". Falling back to system print.");
+            }
+        }
+
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
         // Mobile Strategy: Use window.open to ensure print dialog appears

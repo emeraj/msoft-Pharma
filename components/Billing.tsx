@@ -12,6 +12,7 @@ import BarcodeScannerModal from './BarcodeScannerModal';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { printBillOverBluetooth } from '../utils/bluetoothPrinter';
 
 interface BillingProps {
   products: Product[];
@@ -371,8 +372,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
       setShouldResetAfterPrint(false);
   }, [isEditing, onCancelEdit]);
 
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', shouldReset: boolean = false) => {
+  const executePrint = useCallback(async (bill: Bill, format: 'A4' | 'A5' | 'Thermal', shouldReset: boolean = false, printerId?: string) => {
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Use Bluetooth Plugin if available and format is Thermal (and we have a printer ID/MAC)
+    if (window.bluetoothSerial && format === 'Thermal' && printerId && printerId.includes(':')) {
+        try {
+            await printBillOverBluetooth(bill, companyProfile, systemConfig, printerId);
+             if (shouldReset) {
+                resetBillingState();
+            }
+            return;
+        } catch (err) {
+            console.error("Bluetooth Print Failed", err);
+            alert("Bluetooth Print Failed: " + err + ". Falling back to system print.");
+            // Fallback to standard print
+        }
+    }
 
     // Mobile Strategy: use window.open to ensure the system print dialog appears
     if (isMobile) {
@@ -491,7 +507,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer.format, shouldResetAfterPrint);
+          executePrint(billToPrint, printer.format, shouldResetAfterPrint, printer.id);
           setBillToPrint(null);
       }
   };
@@ -545,7 +561,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
         if (printerToUse) {
             // If default printer exists or a printer is found, print automatically without modal
-            executePrint(savedBill, printerToUse.format, true);
+            executePrint(savedBill, printerToUse.format, true, printerToUse.id);
         } else {
             // No printers configured at all, so we must ask
             setBillToPrint(savedBill);
