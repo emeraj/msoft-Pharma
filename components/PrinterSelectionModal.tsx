@@ -12,7 +12,7 @@ interface PrinterSelectionModalProps {
   onSelectPrinter: (printer: PrinterProfile) => void;
 }
 
-type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_nearby' | 'perm_location';
+type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_nearby' | 'perm_location' | 'multi_device';
 
 const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
   const [view, setView] = useState<ViewState>('list');
@@ -43,7 +43,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     setScannedDevices([]);
   }, [isOpen, printers]);
 
-  const handleAddPrinter = () => {
+  const handleAddPrinter = (isShared: boolean) => {
     if (!newPrinter.name) return;
 
     const printer: PrinterProfile = {
@@ -51,6 +51,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       name: newPrinter.name,
       format: newPrinter.format,
       isDefault: newPrinter.isDefault || printers.length === 0,
+      isShared: isShared
     };
 
     let updatedPrinters = [...printers];
@@ -171,6 +172,54 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
           </Modal>
       );
   }
+  
+  if (view === 'multi_device') {
+      return (
+        <Modal isOpen={true} onClose={() => setView('manual_setup')} title="Configure printer">
+            <div className="relative flex flex-col items-center text-center pt-2 pb-6">
+                <div className="absolute -top-12 right-0">
+                     <button onClick={() => setView('manual_setup')} className="bg-slate-800 text-white px-4 py-1.5 rounded-full text-sm font-medium hover:bg-slate-700 transition-colors">
+                         Previous
+                     </button>
+                </div>
+                
+                <p className="text-slate-600 dark:text-slate-400 mb-8 mt-2 w-full text-left text-sm">
+                    Do you want to use same printer with multiple devices?
+                </p>
+
+                <div className="mb-8 flex flex-col items-center justify-center relative h-32">
+                    <div className="bg-blue-500 text-white p-3 rounded-lg mb-4 z-10 shadow-lg">
+                         <PrinterIcon className="h-12 w-12" />
+                    </div>
+                    <div className="flex justify-center gap-4 w-full">
+                        <div className="transform -rotate-12 bg-purple-500/20 p-2 rounded-lg border border-purple-400/30">
+                            <DeviceMobileIcon className="h-10 w-8 text-purple-500" />
+                        </div>
+                         <div className="transform bg-purple-500/20 p-2 rounded-lg border border-purple-400/30 mt-4">
+                            <DeviceMobileIcon className="h-10 w-8 text-purple-500" />
+                        </div>
+                         <div className="transform rotate-12 bg-purple-500/20 p-2 rounded-lg border border-purple-400/30">
+                            <DeviceMobileIcon className="h-10 w-8 text-purple-500" />
+                        </div>
+                    </div>
+                </div>
+                
+                <p className="text-sm text-slate-700 dark:text-slate-300 mb-8 px-2">
+                    Click 'yes' if there are multiple staff/devices who want to use the same printer for printing receipt.
+                </p>
+
+                <div className="flex justify-between w-full gap-4">
+                    <button onClick={() => handleAddPrinter(false)} className="flex-1 py-3 bg-red-400 hover:bg-red-500 text-white rounded-lg font-semibold transition-colors">
+                        No, I don't want
+                    </button>
+                    <button onClick={() => handleAddPrinter(true)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-semibold transition-colors">
+                        Yes, enable it.
+                    </button>
+                </div>
+            </div>
+        </Modal>
+      );
+  }
 
   // --- Main Render Logic ---
 
@@ -202,7 +251,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                             </div>
                             <div className="flex-grow">
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{printer.name}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{printer.format} Format</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{printer.format} Format {printer.isShared ? '• Shared' : ''}</p>
                             </div>
                             {printer.isDefault && (
                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Default</span>
@@ -342,8 +391,8 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700">
                 <button onClick={() => setView('type_select')} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Back</button>
-                <button onClick={handleAddPrinter} disabled={!newPrinter.name} className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    Save Printer
+                <button onClick={() => { if(newPrinter.name) setView('multi_device') }} disabled={!newPrinter.name} className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    Next
                 </button>
             </div>
         </div>

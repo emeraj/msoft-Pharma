@@ -134,6 +134,7 @@ export interface PrinterProfile {
   name: string;
   format: 'A4' | 'A5' | 'Thermal';
   isDefault: boolean;
+  isShared?: boolean;
 }
 
 export interface SystemConfig {
