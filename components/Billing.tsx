@@ -372,50 +372,66 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   }, [isEditing, onCancelEdit]);
 
   const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', shouldReset: boolean = false) => {
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-        const style = printWindow.document.createElement('style');
-        style.innerHTML = `
-            @page { 
-                size: auto;
-                margin: 0mm; 
+    // Create a hidden iframe for direct printing
+    const iframeId = 'print-frame';
+    let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+
+    if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = iframeId;
+        iframe.style.position = 'absolute';
+        iframe.style.top = '-10000px';
+        iframe.style.left = '-10000px';
+        iframe.style.width = '0px';
+        iframe.style.height = '0px';
+        document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+
+    if (doc) {
+        doc.open();
+        doc.write(`
+            <html>
+                <head>
+                    <title>Print</title>
+                    <style>
+                        @page { size: auto; margin: 0mm; }
+                        body { margin: 0; font-family: sans-serif; }
+                    </style>
+                </head>
+                <body><div id="root"></div></body>
+            </html>
+        `);
+        doc.close();
+
+        const rootElement = doc.getElementById('root');
+        if (rootElement) {
+            const root = ReactDOM.createRoot(rootElement);
+            if (format === 'Thermal') {
+                root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else if (format === 'A5') {
+                root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else {
+                root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
             }
-            body {
-                margin: 0;
-            }
-        `;
-        printWindow.document.head.appendChild(style);
-        
-        const rootEl = document.createElement('div');
-        printWindow.document.body.appendChild(rootEl);
-        const root = ReactDOM.createRoot(rootEl);
-        
-        if (format === 'Thermal') {
-             root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-        } else if (format === 'A5') {
-             root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-        } else {
-             // Default A4
-             root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
         }
-        
-        // Increased timeout to 1000ms to ensure rendering is complete on mobile/slower devices.
-        // Removed printWindow.close() because on mobile (Android/iOS), the print() call is non-blocking.
-        // Calling close() immediately often kills the print dialog before the user can interact with it.
+
+        // Wait for render to complete then print
         setTimeout(() => {
-            printWindow.document.title = ' ';
-            printWindow.print();
-            // We do NOT close the window automatically here to ensure mobile compatibility.
-            // printWindow.close(); 
+            if (iframe.contentWindow) {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+            }
             
             if (shouldReset) {
                 resetBillingState();
             }
         }, 1000);
     } else {
-        alert("Please enable popups to print the bill.");
+        alert("Unable to initiate print.");
         if (shouldReset) {
-             resetBillingState();
+            resetBillingState();
         }
     }
   }, [companyProfile, systemConfig, resetBillingState]);
