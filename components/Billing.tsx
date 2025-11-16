@@ -470,11 +470,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
 
     if (savedBill) {
-        const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
-        if (defaultPrinter) {
-            // If default printer exists, print automatically without modal
-            executePrint(savedBill, defaultPrinter.format, true);
+        const printers = systemConfig.printers || [];
+        // Use default printer, or fallback to the first one available to ensure direct print
+        const printerToUse = printers.find(p => p.isDefault) || printers[0];
+
+        if (printerToUse) {
+            // If default printer exists or a printer is found, print automatically without modal
+            executePrint(savedBill, printerToUse.format, true);
         } else {
+            // No printers configured at all, so we must ask
             setBillToPrint(savedBill);
             setShouldResetAfterPrint(true); // Flag to reset cart after printing is done (via modal)
             setPrinterModalOpen(true);
