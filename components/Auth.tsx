@@ -1,6 +1,6 @@
+
 import React, { useState } from 'react';
 import { auth } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, AuthError } from 'firebase/auth';
 import Card from './common/Card';
 import { CloudIcon } from './icons/Icons';
 
@@ -19,14 +19,16 @@ const Auth: React.FC = () => {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        await auth.signInWithEmailAndPassword(email, password);
       } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName: name });
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        if (userCredential.user) {
+            await userCredential.user.updateProfile({ displayName: name });
+        }
       }
-    } catch (err) {
-      const authError = err as AuthError;
-      switch (authError.code) {
+    } catch (err: any) {
+      const code = err.code;
+      switch (code) {
         case 'auth/invalid-credential':
           setError('Incorrect email or password. Please try again.');
           break;
@@ -41,7 +43,7 @@ const Auth: React.FC = () => {
             break;
         default:
           setError('Failed to authenticate. Please try again.');
-          console.error(authError);
+          console.error(err);
       }
     } finally {
       setLoading(false);

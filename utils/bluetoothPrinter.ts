@@ -1,117 +1,116 @@
 
-import { Bill, CompanyProfile, SystemConfig } from '../types';
+import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
-const ESC = '\x1B';
-const GS = '\x1D';
-const COMMANDS = {
-  INIT: ESC + '@',
-  ALIGN_LEFT: ESC + 'a' + '\x00',
-  ALIGN_CENTER: ESC + 'a' + '\x01',
-  ALIGN_RIGHT: ESC + 'a' + '\x02',
-  BOLD_ON: ESC + 'E' + '\x01',
-  BOLD_OFF: ESC + 'E' + '\x00',
-  LF: '\x0A',
-  CUT: GS + 'V' + '\x41' + '\x00', // Full cut
+const ESC = '\x1b';
+const GS = '\x1d';
+const LF = '\x0a';
+
+// Helper to encode string to Uint8Array (simple ASCII/UTF-8 approximation)
+const encode = (data: string) => {
+  const buffer = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) {
+    buffer[i] = data.charCodeAt(i);
+  }
+  return buffer;
 };
 
-export const printBillOverBluetooth = async (
-  bill: Bill, 
-  companyProfile: CompanyProfile, 
-  config: SystemConfig,
-  macAddress: string
-): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const bt = window.bluetoothSerial;
-    if (!bt) {
-      return reject('Bluetooth plugin not available');
-    }
+// Helper to concatenate Uint8Arrays
+const concat = (...arrays: Uint8Array[]) => {
+  const totalLength = arrays.reduce((acc, value) => acc + value.length, 0);
+  const result = new Uint8Array(totalLength);
+  let length = 0;
+  for (const array of arrays) {
+    result.set(array, length);
+    length += array.length;
+  }
+  return result;
+};
 
-    const c = COMMANDS;
-    let data = c.INIT;
-
-    // Helper to add text line
-    const text = (str: string) => data += str + c.LF;
-    const center = () => data += c.ALIGN_CENTER;
-    const left = () => data += c.ALIGN_LEFT;
-    const right = () => data += c.ALIGN_RIGHT;
-    const bold = (on: boolean) => data += on ? c.BOLD_ON : c.BOLD_OFF;
-    // 32 chars for standard 58mm printer
-    const line = () => text('-'.repeat(32)); 
-
-    // Header
-    center();
-    bold(true);
-    text(companyProfile.name);
-    bold(false);
-    text(companyProfile.address);
-    if(companyProfile.phone) text('Ph: ' + companyProfile.phone);
-    if(companyProfile.gstin) text('GSTIN: ' + companyProfile.gstin);
-    line();
-    
-    // Bill Details
-    left();
-    bold(true);
-    text('TAX INVOICE');
-    bold(false);
-    text(`Bill No: ${bill.billNumber}`);
-    text(`Date: ${new Date(bill.date).toLocaleString()}`);
-    text(`Cust: ${bill.customerName}`);
-    if(config.softwareMode === 'Pharma' && bill.doctorName) text(`Doc: ${bill.doctorName}`);
-    line();
-
-    // Items Header
-    // Layout: Item (16) Qty(3) Amt(8) (Approx spaces)
-    text('Item             Qty    Amt');
-    line();
-
-    // Items
-    bill.items.forEach((item) => {
-        // Simple truncation/padding for 32 cols
-        const name = item.productName.substring(0, 16).padEnd(16, ' ');
-        const qty = item.quantity.toString().padStart(3, ' ');
-        const total = item.total.toFixed(2).padStart(8, ' ');
-        text(`${name} ${qty} ${total}`);
-        // If name was longer, print rest on next line
-        if(item.productName.length > 16) {
-             text(item.productName.substring(16));
+export const printBillOverBluetooth = async (bill: Bill, companyProfile: CompanyProfile, systemConfig: SystemConfig, macAddress: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        if (!window.bluetoothSerial) {
+            reject('Bluetooth plugin not available');
+            return;
         }
+
+        const commands: Uint8Array[] = [];
+        const add = (str: string) => commands.push(encode(str));
+
+        // Reset
+        add(ESC + '@');
+        
+        // Center
+        add(ESC + 'a' + '\x01');
+        
+        // Double height/width for title
+        add(GS + '!' + '\x11');
+        add(companyProfile.name.substring(0, 20) + LF);
+        add(GS + '!' + '\x00'); // Normal
+
+        add(companyProfile.address.substring(0, 32) + LF);
+        if(companyProfile.phone) add('Ph: ' + companyProfile.phone + LF);
+        if(companyProfile.gstin) add('GSTIN: ' + companyProfile.gstin + LF);
+        add(LF);
+
+        // Left align
+        add(ESC + 'a' + '\x00');
+        add('Bill No: ' + bill.billNumber + LF);
+        add('Date: ' + new Date(bill.date).toLocaleDateString() + ' ' + new Date(bill.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + LF);
+        add('Customer: ' + bill.customerName + LF);
+        add('-'.repeat(32) + LF);
+
+        // Items
+        add('Item          Qty   Rate   Total' + LF);
+        add('-'.repeat(32) + LF);
+        
+        bill.items.forEach(item => {
+            add(item.productName.substring(0, 32) + LF);
+            
+            const qty = item.quantity.toString();
+            const rate = item.mrp.toFixed(2);
+            const total = item.total.toFixed(2);
+            
+            let line2 = "";
+            // Simple padding logic for 32 columns
+            // Qty at col 14 (length 4), Rate at col 19 (length 7), Total at col 27 (length 8 approx)
+            
+            line2 += " ".repeat(14 - 0); 
+            line2 += qty.padStart(3, ' ');
+            line2 += rate.padStart(8, ' ');
+            line2 += total.padStart(7, ' ');
+            
+            add(line2 + LF);
+        });
+        
+        add('-'.repeat(32) + LF);
+
+        // Totals (Right align)
+        add(ESC + 'a' + '\x02');
+        add('Subtotal: ' + bill.subTotal.toFixed(2) + LF);
+        add('GST: ' + bill.totalGst.toFixed(2) + LF);
+        add(GS + '!' + '\x08'); // Bold
+        add('Grand Total: ' + bill.grandTotal.toFixed(2) + LF);
+        add(GS + '!' + '\x00');
+        add('-'.repeat(32) + LF);
+
+        // Footer (Center)
+        add(ESC + 'a' + '\x01');
+        if (systemConfig.remarkLine1) add(systemConfig.remarkLine1 + LF);
+        add('Thank You!' + LF);
+        add(LF + LF + LF); // Feed
+
+        // Concatenate all commands
+        const data = concat(...commands);
+
+        const print = () => {
+            window.bluetoothSerial.write(data, resolve, reject);
+        };
+
+        window.bluetoothSerial.isConnected(
+            print,
+            () => {
+                window.bluetoothSerial.connect(macAddress, print, reject);
+            }
+        );
     });
-    line();
-
-    // Totals
-    right();
-    text(`SubTotal: ${bill.subTotal.toFixed(2)}`);
-    text(`GST: ${bill.totalGst.toFixed(2)}`);
-    bold(true);
-    text(`Grand Total: ${bill.grandTotal.toFixed(2)}`);
-    bold(false);
-    line();
-
-    // Footer
-    center();
-    if(config.remarkLine1) text(config.remarkLine1);
-    if(config.remarkLine2) text(config.remarkLine2);
-    text('Powered by BillingFast');
-    
-    // Feed paper a bit
-    text(c.LF + c.LF); 
-
-    // Printing Sequence
-    const print = () => {
-        bt.write(data, resolve, (err) => reject('Print Error: ' + JSON.stringify(err)));
-    };
-
-    bt.isConnected(
-        () => {
-            // Connected
-            print();
-        },
-        () => {
-            // Not connected, try to connect
-            bt.connect(macAddress, () => {
-                print();
-            }, (err: any) => reject('Could not connect to printer. ' + JSON.stringify(err)));
-        }
-    );
-  });
 };

@@ -1,13 +1,14 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig } from '../types';
 import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon } from './icons/Icons';
-import { User } from 'firebase/auth';
+import firebase from 'firebase/compat/app';
 
 interface HeaderProps {
   activeView: AppView;
   setActiveView: (view: AppView) => void;
   onOpenSettings: () => void;
-  user: User;
+  user: firebase.User;
   onLogout: () => void;
   systemConfig: SystemConfig;
 }

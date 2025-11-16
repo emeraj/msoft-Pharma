@@ -10,8 +10,8 @@ import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableBill from './PrintableBill';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
 import { printBillOverBluetooth } from '../utils/bluetoothPrinter';
+import { generateReceipt } from '../utils/receiptGenerator';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -95,54 +95,56 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
   
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
-         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
-         updateDoc(configRef, newConfig as any);
+         const configRef = db.doc(`users/${auth.currentUser.uid}/systemConfig/config`);
+         configRef.update(newConfig as any);
      }
   };
 
-  const handlePrinterSelection = async (printer: PrinterProfile) => {
+  const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-         // Use Bluetooth Plugin if available and format is Thermal
-        if (window.bluetoothSerial && printer.format === 'Thermal' && printer.id && printer.id.includes(':')) {
-            try {
-                await printBillOverBluetooth(billToPrint, companyProfile, systemConfig, printer.id);
-                setBillToPrint(null);
-                return;
-            } catch (err) {
-                console.error("Bluetooth Print Failed", err);
-                alert("Bluetooth Print Failed: " + err + ". Falling back to system print.");
+         // RawBT Logic
+         if (printer.connectionType === 'rawbt') {
+            const encodedData = generateReceipt(billToPrint, companyProfile, systemConfig);
+            window.location.href = `rawbt:base64,${encodedData}`;
+            setBillToPrint(null);
+            return;
+         }
+          
+        // Bluetooth Plugin Logic
+        if (printer.connectionType === 'bluetooth' || (printer.format === 'Thermal' && window.bluetoothSerial)) {
+            if (window.bluetoothSerial) {
+               const printerId = printer.id || (printer.name.includes(':') ? printer.name : null);
+               if (printerId) {
+                   printBillOverBluetooth(billToPrint, companyProfile, systemConfig, printerId).catch(err => {
+                       console.error("BT Print Error", err);
+                       alert("Failed to print via Bluetooth. Please check connection.");
+                   });
+                   setBillToPrint(null);
+                   return;
+               }
             }
         }
 
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const printWindow = isMobile ? window.open('', '_blank') : document.createElement('iframe');
+        
+        if (!isMobile) {
+            (printWindow as HTMLIFrameElement).style.display = 'none';
+            document.body.appendChild(printWindow as HTMLIFrameElement);
+        }
 
-        // Mobile Strategy: Use window.open to ensure print dialog appears
-        if (isMobile) {
-             const printWindow = window.open('', '_blank');
-            if (!printWindow) {
-                alert("Please allow popups to print.");
-                setBillToPrint(null);
-                return;
-            }
-
-            printWindow.document.write(`
-                <html>
-                    <head>
-                        <title>Print</title>
-                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <style>
-                            @page { size: auto; margin: 0mm; }
-                            body { margin: 0; font-family: sans-serif; }
-                        </style>
-                    </head>
-                    <body><div id="root"></div></body>
-                </html>
-            `);
-            printWindow.document.close();
-
-            const rootElement = printWindow.document.getElementById('root');
-            if (rootElement) {
-                const root = ReactDOM.createRoot(rootElement);
+        const doc = isMobile ? (printWindow as Window).document : (printWindow as HTMLIFrameElement).contentWindow?.document;
+        if (doc) {
+            doc.open();
+            doc.write('<html><head><title> </title>');
+            doc.write(`<style>@page { size: auto; margin: 0; } body { margin: 0; }</style>`);
+            doc.write('</head><body><div id="print-root"></div></body></html>');
+            doc.close();
+            
+            const printRoot = doc.getElementById('print-root');
+            if (printRoot) {
+                const root = ReactDOM.createRoot(printRoot);
+                
                 if (printer.format === 'Thermal') {
                     root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
                 } else if (printer.format === 'A5') {
@@ -150,72 +152,21 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                 } else {
                     root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
                 }
-            }
 
-            setTimeout(() => {
-                printWindow.focus();
-                printWindow.print();
-                setBillToPrint(null);
-            }, 1000);
-        } else {
-            // Desktop Strategy: Use hidden iframe
-            const iframeId = 'print-frame-daybook';
-            let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
-
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = iframeId;
-                iframe.style.position = 'fixed';
-                iframe.style.right = '0';
-                iframe.style.bottom = '0';
-                iframe.style.width = '1px';
-                iframe.style.height = '1px';
-                iframe.style.border = '0';
-                iframe.style.opacity = '0';
-                iframe.style.pointerEvents = 'none';
-                document.body.appendChild(iframe);
-            }
-
-            const doc = iframe.contentDocument || iframe.contentWindow?.document;
-            if (doc) {
-                doc.open();
-                doc.write(`
-                    <html>
-                        <head>
-                            <title>Print</title>
-                            <style>
-                                @page { size: auto; margin: 0mm; }
-                                body { margin: 0; font-family: sans-serif; }
-                            </style>
-                        </head>
-                        <body><div id="root"></div></body>
-                    </html>
-                `);
-                doc.close();
-
-                const rootElement = doc.getElementById('root');
-                if (rootElement) {
-                    const root = ReactDOM.createRoot(rootElement);
-                    if (printer.format === 'Thermal') {
-                        root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-                    } else if (printer.format === 'A5') {
-                        root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-                    } else {
-                        root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
-                    }
-                }
-
-                // Wait for render then print
                 setTimeout(() => {
-                    if (iframe.contentWindow) {
-                        iframe.contentWindow.focus();
-                        iframe.contentWindow.print();
+                    if (isMobile) {
+                        (printWindow as Window).focus();
+                        (printWindow as Window).print();
+                        // (printWindow as Window).close();
+                    } else {
+                        (printWindow as HTMLIFrameElement).contentWindow?.focus();
+                        (printWindow as HTMLIFrameElement).contentWindow?.print();
+                         setTimeout(() => {
+                            document.body.removeChild(printWindow as HTMLIFrameElement);
+                        }, 2000);
                     }
                     setBillToPrint(null);
-                }, 1000);
-            } else {
-                alert("Unable to initiate print.");
-                setBillToPrint(null);
+                }, 500);
             }
         }
       }

@@ -10,22 +10,7 @@ import SettingsModal from './components/SettingsModal';
 import Auth from './components/Auth';
 import Card from './components/common/Card';
 import { db, auth } from './firebase';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import {
-  collection,
-  doc,
-  onSnapshot,
-  getDocs,
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  writeBatch,
-  query,
-  where,
-  arrayUnion,
-  Unsubscribe
-} from 'firebase/firestore';
+import firebase from 'firebase/compat/app';
 import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
@@ -44,7 +29,7 @@ const initialCompanyProfile: CompanyProfile = {
 };
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<firebase.User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   const [activeView, setActiveView] = useState<AppView>('dashboard');
@@ -69,7 +54,7 @@ const App: React.FC = () => {
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
+    const unsubscribe = auth.onAuthStateChanged(user => {
       setCurrentUser(user);
       setAuthLoading(false);
     });
@@ -142,11 +127,11 @@ const App: React.FC = () => {
     const uid = currentUser.uid;
 
     const createListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
-      const collRef = collection(db, `users/${uid}/${collectionName}`);
-      return onSnapshot(collRef, (snapshot) => {
+      const collRef = db.collection(`users/${uid}/${collectionName}`);
+      return collRef.onSnapshot((snapshot) => {
         const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
         setter(list);
-      }, (error) => {
+      }, (error: any) => {
         console.error(`Error fetching ${collectionName}:`, error);
         if (error.code === 'permission-denied') {
           setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firestore security rules.");
@@ -155,7 +140,7 @@ const App: React.FC = () => {
       });
     };
     
-    const unsubscribers: Unsubscribe[] = [
+    const unsubscribers = [
         createListener('products', setProducts),
         createListener('bills', setBills),
         createListener('purchases', setPurchases),
@@ -165,9 +150,9 @@ const App: React.FC = () => {
         createListener('gstRates', setGstRates),
     ];
 
-    const profileRef = doc(db, `users/${uid}/companyProfile`, 'profile');
-    const unsubProfile = onSnapshot(profileRef, (doc) => {
-        if (doc.exists()) {
+    const profileRef = db.doc(`users/${uid}/companyProfile/profile`);
+    const unsubProfile = profileRef.onSnapshot((doc) => {
+        if (doc.exists) {
             const dbProfile = doc.data() as CompanyProfile;
             
             // Create a new object from dbProfile, excluding any keys with `undefined` values.
@@ -189,9 +174,9 @@ const App: React.FC = () => {
     });
     unsubscribers.push(unsubProfile);
     
-    const configRef = doc(db, `users/${uid}/systemConfig`, 'config');
-    const unsubConfig = onSnapshot(configRef, (doc) => {
-        if (doc.exists()) {
+    const configRef = db.doc(`users/${uid}/systemConfig/config`);
+    const unsubConfig = configRef.onSnapshot((doc) => {
+        if (doc.exists) {
             // Merge with defaults to avoid errors if new fields are added later
             setSystemConfig(prev => ({...prev, ...doc.data()}));
         }
@@ -199,7 +184,7 @@ const App: React.FC = () => {
     unsubscribers.push(unsubConfig);
 
     // Check for initial data load / permission
-    getDocs(collection(db, `users/${uid}/products`))
+    db.collection(`users/${uid}/products`).get()
       .then(() => setDataLoading(false))
       .catch((error: any) => {
         if (error.code === 'permission-denied') {
@@ -216,7 +201,7 @@ const App: React.FC = () => {
   }, [currentUser]);
 
   const handleLogout = () => {
-    signOut(auth);
+    auth.signOut();
   };
 
   const PermissionErrorComponent: React.FC = () => (
@@ -263,29 +248,29 @@ const App: React.FC = () => {
 
   const handleProfileChange = (profile: CompanyProfile) => {
     if (!currentUser) return;
-    const profileRef = doc(db, `users/${currentUser.uid}/companyProfile`, 'profile');
-    setDoc(profileRef, profile);
+    const profileRef = db.doc(`users/${currentUser.uid}/companyProfile/profile`);
+    profileRef.set(profile);
     setCompanyProfile(profile);
   };
   
   const handleSystemConfigChange = (config: SystemConfig) => {
     if (!currentUser) return;
-    const configRef = doc(db, `users/${currentUser.uid}/systemConfig`, 'config');
-    setDoc(configRef, config);
+    const configRef = db.doc(`users/${currentUser.uid}/systemConfig/config`);
+    configRef.set(config);
     setSystemConfig(config);
   };
 
   const handleAddProduct = async (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const batch = writeBatch(db);
+    const batch = db.batch();
 
     // Ensure company exists
     const companyName = productData.company.trim();
     const companyExists = companies.some(c => c.name.toLowerCase() === companyName.toLowerCase());
     
     if (companyName && !companyExists) {
-        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        const newCompanyRef = db.collection(`users/${uid}/companies`).doc();
         batch.set(newCompanyRef, { name: companyName });
     }
 
@@ -309,7 +294,7 @@ const App: React.FC = () => {
       newProductData.barcode = String(newBarcodeNum).padStart(6, '0');
     }
 
-    const newProductRef = doc(collection(db, `users/${uid}/products`));
+    const newProductRef = db.collection(`users/${uid}/products`).doc();
     batch.set(newProductRef, newProductData);
     
     await batch.commit();
@@ -317,9 +302,9 @@ const App: React.FC = () => {
   
   const handleUpdateProduct = async (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => {
     if (!currentUser) return;
-    const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+    const productRef = db.doc(`users/${currentUser.uid}/products/${productId}`);
     try {
-        await updateDoc(productRef, productData);
+        await productRef.update(productData);
     } catch (error) {
         console.error("Error updating product:", error);
         alert("Failed to update product details.");
@@ -328,9 +313,9 @@ const App: React.FC = () => {
 
   const handleAddBatch = async (productId: string, batchData: Omit<Batch, 'id'>) => {
     if (!currentUser) return;
-    const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
-    await updateDoc(productRef, {
-        batches: arrayUnion({ ...batchData, id: `batch_${Date.now()}` })
+    const productRef = db.doc(`users/${currentUser.uid}/products/${productId}`);
+    await productRef.update({
+        batches: firebase.firestore.FieldValue.arrayUnion({ ...batchData, id: `batch_${Date.now()}` })
     });
   };
   
@@ -367,8 +352,8 @@ const App: React.FC = () => {
     const updatedBatches = productToUpdate.batches.filter(b => b.id !== batchId);
 
     try {
-      const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
-      await updateDoc(productRef, { batches: updatedBatches });
+      const productRef = db.doc(`users/${currentUser.uid}/products/${productId}`);
+      await productRef.update({ batches: updatedBatches });
       alert('Batch deleted successfully.');
     } catch (error) {
       console.error("Error deleting batch:", error);
@@ -394,8 +379,8 @@ const App: React.FC = () => {
     }
 
     try {
-        const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
-        await deleteDoc(productRef);
+        const productRef = db.doc(`users/${currentUser.uid}/products/${productId}`);
+        await productRef.delete();
         alert(`Product "${productName}" has been deleted successfully.`);
     } catch (error) {
         console.error("Error deleting product:", error);
@@ -406,7 +391,7 @@ const App: React.FC = () => {
   const handleBulkAddProducts = async (newProducts: Omit<Product, 'id' | 'batches'>[]): Promise<{success: number; skipped: number}> => {
     if (!currentUser) return { success: 0, skipped: 0 };
     const uid = currentUser.uid;
-    const batch = writeBatch(db);
+    const batch = db.batch();
 
     const existingProductKeys = new Set(products.map(p => `${p.name.trim().toLowerCase()}|${p.company.trim().toLowerCase()}`));
     const newCompanyNames = new Set<string>();
@@ -421,7 +406,7 @@ const App: React.FC = () => {
             continue;
         }
 
-        const newProductRef = doc(collection(db, `users/${uid}/products`));
+        const newProductRef = db.collection(`users/${uid}/products`).doc();
         // Bulk imported products don't have an initial batch. Batches are added via Purchases.
         batch.set(newProductRef, { ...productData, batches: [] });
         existingProductKeys.add(key); // prevent duplicates within the same file
@@ -437,7 +422,7 @@ const App: React.FC = () => {
     }
 
     newCompanyNames.forEach(name => {
-        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        const newCompanyRef = db.collection(`users/${uid}/companies`).doc();
         batch.set(newCompanyRef, { name });
     });
 
@@ -449,10 +434,10 @@ const App: React.FC = () => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
 
-    const billsCollectionRef = collection(db, `users/${uid}/bills`);
+    const billsCollectionRef = db.collection(`users/${uid}/bills`);
 
     // Fetch all bills directly from Firestore to find the max number, avoiding stale state.
-    const allBillsSnapshot = await getDocs(billsCollectionRef);
+    const allBillsSnapshot = await billsCollectionRef.get();
     let maxBillNum = 0;
     allBillsSnapshot.forEach(doc => {
       const bill = doc.data();
@@ -465,9 +450,9 @@ const App: React.FC = () => {
     });
     const newBillNumber = `B${(maxBillNum + 1).toString().padStart(4, '0')}`;
 
-    const batch = writeBatch(db);
+    const batch = db.batch();
 
-    const newBillRef = doc(billsCollectionRef);
+    const newBillRef = billsCollectionRef.doc();
     const newBill: Omit<Bill, 'id'> = { ...billData, billNumber: newBillNumber };
     batch.set(newBillRef, newBill);
 
@@ -477,7 +462,7 @@ const App: React.FC = () => {
         const newBatches = product.batches.map(b =>
           b.id === item.batchId ? { ...b, stock: b.stock - item.quantity } : b
         );
-        const productRef = doc(db, `users/${uid}/products`, product.id);
+        const productRef = db.doc(`users/${uid}/products/${product.id}`);
         batch.update(productRef, { batches: newBatches });
       }
     }
@@ -494,7 +479,7 @@ const App: React.FC = () => {
   const handleUpdateBill = async (billId: string, updatedBillData: Omit<Bill, 'id'>, originalBill: Bill): Promise<Bill | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
+    const fbBatch = db.batch();
 
     const stockChanges = new Map<string, { productId: string, change: number }>();
 
@@ -526,11 +511,11 @@ const App: React.FC = () => {
             return null;
         }
         
-        const productRef = doc(db, `users/${uid}/products`, productId);
+        const productRef = db.doc(`users/${uid}/products/${productId}`);
         fbBatch.update(productRef, { batches: newBatches });
     }
 
-    const billRef = doc(db, `users/${uid}/bills`, billId);
+    const billRef = db.doc(`users/${uid}/bills/${billId}`);
     fbBatch.update(billRef, updatedBillData);
 
     try {
@@ -546,9 +531,9 @@ const App: React.FC = () => {
   
   const handleUpdateBillDetails = async (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => {
     if (!currentUser) return;
-    const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
+    const billRef = db.doc(`users/${currentUser.uid}/bills/${billId}`);
     try {
-        await updateDoc(billRef, updates);
+        await billRef.update(updates);
         alert('Bill details updated successfully.');
     } catch (error) {
         console.error("Error updating bill details:", error);
@@ -566,7 +551,7 @@ const App: React.FC = () => {
     if (!confirm2) return;
 
     const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
+    const fbBatch = db.batch();
 
     for (const item of bill.items) {
         const product = products.find(p => p.id === item.productId);
@@ -574,14 +559,14 @@ const App: React.FC = () => {
             const newBatches = product.batches.map(b =>
                 b.id === item.batchId ? { ...b, stock: b.stock + item.quantity } : b
             );
-            const productRef = doc(db, `users/${uid}/products`, product.id);
+            const productRef = db.doc(`users/${uid}/products/${product.id}`);
             fbBatch.update(productRef, { batches: newBatches });
         } else {
             console.warn(`Product ${item.productId} not found while deleting bill. Stock not reverted for this item.`);
         }
     }
 
-    const billRef = doc(db, `users/${uid}/bills`, bill.id);
+    const billRef = db.doc(`users/${uid}/bills/${bill.id}`);
     fbBatch.delete(billRef);
 
     try {
@@ -606,17 +591,17 @@ const App: React.FC = () => {
   const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>): Promise<Supplier | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    const suppliersCollectionRef = collection(db, `users/${uid}/suppliers`);
-    const docRef = await addDoc(suppliersCollectionRef, supplierData);
+    const suppliersCollectionRef = db.collection(`users/${uid}/suppliers`);
+    const docRef = await suppliersCollectionRef.add(supplierData);
     return { ...supplierData, id: docRef.id };
   };
 
   const handleUpdateSupplier = async (supplierId: string, supplierData: Omit<Supplier, 'id'>) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const supplierRef = doc(db, `users/${uid}/suppliers`, supplierId);
+    const supplierRef = db.doc(`users/${uid}/suppliers/${supplierId}`);
     try {
-        await updateDoc(supplierRef, supplierData);
+        await supplierRef.update(supplierData);
         alert('Supplier updated successfully.');
     } catch (error) {
         console.error("Error updating supplier:", error);
@@ -627,7 +612,7 @@ const App: React.FC = () => {
   const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
+    const fbBatch = db.batch();
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
     const newCompanies = new Set<string>();
@@ -641,7 +626,7 @@ const App: React.FC = () => {
     });
 
     for (const companyName of newCompanies) {
-        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        const newCompanyRef = db.collection(`users/${uid}/companies`).doc();
         fbBatch.set(newCompanyRef, { name: companyName });
     }
 
@@ -672,7 +657,7 @@ const App: React.FC = () => {
                   barcode = String(maxBarcodeNum + 1).padStart(6, '0');
             }
 
-            const newProductRef = doc(collection(db, `users/${uid}/products`));
+            const newProductRef = db.collection(`users/${uid}/products`).doc();
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
                 composition: item.composition, unitsPerStrip: item.unitsPerStrip,
@@ -691,7 +676,7 @@ const App: React.FC = () => {
             }
 
             const existingBatch = product.batches.find(b => b.batchNumber === item.batchNumber);
-            const productRef = doc(db, `users/${uid}/products`, item.productId);
+            const productRef = db.doc(`users/${uid}/products/${item.productId}`);
 
             if (existingBatch) {
                 // Batch found! Update stock and other details.
@@ -715,7 +700,7 @@ const App: React.FC = () => {
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
                     stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
                 };
-                fbBatch.update(productRef, { batches: arrayUnion(newBatchData) });
+                fbBatch.update(productRef, { batches: firebase.firestore.FieldValue.arrayUnion(newBatchData) });
                 finalItem.batchId = newBatchId; // Link purchase to the new batch
             }
         }
@@ -723,7 +708,7 @@ const App: React.FC = () => {
     }
     
     const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    const newPurchaseRef = doc(collection(db, `users/${uid}/purchases`));
+    const newPurchaseRef = db.collection(`users/${uid}/purchases`).doc();
     fbBatch.set(newPurchaseRef, { ...purchaseData, totalAmount, items: itemsWithIds });
     await fbBatch.commit();
   };
@@ -735,7 +720,7 @@ const App: React.FC = () => {
   ) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
+    const fbBatch = db.batch();
     const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     // Use a map to hold the next state of products being modified.
@@ -790,7 +775,7 @@ const App: React.FC = () => {
                   barcode = String(maxBarcodeNum + 1).padStart(6, '0');
             }
 
-            const newProductRef = doc(collection(db, `users/${uid}/products`));
+            const newProductRef = db.collection(`users/${uid}/products`).doc();
             fbBatch.set(newProductRef, {
                 name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
                 composition: item.composition, unitsPerStrip: item.unitsPerStrip,
@@ -821,10 +806,13 @@ const App: React.FC = () => {
                 finalItem.batchId = product.batches[batchIndex].id;
             } else { // Batch not found, create it.
                 const newBatchId = `batch_${uniqueIdSuffix()}`;
-                product.batches.push({
+                const newBatchData = {
                     id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
                     stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
-                });
+                };
+                // For batched update we push to our local copy's array, but for Firestore batch we can use arrayUnion if we were updating directly.
+                // Since we update the whole batches array at step 3, pushing to array is fine.
+                product.batches.push(newBatchData);
                 finalItem.batchId = newBatchId;
             }
         }
@@ -833,13 +821,13 @@ const App: React.FC = () => {
     
     // 3. COMMIT STAGE: Write all calculated changes to the batch.
     for (const [productId, product] of productsToUpdate.entries()) {
-        const productRef = doc(db, `users/${uid}/products`, productId);
+        const productRef = db.doc(`users/${uid}/products/${productId}`);
         // Prevent negative stock, just in case.
         product.batches.forEach(b => { if (b.stock < 0) b.stock = 0; });
         fbBatch.update(productRef, { batches: product.batches });
     }
     
-    const purchaseRef = doc(db, `users/${uid}/purchases`, purchaseId);
+    const purchaseRef = db.doc(`users/${uid}/purchases/${purchaseId}`);
     fbBatch.update(purchaseRef, {...updatedPurchaseData, items: updatedItemsWithIds});
     
     try {
@@ -861,7 +849,7 @@ const App: React.FC = () => {
     if (!confirm2) return;
 
     const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
+    const fbBatch = db.batch();
 
     for (const item of purchase.items) {
         if (!item.productId || !item.batchId) {
@@ -887,11 +875,11 @@ const App: React.FC = () => {
             return b;
         });
 
-        const productRef = doc(db, `users/${uid}/products`, product.id);
+        const productRef = db.doc(`users/${uid}/products/${product.id}`);
         fbBatch.update(productRef, { batches: updatedBatches });
     }
     
-    const purchaseRef = doc(db, `users/${uid}/purchases`, purchase.id);
+    const purchaseRef = db.doc(`users/${uid}/purchases/${purchase.id}`);
     fbBatch.delete(purchaseRef);
 
     try {
@@ -906,23 +894,23 @@ const App: React.FC = () => {
   const handleAddPayment = async (paymentData: Omit<Payment, 'id' | 'voucherNumber'>): Promise<Payment | null> => {
     if (!currentUser) return null;
     const uid = currentUser.uid;
-    const paymentsCollectionRef = collection(db, `users/${uid}/payments`);
+    const paymentsCollectionRef = db.collection(`users/${uid}/payments`);
     
     const count = payments.length;
     const voucherPrefix = 'PV-';
     const newVoucherNumber = `${voucherPrefix}${(count + 1).toString().padStart(4, '0')}`;
     
     const newPaymentData = { ...paymentData, voucherNumber: newVoucherNumber };
-    const docRef = await addDoc(paymentsCollectionRef, newPaymentData);
+    const docRef = await paymentsCollectionRef.add(newPaymentData);
     return { ...newPaymentData, id: docRef.id };
   };
 
   const handleUpdatePayment = async (paymentId: string, paymentData: Omit<Payment, 'id'>) => {
     if (!currentUser) return;
     const uid = currentUser.uid;
-    const paymentRef = doc(db, `users/${uid}/payments`, paymentId);
+    const paymentRef = db.doc(`users/${uid}/payments/${paymentId}`);
     try {
-        await updateDoc(paymentRef, paymentData);
+        await paymentRef.update(paymentData);
     } catch(err) {
         console.error("Failed to update payment", err);
         alert("Error: Could not update the payment record.");
@@ -934,8 +922,8 @@ const App: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) {
         try {
             const uid = currentUser.uid;
-            const paymentRef = doc(db, `users/${uid}/payments`, paymentId);
-            await deleteDoc(paymentRef);
+            const paymentRef = db.doc(`users/${uid}/payments/${paymentId}`);
+            await paymentRef.delete();
         } catch(err) {
             console.error("Failed to delete payment", err);
             alert("Error: Could not delete the payment record.");
@@ -949,8 +937,8 @@ const App: React.FC = () => {
       alert(`GST rate ${rate}% already exists.`);
       return;
     }
-    const ratesCollectionRef = collection(db, `users/${currentUser.uid}/gstRates`);
-    await addDoc(ratesCollectionRef, { rate });
+    const ratesCollectionRef = db.collection(`users/${currentUser.uid}/gstRates`);
+    await ratesCollectionRef.add({ rate });
   };
 
   const handleUpdateGstRate = async (rateId: string, newRate: number) => {
@@ -959,8 +947,8 @@ const App: React.FC = () => {
       alert(`GST rate ${newRate}% already exists.`);
       return;
     }
-    const rateRef = doc(db, `users/${currentUser.uid}/gstRates`, rateId);
-    await updateDoc(rateRef, { rate: newRate });
+    const rateRef = db.doc(`users/${currentUser.uid}/gstRates/${rateId}`);
+    await rateRef.update({ rate: newRate });
   };
 
   const handleDeleteGstRate = async (rateId: string, rateValue: number) => {
@@ -971,8 +959,8 @@ const App: React.FC = () => {
       return;
     }
     if (window.confirm(`Are you sure you want to delete the GST rate ${rateValue}%? This action cannot be undone.`)) {
-      const rateRef = doc(db, `users/${currentUser.uid}/gstRates`, rateId);
-      await deleteDoc(rateRef);
+      const rateRef = db.doc(`users/${currentUser.uid}/gstRates/${rateId}`);
+      await rateRef.delete();
     }
   };
 

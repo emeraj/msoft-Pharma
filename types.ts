@@ -135,6 +135,7 @@ export interface PrinterProfile {
   format: 'A4' | 'A5' | 'Thermal';
   isDefault: boolean;
   isShared?: boolean;
+  connectionType?: 'browser' | 'bluetooth' | 'rawbt';
 }
 
 export interface SystemConfig {
@@ -144,18 +145,8 @@ export interface SystemConfig {
   remarkLine2?: string;
   printers?: PrinterProfile[];
 }
-
-// Cordova Bluetooth Serial Plugin Definition
 declare global {
   interface Window {
-    bluetoothSerial?: {
-      connect: (macAddress: string, success: () => void, failure: (err: any) => void) => void;
-      disconnect: (success: () => void, failure: (err: any) => void) => void;
-      write: (data: any, success: () => void, failure: (err: any) => void) => void;
-      list: (success: (devices: any[]) => void, failure: (err: any) => void) => void;
-      discoverUnpaired: (success: (devices: any[]) => void, failure: (err: any) => void) => void;
-      isConnected: (success: () => void, failure: () => void) => void;
-      isEnabled: (success: () => void, failure: () => void) => void;
-    };
+    bluetoothSerial: any;
   }
 }
