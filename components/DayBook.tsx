@@ -101,28 +101,22 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-        // Create a hidden iframe for direct printing
-        const iframeId = 'print-frame-daybook';
-        let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-        if (!iframe) {
-            iframe = document.createElement('iframe');
-            iframe.id = iframeId;
-            iframe.style.position = 'absolute';
-            iframe.style.top = '-10000px';
-            iframe.style.left = '-10000px';
-            iframe.style.width = '0px';
-            iframe.style.height = '0px';
-            document.body.appendChild(iframe);
-        }
+        // Mobile Strategy: Use window.open to ensure print dialog appears
+        if (isMobile) {
+             const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                alert("Please allow popups to print.");
+                setBillToPrint(null);
+                return;
+            }
 
-        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (doc) {
-            doc.open();
-            doc.write(`
+            printWindow.document.write(`
                 <html>
                     <head>
                         <title>Print</title>
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
                         <style>
                             @page { size: auto; margin: 0mm; }
                             body { margin: 0; font-family: sans-serif; }
@@ -131,9 +125,9 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                     <body><div id="root"></div></body>
                 </html>
             `);
-            doc.close();
+            printWindow.document.close();
 
-            const rootElement = doc.getElementById('root');
+            const rootElement = printWindow.document.getElementById('root');
             if (rootElement) {
                 const root = ReactDOM.createRoot(rootElement);
                 if (printer.format === 'Thermal') {
@@ -145,17 +139,71 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                 }
             }
 
-            // Wait for render then print
             setTimeout(() => {
-                if (iframe.contentWindow) {
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
-                }
+                printWindow.focus();
+                printWindow.print();
                 setBillToPrint(null);
             }, 1000);
         } else {
-            alert("Unable to initiate print.");
-            setBillToPrint(null);
+            // Desktop Strategy: Use hidden iframe
+            const iframeId = 'print-frame-daybook';
+            let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+
+            if (!iframe) {
+                iframe = document.createElement('iframe');
+                iframe.id = iframeId;
+                iframe.style.position = 'fixed';
+                iframe.style.right = '0';
+                iframe.style.bottom = '0';
+                iframe.style.width = '1px';
+                iframe.style.height = '1px';
+                iframe.style.border = '0';
+                iframe.style.opacity = '0';
+                iframe.style.pointerEvents = 'none';
+                document.body.appendChild(iframe);
+            }
+
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc) {
+                doc.open();
+                doc.write(`
+                    <html>
+                        <head>
+                            <title>Print</title>
+                            <style>
+                                @page { size: auto; margin: 0mm; }
+                                body { margin: 0; font-family: sans-serif; }
+                            </style>
+                        </head>
+                        <body><div id="root"></div></body>
+                    </html>
+                `);
+                doc.close();
+
+                const rootElement = doc.getElementById('root');
+                if (rootElement) {
+                    const root = ReactDOM.createRoot(rootElement);
+                    if (printer.format === 'Thermal') {
+                        root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+                    } else if (printer.format === 'A5') {
+                        root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+                    } else {
+                        root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
+                    }
+                }
+
+                // Wait for render then print
+                setTimeout(() => {
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    }
+                    setBillToPrint(null);
+                }, 1000);
+            } else {
+                alert("Unable to initiate print.");
+                setBillToPrint(null);
+            }
         }
       }
   };

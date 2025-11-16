@@ -372,29 +372,22 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   }, [isEditing, onCancelEdit]);
 
   const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', shouldReset: boolean = false) => {
-    // Create a hidden iframe for direct printing
-    const iframeId = 'print-frame';
-    let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-    if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.id = iframeId;
-        iframe.style.position = 'absolute';
-        iframe.style.top = '-10000px';
-        iframe.style.left = '-10000px';
-        iframe.style.width = '0px';
-        iframe.style.height = '0px';
-        document.body.appendChild(iframe);
-    }
-
-    const doc = iframe.contentDocument || iframe.contentWindow?.document;
-
-    if (doc) {
-        doc.open();
-        doc.write(`
+    // Mobile Strategy: use window.open to ensure the system print dialog appears
+    if (isMobile) {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert("Please allow popups to print.");
+            if (shouldReset) resetBillingState();
+            return;
+        }
+        
+        printWindow.document.write(`
             <html>
                 <head>
-                    <title>Print</title>
+                    <title>Print Bill</title>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <style>
                         @page { size: auto; margin: 0mm; }
                         body { margin: 0; font-family: sans-serif; }
@@ -403,9 +396,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                 <body><div id="root"></div></body>
             </html>
         `);
-        doc.close();
+        printWindow.document.close();
 
-        const rootElement = doc.getElementById('root');
+        const rootElement = printWindow.document.getElementById('root');
         if (rootElement) {
             const root = ReactDOM.createRoot(rootElement);
             if (format === 'Thermal') {
@@ -417,21 +410,81 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             }
         }
 
-        // Wait for render to complete then print
         setTimeout(() => {
-            if (iframe.contentWindow) {
-                iframe.contentWindow.focus();
-                iframe.contentWindow.print();
-            }
-            
-            if (shouldReset) {
+            printWindow.focus();
+            printWindow.print();
+            // On mobile, we can't reliably close the window automatically after print without UX issues.
+            // Better to leave it open or let user close it.
+             if (shouldReset) {
                 resetBillingState();
             }
         }, 1000);
+
     } else {
-        alert("Unable to initiate print.");
-        if (shouldReset) {
-            resetBillingState();
+        // Desktop Strategy: use hidden iframe for seamless experience
+        const iframeId = 'print-frame';
+        let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+
+        if (!iframe) {
+            iframe = document.createElement('iframe');
+            iframe.id = iframeId;
+            iframe.style.position = 'fixed';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.style.width = '1px';
+            iframe.style.height = '1px';
+            iframe.style.border = '0';
+            iframe.style.opacity = '0';
+            iframe.style.pointerEvents = 'none';
+            document.body.appendChild(iframe);
+        }
+
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+
+        if (doc) {
+            doc.open();
+            doc.write(`
+                <html>
+                    <head>
+                        <title>Print</title>
+                        <style>
+                            @page { size: auto; margin: 0mm; }
+                            body { margin: 0; font-family: sans-serif; }
+                        </style>
+                    </head>
+                    <body><div id="root"></div></body>
+                </html>
+            `);
+            doc.close();
+
+            const rootElement = doc.getElementById('root');
+            if (rootElement) {
+                const root = ReactDOM.createRoot(rootElement);
+                if (format === 'Thermal') {
+                    root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+                } else if (format === 'A5') {
+                    root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+                } else {
+                    root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
+                }
+            }
+
+            // Wait for render to complete then print
+            setTimeout(() => {
+                if (iframe.contentWindow) {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }
+                
+                if (shouldReset) {
+                    resetBillingState();
+                }
+            }, 1000);
+        } else {
+            alert("Unable to initiate print.");
+            if (shouldReset) {
+                resetBillingState();
+            }
         }
     }
   }, [companyProfile, systemConfig, resetBillingState]);
