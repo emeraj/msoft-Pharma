@@ -80,6 +80,41 @@ const App: React.FC = () => {
     document.title = 'Cloud - Retail';
   }, []);
 
+  // Handle Browser Back Button Navigation
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      // If state exists and has view, update view
+      if (event.state && event.state.view) {
+        setActiveView(event.state.view);
+        // Clear editing state if navigating away from billing
+        if (event.state.view !== 'billing') {
+            setEditingBill(null);
+        }
+      } 
+      // Note: We intentionally do NOT set fallback to dashboard here.
+      // If event.state is null, it means we popped out of our history stack (or are at initial).
+      // In a mobile context, letting this happen allows the browser to exit or go back to previous page,
+      // which effectively implements "Exit on Back" when at the root.
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Initialize history state on mount if not present
+    if (!window.history.state) {
+        window.history.replaceState({ view: 'dashboard' }, '', '');
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Navigation helper to push state
+  const navigateTo = (view: AppView) => {
+    if (view === activeView) return;
+    setActiveView(view);
+    // Push new state
+    window.history.pushState({ view }, '', '');
+  };
+
   useEffect(() => {
     if (!currentUser) {
       // Clear data when user logs out
@@ -560,12 +595,12 @@ const App: React.FC = () => {
 
   const handleEditBill = (bill: Bill) => {
     setEditingBill(bill);
-    setActiveView('billing');
+    navigateTo('billing');
   };
 
   const handleCancelEdit = () => {
     setEditingBill(null);
-    setActiveView('daybook');
+    navigateTo('daybook');
   };
 
   const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>): Promise<Supplier | null> => {
@@ -1016,7 +1051,7 @@ const App: React.FC = () => {
           user={currentUser}
           onLogout={handleLogout}
           activeView={activeView} 
-          setActiveView={setActiveView} 
+          setActiveView={navigateTo} 
           onOpenSettings={() => setSettingsModalOpen(true)} 
           systemConfig={systemConfig}
         />

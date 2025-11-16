@@ -1,10 +1,16 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Bill, CompanyProfile, SystemConfig } from '../types';
+import type { Bill, CompanyProfile, SystemConfig, PrinterProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { DownloadIcon, PencilIcon, TrashIcon, PrinterIcon } from './icons/Icons';
 import PrintableA5Bill from './PrintableA5Bill';
+import ThermalPrintableBill from './ThermalPrintableBill';
+import PrintableBill from './PrintableBill';
+import PrinterSelectionModal from './PrinterSelectionModal';
+import { db, auth } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -54,6 +60,8 @@ interface DayBookProps {
 const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, onDeleteBill, onEditBill, onUpdateBillDetails }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
+  const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
 
   const billsForSelectedDate = useMemo(() => {
     return bills.filter(bill => bill.date.startsWith(selectedDate)).sort((a, b) => a.billNumber.localeCompare(b.billNumber));
@@ -79,39 +87,56 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
     return new Date(selectedDate + 'T00:00:00').toLocaleDateString();
   }, [selectedDate]);
 
-  const handlePrintA5 = (bill: Bill) => {
-    const printWindow = window.open('', '_blank', 'height=842,width=595'); // A5 dimensions in pixels
-    if (printWindow) {
-        printWindow.document.title = ' ';
-        const style = printWindow.document.createElement('style');
-        style.innerHTML = `
-            @page { 
-                size: A5;
-                margin: 0; 
+  const handlePrintClick = (bill: Bill) => {
+    setBillToPrint(bill);
+    setPrinterModalOpen(true);
+  };
+  
+  const handleUpdateConfig = (newConfig: SystemConfig) => {
+     if (auth.currentUser) {
+         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
+         updateDoc(configRef, newConfig as any);
+     }
+  };
+
+  const handlePrinterSelection = (printer: PrinterProfile) => {
+      if (billToPrint) {
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.title = ' ';
+            const style = printWindow.document.createElement('style');
+            style.innerHTML = `
+                @page { 
+                    size: auto;
+                    margin: 0; 
+                }
+                body {
+                    margin: 0;
+                }
+            `;
+            printWindow.document.head.appendChild(style);
+            
+            const printRoot = document.createElement('div');
+            printWindow.document.body.appendChild(printRoot);
+            
+            const root = ReactDOM.createRoot(printRoot);
+            
+            if (printer.format === 'Thermal') {
+                root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else if (printer.format === 'A5') {
+                root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else {
+                root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
             }
-            body {
-                margin: 0;
-            }
-        `;
-        printWindow.document.head.appendChild(style);
-        
-        const printRoot = document.createElement('div');
-        printWindow.document.body.appendChild(printRoot);
-        
-        const root = ReactDOM.createRoot(printRoot);
-        root.render(
-            <PrintableA5Bill
-                bill={bill}
-                companyProfile={companyProfile}
-                systemConfig={systemConfig}
-            />
-        );
-        setTimeout(() => {
-            printWindow.focus();
-            printWindow.print();
-            printWindow.close();
-        }, 500);
-    }
+
+            setTimeout(() => {
+                printWindow.focus();
+                printWindow.print();
+                printWindow.close();
+                setBillToPrint(null);
+            }, 500);
+        }
+      }
   };
 
   return (
@@ -174,7 +199,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                         <button onClick={() => setSelectedBill(bill)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
                           View
                         </button>
-                        <button onClick={() => handlePrintA5(bill)} title="Print A5 Bill" className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300">
+                        <button onClick={() => handlePrintClick(bill)} title="Print Bill" className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300">
                             <PrinterIcon className="h-5 w-5" />
                         </button>
                         <button onClick={() => onEditBill(bill)} title="Edit Bill" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
@@ -206,6 +231,14 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
           systemConfig={systemConfig}
         />
       )}
+      
+      <PrinterSelectionModal 
+          isOpen={isPrinterModalOpen}
+          onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }}
+          systemConfig={systemConfig}
+          onUpdateConfig={handleUpdateConfig}
+          onSelectPrinter={handlePrinterSelection}
+      />
     </div>
   );
 };

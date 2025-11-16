@@ -1,12 +1,17 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig } from '../types';
+import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
+import PrintableA5Bill from './PrintableA5Bill';
+import PrintableBill from './PrintableBill'; // For A4
 import BarcodeScannerModal from './BarcodeScannerModal';
+import PrinterSelectionModal from './PrinterSelectionModal';
+import { db, auth } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface BillingProps {
   products: Product[];
@@ -113,6 +118,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
   const [isScanning, setIsScanning] = useState(false);
+  
+  // Printer Selection State
+  const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
+  const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
+  // To trigger reset after print flow
+  const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
+
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
 
@@ -349,7 +361,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const executePrint = useCallback((billToPrint: Bill, onPrintDialogClosed?: () => void) => {
+  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal') => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
@@ -368,23 +380,58 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
         
-        root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        if (format === 'Thermal') {
+             root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        } else if (format === 'A5') {
+             root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        } else {
+             // Default A4
+             root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
+        }
         
         setTimeout(() => {
             printWindow.document.title = ' ';
             printWindow.print();
             printWindow.close();
-            if (onPrintDialogClosed) {
-                onPrintDialogClosed();
+            
+            if (shouldResetAfterPrint) {
+                setCart([]);
+                setCustomerName('');
+                setDoctorName('');
+                if (onCancelEdit && isEditing) {
+                    onCancelEdit();
+                }
+                setShouldResetAfterPrint(false);
             }
         }, 500);
     } else {
         alert("Please enable popups to print the bill.");
-        if (onPrintDialogClosed) {
-            onPrintDialogClosed();
+        if (shouldResetAfterPrint) {
+             setCart([]);
+             setCustomerName('');
+             setDoctorName('');
+             if (onCancelEdit && isEditing) {
+                 onCancelEdit();
+             }
+             setShouldResetAfterPrint(false);
         }
     }
-  }, [companyProfile, systemConfig]);
+  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
+
+  const handlePrinterSelection = (printer: PrinterProfile) => {
+      if (billToPrint) {
+          executePrint(billToPrint, printer.format);
+          setBillToPrint(null);
+      }
+  };
+
+  // Update Config Helper
+  const handleUpdateConfig = (newConfig: SystemConfig) => {
+     if (auth.currentUser) {
+         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
+         updateDoc(configRef, newConfig as any);
+     }
+  };
 
   const handleSaveBill = useCallback(async () => {
     if (cart.length === 0) {
@@ -392,7 +439,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
       return;
     }
     
-    if (isEditing && editingBill && onUpdateBill) {
+    let savedBill: Bill | null = null;
+    const isUpdate = isEditing && editingBill;
+
+    if (isUpdate && onUpdateBill) {
         const billData = {
             date: editingBill.date, // Keep original date on edit
             customerName: customerName || 'Walk-in',
@@ -403,11 +453,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             grandTotal,
             billNumber: editingBill.billNumber // Keep original bill number
         };
-        const updatedBill = await onUpdateBill(editingBill.id, billData, editingBill);
-        if (updatedBill) {
-            executePrint(updatedBill, onCancelEdit);
-        }
-    } else if (!isEditing && onGenerateBill) {
+        savedBill = await onUpdateBill(editingBill.id, billData, editingBill);
+    } else if (!isUpdate && onGenerateBill) {
         const billData = {
             date: new Date().toISOString(),
             customerName: customerName || 'Walk-in',
@@ -417,27 +464,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             totalGst,
             grandTotal
         };
-        const newBill = await onGenerateBill(billData);
-
-        if (newBill) {
-          executePrint(newBill, () => {
-              setCart([]);
-              setCustomerName('');
-              setDoctorName('');
-          });
-        } else {
-          console.error("onGenerateBill did not return a valid bill object.");
-          alert("There was an error generating the bill. Please try again.");
-        }
+        savedBill = await onGenerateBill(billData);
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, executePrint, onCancelEdit]);
+
+    if (savedBill) {
+        setBillToPrint(savedBill);
+        setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
+        setPrinterModalOpen(true);
+    } else {
+        console.error("Failed to save/update bill.");
+        alert("There was an error saving the bill. Please try again.");
+    }
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.altKey && event.key.toLowerCase() === 'p') {
         event.preventDefault();
-        // The button is disabled when cart is empty, so this shortcut should
-        // also only work when there are items in the cart.
         if (cart.length > 0) {
           handleSaveBill();
         }
@@ -825,6 +868,28 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         onClose={() => setIsScanning(false)}
         onScanSuccess={handleScanSuccess}
         closeOnScan={true}
+      />
+      
+      <PrinterSelectionModal 
+          isOpen={isPrinterModalOpen}
+          onClose={() => { 
+            setPrinterModalOpen(false); 
+            // If closed without printing, but bill was saved, we should probably reset the cart anyway
+            // or keep it? Standard behavior: Save clears the cart usually. 
+            // Here executePrint triggers the reset. If they cancel print, cart stays cleared?
+            // Let's just call reset if they close modal without printing IF bill was saved.
+            if (shouldResetAfterPrint) {
+                setCart([]);
+                setCustomerName('');
+                setDoctorName('');
+                if (onCancelEdit && isEditing) onCancelEdit();
+                setShouldResetAfterPrint(false);
+            }
+            setBillToPrint(null);
+          }}
+          systemConfig={systemConfig}
+          onUpdateConfig={handleUpdateConfig}
+          onSelectPrinter={handlePrinterSelection}
       />
 
     </div>

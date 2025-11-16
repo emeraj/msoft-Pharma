@@ -1,3 +1,4 @@
+
 export interface Batch {
   id: string;
   batchNumber: string;
@@ -128,9 +129,17 @@ export interface CompanyProfile {
   upiId?: string;
 }
 
+export interface PrinterProfile {
+  id: string;
+  name: string;
+  format: 'A4' | 'A5' | 'Thermal';
+  isDefault: boolean;
+}
+
 export interface SystemConfig {
   softwareMode: 'Retail' | 'Pharma';
-  invoicePrintingFormat: 'A4' | 'A5' | 'Thermal';
+  invoicePrintingFormat: 'A4' | 'A5' | 'Thermal'; // Kept for backward compatibility or fallback
   remarkLine1?: string;
   remarkLine2?: string;
+  printers?: PrinterProfile[];
 }
