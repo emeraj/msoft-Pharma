@@ -399,15 +399,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
         }
         
+        // Increased timeout to 1000ms to ensure rendering is complete on mobile/slower devices.
+        // Removed printWindow.close() because on mobile (Android/iOS), the print() call is non-blocking.
+        // Calling close() immediately often kills the print dialog before the user can interact with it.
         setTimeout(() => {
             printWindow.document.title = ' ';
             printWindow.print();
-            printWindow.close();
+            // We do NOT close the window automatically here to ensure mobile compatibility.
+            // printWindow.close(); 
             
             if (shouldReset) {
                 resetBillingState();
             }
-        }, 500);
+        }, 1000);
     } else {
         alert("Please enable popups to print the bill.");
         if (shouldReset) {

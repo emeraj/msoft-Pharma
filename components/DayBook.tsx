@@ -129,12 +129,14 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                 root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
             }
 
+            // Increased timeout to 1000ms
+            // Removed printWindow.close() to ensure print dialog is not interrupted on mobile
             setTimeout(() => {
                 printWindow.focus();
                 printWindow.print();
-                printWindow.close();
+                // printWindow.close(); 
                 setBillToPrint(null);
-            }, 500);
+            }, 1000);
         }
       }
   };
