@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { auth } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import Card from './common/Card';
 import { CloudIcon } from './icons/Icons';
 
@@ -19,12 +20,10 @@ const Auth: React.FC = () => {
 
     try {
       if (isLogin) {
-        await auth.signInWithEmailAndPassword(email, password);
+        await signInWithEmailAndPassword(auth, email, password);
       } else {
-        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        if (userCredential.user) {
-            await userCredential.user.updateProfile({ displayName: name });
-        }
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        await updateProfile(userCredential.user, { displayName: name });
       }
     } catch (err: any) {
       const code = err.code;

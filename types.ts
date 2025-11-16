@@ -135,7 +135,6 @@ export interface PrinterProfile {
   format: 'A4' | 'A5' | 'Thermal';
   isDefault: boolean;
   isShared?: boolean;
-  connectionType?: 'browser' | 'bluetooth' | 'rawbt';
 }
 
 export interface SystemConfig {

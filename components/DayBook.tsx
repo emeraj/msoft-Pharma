@@ -10,8 +10,7 @@ import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableBill from './PrintableBill';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
-import { printBillOverBluetooth } from '../utils/bluetoothPrinter';
-import { generateReceipt } from '../utils/receiptGenerator';
+import { doc, updateDoc } from 'firebase/firestore';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -95,79 +94,47 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
   
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
-         const configRef = db.doc(`users/${auth.currentUser.uid}/systemConfig/config`);
-         configRef.update(newConfig as any);
+         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
+         updateDoc(configRef, newConfig as any);
      }
   };
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-         // RawBT Logic
-         if (printer.connectionType === 'rawbt') {
-            const encodedData = generateReceipt(billToPrint, companyProfile, systemConfig);
-            window.location.href = `rawbt:base64,${encodedData}`;
-            setBillToPrint(null);
-            return;
-         }
-          
-        // Bluetooth Plugin Logic
-        if (printer.connectionType === 'bluetooth' || (printer.format === 'Thermal' && window.bluetoothSerial)) {
-            if (window.bluetoothSerial) {
-               const printerId = printer.id || (printer.name.includes(':') ? printer.name : null);
-               if (printerId) {
-                   printBillOverBluetooth(billToPrint, companyProfile, systemConfig, printerId).catch(err => {
-                       console.error("BT Print Error", err);
-                       alert("Failed to print via Bluetooth. Please check connection.");
-                   });
-                   setBillToPrint(null);
-                   return;
-               }
-            }
-        }
-
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const printWindow = isMobile ? window.open('', '_blank') : document.createElement('iframe');
-        
-        if (!isMobile) {
-            (printWindow as HTMLIFrameElement).style.display = 'none';
-            document.body.appendChild(printWindow as HTMLIFrameElement);
-        }
-
-        const doc = isMobile ? (printWindow as Window).document : (printWindow as HTMLIFrameElement).contentWindow?.document;
-        if (doc) {
-            doc.open();
-            doc.write('<html><head><title> </title>');
-            doc.write(`<style>@page { size: auto; margin: 0; } body { margin: 0; }</style>`);
-            doc.write('</head><body><div id="print-root"></div></body></html>');
-            doc.close();
-            
-            const printRoot = doc.getElementById('print-root');
-            if (printRoot) {
-                const root = ReactDOM.createRoot(printRoot);
-                
-                if (printer.format === 'Thermal') {
-                    root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-                } else if (printer.format === 'A5') {
-                    root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-                } else {
-                    root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.title = ' ';
+            const style = printWindow.document.createElement('style');
+            style.innerHTML = `
+                @page { 
+                    size: auto;
+                    margin: 0; 
                 }
-
-                setTimeout(() => {
-                    if (isMobile) {
-                        (printWindow as Window).focus();
-                        (printWindow as Window).print();
-                        // (printWindow as Window).close();
-                    } else {
-                        (printWindow as HTMLIFrameElement).contentWindow?.focus();
-                        (printWindow as HTMLIFrameElement).contentWindow?.print();
-                         setTimeout(() => {
-                            document.body.removeChild(printWindow as HTMLIFrameElement);
-                        }, 2000);
-                    }
-                    setBillToPrint(null);
-                }, 500);
+                body {
+                    margin: 0;
+                }
+            `;
+            printWindow.document.head.appendChild(style);
+            
+            const printRoot = document.createElement('div');
+            printWindow.document.body.appendChild(printRoot);
+            
+            const root = ReactDOM.createRoot(printRoot);
+            
+            if (printer.format === 'Thermal') {
+                root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else if (printer.format === 'A5') {
+                root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else {
+                root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
             }
+
+            setTimeout(() => {
+                printWindow.focus();
+                printWindow.print();
+                printWindow.close();
+                setBillToPrint(null);
+            }, 500);
         }
       }
   };
