@@ -122,7 +122,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   // Printer Selection State
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
-  // To trigger reset after print flow
+  // To trigger reset after print flow (when using manual selection)
   const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
 
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
@@ -360,8 +360,18 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const grandTotal = subTotal + totalGst;
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
+  
+  const resetBillingState = useCallback(() => {
+      setCart([]);
+      setCustomerName('');
+      setDoctorName('');
+      if (onCancelEdit && isEditing) {
+          onCancelEdit();
+      }
+      setShouldResetAfterPrint(false);
+  }, [isEditing, onCancelEdit]);
 
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal') => {
+  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', shouldReset: boolean = false) => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
@@ -394,33 +404,21 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             printWindow.print();
             printWindow.close();
             
-            if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) {
-                    onCancelEdit();
-                }
-                setShouldResetAfterPrint(false);
+            if (shouldReset) {
+                resetBillingState();
             }
         }, 500);
     } else {
         alert("Please enable popups to print the bill.");
-        if (shouldResetAfterPrint) {
-             setCart([]);
-             setCustomerName('');
-             setDoctorName('');
-             if (onCancelEdit && isEditing) {
-                 onCancelEdit();
-             }
-             setShouldResetAfterPrint(false);
+        if (shouldReset) {
+             resetBillingState();
         }
     }
-  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
+  }, [companyProfile, systemConfig, resetBillingState]);
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer.format);
+          executePrint(billToPrint, printer.format, shouldResetAfterPrint);
           setBillToPrint(null);
       }
   };
@@ -468,14 +466,20 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
 
     if (savedBill) {
-        setBillToPrint(savedBill);
-        setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
-        setPrinterModalOpen(true);
+        const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+        if (defaultPrinter) {
+            // If default printer exists, print automatically without modal
+            executePrint(savedBill, defaultPrinter.format, true);
+        } else {
+            setBillToPrint(savedBill);
+            setShouldResetAfterPrint(true); // Flag to reset cart after printing is done (via modal)
+            setPrinterModalOpen(true);
+        }
     } else {
         console.error("Failed to save/update bill.");
         alert("There was an error saving the bill. Please try again.");
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig.printers, executePrint]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -874,16 +878,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           isOpen={isPrinterModalOpen}
           onClose={() => { 
             setPrinterModalOpen(false); 
-            // If closed without printing, but bill was saved, we should probably reset the cart anyway
-            // or keep it? Standard behavior: Save clears the cart usually. 
-            // Here executePrint triggers the reset. If they cancel print, cart stays cleared?
-            // Let's just call reset if they close modal without printing IF bill was saved.
+            // If closed without printing, but bill was saved, we reset the cart
             if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) onCancelEdit();
-                setShouldResetAfterPrint(false);
+                resetBillingState();
             }
             setBillToPrint(null);
           }}
