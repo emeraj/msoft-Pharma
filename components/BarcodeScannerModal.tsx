@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import Modal from './common/Modal';
-import { XIcon } from './icons/Icons';
+import { XIcon, CameraIcon } from './icons/Icons';
 
 // Access Html5Qrcode from global window object
 const { Html5Qrcode, Html5QrcodeSupportedFormats } = (window as any);
@@ -15,7 +15,7 @@ interface BarcodeScannerModalProps {
 
 const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClose, onScanSuccess, closeOnScan = true }) => {
   const [error, setError] = useState<string | null>(null);
-  const [isFlashOn, setIsFlashOn] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const readerId = "reader-barcode-scanner";
   const scannerRef = useRef<any>(null);
   const isRunningRef = useRef(false);
@@ -44,89 +44,86 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
     }
   }, [isOpen]);
 
-  useEffect(() => {
+  const startScanner = async () => {
     if (!isOpen) return;
-    let html5QrCode: any = null;
-    let isCancelled = false;
+    
+    // Clear previous state
+    setError(null);
+    setPermissionDenied(false);
 
-    const startScanner = async () => {
-        await new Promise(r => setTimeout(r, 300));
-        if (isCancelled) return;
-        
-        const element = document.getElementById(readerId);
-        if (!element) return;
+    await new Promise(r => setTimeout(r, 300));
+    const element = document.getElementById(readerId);
+    if (!element) return;
 
-        try {
-            if (!Html5Qrcode) {
-                setError("Scanner library not loaded.");
-                return;
-            }
-
-            html5QrCode = new Html5Qrcode(readerId);
-            scannerRef.current = html5QrCode;
-
-            const config = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 250 },
-                formatsToSupport: [
-                    Html5QrcodeSupportedFormats.EAN_13,
-                    Html5QrcodeSupportedFormats.EAN_8,
-                    Html5QrcodeSupportedFormats.CODE_128,
-                    Html5QrcodeSupportedFormats.CODE_39,
-                    Html5QrcodeSupportedFormats.UPC_A,
-                    Html5QrcodeSupportedFormats.UPC_E
-                ],
-                aspectRatio: 1.0
-            };
-
-            await html5QrCode.start(
-                { facingMode: "environment" },
-                config,
-                (decodedText: string) => {
-                    if (isCancelled) return;
-
-                    // Debounce duplicate scans
-                    const now = Date.now();
-                    if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 2000) {
-                        return;
-                    }
-                    lastScanRef.current = { text: decodedText, time: now };
-                    
-                    // Feedback
-                    setScanFeedback(decodedText);
-                    setTimeout(() => setScanFeedback(null), 1000);
-
-                    onScanSuccessRef.current(decodedText);
-                    
-                    if (closeOnScanRef.current) {
-                        if (window.history.state?.scannerOpen) {
-                            window.history.back();
-                        } else {
-                            onCloseRef.current();
-                        }
-                    }
-                },
-                () => {}
-            );
-            
-            if (!isCancelled) {
-                isRunningRef.current = true;
-                setError(null);
-            } else {
-                if (html5QrCode) html5QrCode.stop().catch(() => {});
-            }
-        } catch (err) {
-            if (!isCancelled) {
-                console.error("Scanner start error:", err);
-                setError("Could not start camera. Ensure permissions are granted.");
-            }
+    try {
+        if (!Html5Qrcode) {
+            setError("Scanner library not loaded. Please refresh.");
+            return;
         }
-    };
 
-    startScanner();
+        const html5QrCode = new Html5Qrcode(readerId);
+        scannerRef.current = html5QrCode;
+
+        const config = { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 },
+            formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E
+            ],
+            aspectRatio: 1.0
+        };
+
+        await html5QrCode.start(
+            { facingMode: "environment" },
+            config,
+            (decodedText: string) => {
+                // Debounce duplicate scans
+                const now = Date.now();
+                if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 2000) {
+                    return;
+                }
+                lastScanRef.current = { text: decodedText, time: now };
+                
+                // Feedback
+                setScanFeedback(decodedText);
+                setTimeout(() => setScanFeedback(null), 1000);
+
+                onScanSuccessRef.current(decodedText);
+                
+                if (closeOnScanRef.current) {
+                    if (window.history.state?.scannerOpen) {
+                        window.history.back();
+                    } else {
+                        onCloseRef.current();
+                    }
+                }
+            },
+            () => {}
+        );
+        
+        isRunningRef.current = true;
+    } catch (err: any) {
+        console.error("Scanner start error:", err);
+        if (err?.name === 'NotAllowedError' || err?.message?.includes('Permission')) {
+             setPermissionDenied(true);
+             setError("Camera permission denied.");
+        } else {
+             setError("Could not start camera. " + (err?.message || "Unknown error."));
+        }
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+        startScanner();
+    }
 
     return () => {
-        isCancelled = true;
         if (scannerRef.current) {
             const scanner = scannerRef.current;
             if (isRunningRef.current) {
@@ -153,9 +150,36 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
       <div className="relative flex-grow flex flex-col justify-center overflow-hidden bg-black">
-          {error && (
+          {error && !permissionDenied && (
              <div className="absolute top-10 left-0 right-0 z-20 px-4 text-center">
                  <div className="inline-block bg-red-600 text-white px-4 py-2 rounded shadow-lg">{error}</div>
+             </div>
+          )}
+          
+          {/* Permission Request UI */}
+          {permissionDenied && (
+             <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/90 p-6">
+                 <div className="bg-white dark:bg-slate-800 p-6 rounded-lg text-center max-w-xs w-full shadow-2xl">
+                     <div className="mx-auto bg-red-100 dark:bg-red-900/50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
+                         <CameraIcon className="h-8 w-8 text-red-600 dark:text-red-400" />
+                     </div>
+                     <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Permission Required</h3>
+                     <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">
+                         Access to the camera is required to scan barcodes. Please enable camera permissions in your browser settings.
+                     </p>
+                     <button 
+                        onClick={startScanner} 
+                        className="w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 transition-colors mb-3"
+                     >
+                         Retry Permission
+                     </button>
+                     <button 
+                        onClick={handleManualClose} 
+                        className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 py-2 rounded-lg font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                     >
+                         Close
+                     </button>
+                 </div>
              </div>
           )}
           

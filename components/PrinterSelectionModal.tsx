@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Modal from './common/Modal';
-import { PrinterIcon, PlusIcon, CheckCircleIcon, BluetoothIcon, MapPinIcon, InformationCircleIcon, DeviceMobileIcon, UsbIcon, CloudIcon } from './icons/Icons';
+import { PrinterIcon, PlusIcon, CheckCircleIcon, BluetoothIcon, InformationCircleIcon, DeviceMobileIcon, UsbIcon, CloudIcon } from './icons/Icons';
 import type { PrinterProfile, SystemConfig } from '../types';
 
 interface PrinterSelectionModalProps {
@@ -27,6 +27,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   const [selectedPrinterId, setSelectedPrinterId] = useState<string>('');
   const [scannedDevices, setScannedDevices] = useState<{name: string, id: string}[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
 
   const printers = systemConfig.printers || [];
 
@@ -47,6 +48,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     }
     setScannedDevices([]);
     setIsScanning(false);
+    setScanError(null);
   }, [isOpen, printers]);
 
   const handleAddPrinter = () => {
@@ -84,11 +86,10 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   
   // Scanning Logic
   useEffect(() => {
-    let timer: number;
-
     if (view === 'scanning') {
       setIsScanning(true);
       setScannedDevices([]);
+      setScanError(null);
       const win = window as any;
 
       // Check if bluetooth plugin is available
@@ -102,6 +103,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
 
         const onError = (err: any) => {
             console.error("Bluetooth Scan Error", err);
+            setScanError("Failed to scan. Ensure Bluetooth is on.");
             setIsScanning(false);
         };
         
@@ -125,20 +127,11 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
         }, onError);
 
       } else {
-        // Fallback / Simulation for browser
-        timer = window.setTimeout(() => {
-            setScannedDevices([
-                { name: 'Printer001', id: 'DC:0D:30:A2:F1:A4' },
-                { name: 'Galaxy A20', id: 'FC:AA:B6:7F:BB:FB' },
-            ]);
-            setIsScanning(false);
-        }, 1500);
+        // Not native
+        setScanError("Bluetooth scanning is only available in the native Android/iOS app.");
+        setIsScanning(false);
       }
     }
-
-    return () => {
-        if (timer) clearTimeout(timer);
-    };
   }, [view]);
 
   const handleDeviceSelect = (device: {name: string, id: string}) => {
@@ -275,7 +268,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
                     <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                       Running in Browser. For thermal printing, install RawBT on phone or use system print dialog.
+                       Running in Browser. For thermal printing, please use 'Mobile App (RawBT)' (on Android) or use the System Print dialog (PDF/USB). Direct Bluetooth is not supported in browser.
                     </p>
                 </div>
              )}
@@ -292,7 +285,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 >
                     <BluetoothIcon className="h-12 w-12 text-blue-600 mb-4" />
                     <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Bluetooth Printer</span>
-                    <span className="text-[10px] text-slate-500">Direct Connection</span>
+                    <span className="text-[10px] text-slate-500">Native App Only</span>
                 </button>
                 <button 
                      onClick={handleRawBtSelect}
@@ -300,7 +293,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 >
                     <CloudIcon className="h-12 w-12 text-green-600 mb-4" />
                     <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Mobile App (RawBT)</span>
-                    <span className="text-[10px] text-slate-500">Best for Web</span>
+                    <span className="text-[10px] text-slate-500">Best for Web on Android</span>
                 </button>
                 <button 
                      onClick={() => {
@@ -330,11 +323,21 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                           <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600 mb-4"></div>
                           <p className="text-lg text-slate-600 dark:text-slate-400">Scanning for printers...</p>
                       </div>
+                  ) : scanError ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-full mb-4">
+                                <BluetoothIcon className="h-8 w-8" />
+                            </div>
+                            <p className="text-slate-800 dark:text-slate-200 font-medium mb-2">{scanError}</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
+                                Direct Bluetooth scanning requires the Native App. If you are on the web, please use <strong>RawBT</strong> or <strong>System Printer</strong>.
+                            </p>
+                            <button onClick={() => setView('type_select')} className="mt-6 text-indigo-600 hover:underline">Back to Options</button>
+                        </div>
                   ) : scannedDevices.length === 0 ? (
                        <div className="flex flex-col items-center justify-center py-12">
                            <p className="text-slate-600 dark:text-slate-400">No Bluetooth devices found.</p>
                            <button onClick={() => setView('scanning')} className="mt-4 text-indigo-600 hover:underline">Retry Scan</button>
-                           {!isNative() && <p className="text-xs text-red-500 mt-2">(Bluetooth scan only works in Native App)</p>}
                        </div>
                   ) : (
                       <div className="space-y-2">
