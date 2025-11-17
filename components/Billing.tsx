@@ -487,7 +487,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile) => {
+  const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
+    const doReset = () => {
+        setCart([]);
+        setCustomerName('');
+        setDoctorName('');
+        if (onCancelEdit && isEditing) {
+            onCancelEdit();
+        }
+        setShouldResetAfterPrint(false);
+    };
+
+    const shouldReset = forceReset || shouldResetAfterPrint;
+
     // Native Bluetooth Thermal Printer (Capacitor)
     if (printer.format === 'Thermal' && window.bluetoothSerial && printer.id) {
         try {
@@ -515,14 +527,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             });
 
              // Reset Logic after successful Bluetooth print
-             if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) {
-                    onCancelEdit();
-                }
-                setShouldResetAfterPrint(false);
+             if (shouldReset) {
+                doReset();
             }
             return; // Exit function, do not open window.print
 
@@ -538,14 +544,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
         await printViaWebBluetooth(bytes);
         
-        if (shouldResetAfterPrint) {
-            setCart([]);
-            setCustomerName('');
-            setDoctorName('');
-            if (onCancelEdit && isEditing) {
-                onCancelEdit();
-            }
-            setShouldResetAfterPrint(false);
+        if (shouldReset) {
+            doReset();
         }
         return;
     }
@@ -583,26 +583,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             printWindow.print();
             printWindow.close();
             
-            if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) {
-                    onCancelEdit();
-                }
-                setShouldResetAfterPrint(false);
+            if (shouldReset) {
+                doReset();
             }
         }, 500);
     } else {
         alert("Please enable popups to print the bill.");
-        if (shouldResetAfterPrint) {
-             setCart([]);
-             setCustomerName('');
-             setDoctorName('');
-             if (onCancelEdit && isEditing) {
-                 onCancelEdit();
-             }
-             setShouldResetAfterPrint(false);
+        if (shouldReset) {
+             doReset();
         }
     }
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
@@ -657,14 +645,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
 
     if (savedBill) {
-        setBillToPrint(savedBill);
-        setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
-        setPrinterModalOpen(true);
+        const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+        if (defaultPrinter) {
+            executePrint(savedBill, defaultPrinter, true);
+        } else {
+            setBillToPrint(savedBill);
+            setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
+            setPrinterModalOpen(true);
+        }
     } else {
         console.error("Failed to save/update bill.");
         alert("There was an error saving the bill. Please try again.");
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig, executePrint]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
