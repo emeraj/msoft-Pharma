@@ -18,6 +18,7 @@ export interface Product {
   composition?: string; // e.g., "Paracetamol 500mg"
   unitsPerStrip?: number; // e.g., 10 tablets per strip
   isScheduleH?: boolean;
+  lowStockThreshold?: number; // Quantity below which alert is shown (in Strips for Pharma, Units for Retail)
   batches: Batch[];
 }
 

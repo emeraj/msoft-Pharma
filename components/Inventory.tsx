@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, BarcodeIcon, CameraIcon } from './icons/Icons';
+import { PlusIcon, DownloadIcon, TrashIcon, PencilIcon, UploadIcon, BarcodeIcon, CameraIcon, ExclamationCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 
 // --- Utility function to export data to CSV ---
@@ -76,7 +76,7 @@ interface InventoryProps {
   onBulkAddProducts: (products: Omit<Product, 'id' | 'batches'>[]) => Promise<{success: number; skipped: number}>;
 }
 
-type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
+type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry' | 'low_stock';
 
 // --- Main Inventory Component ---
 const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, gstRates, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onDeleteProduct, onBulkAddProducts }) => {
@@ -119,6 +119,8 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         return isPharmaMode ? <ExpiredStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} /> : null;
       case 'nearing_expiry':
         return isPharmaMode ? <NearingExpiryStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} /> : null;
+      case 'low_stock':
+        return <LowStockView products={products} systemConfig={systemConfig} onOpenBatchModal={handleOpenBatchModal} />;
       default:
         return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onDeleteProduct={onDeleteProduct} />;
     }
@@ -160,6 +162,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
         </div>
         <div className="flex flex-wrap gap-2 border-t dark:border-slate-700 mt-4 pt-4">
             <SubNavButton view="all" label="All Item Stock" />
+            <SubNavButton view="low_stock" label="Low Stock Alerts" />
             <SubNavButton view="selected" label="Selected Item Stock" />
             <SubNavButton view="company" label="Company Wise Stock" />
             {isPharmaMode && <SubNavButton view="batch" label="Batch Wise Stock" />}
@@ -299,7 +302,9 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                 }, 0);
                 
                 const latestMrp = product.batches.length > 0 ? Math.max(...product.batches.map(b => b.mrp)) : 0;
-
+                
+                const isLowStock = product.lowStockThreshold && product.lowStockThreshold > 0 && 
+                    currentStock <= (product.lowStockThreshold * (isPharmaMode ? (product.unitsPerStrip || 1) : 1));
 
                 return {
                     id: product.id,
@@ -315,6 +320,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     currentStock,
                     stockValue,
                     latestMrp,
+                    isLowStock,
                     product // Pass the original product object for the action button
                 };
             }).sort((a,b) => a.name.localeCompare(b.name));
@@ -431,9 +437,12 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     </thead>
                     <tbody>
                         {reportData.map(item => (
-                            <tr key={item.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                            <tr key={item.id} className={`bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 ${item.isLowStock ? 'border-l-4 border-l-red-500' : ''}`}>
                                 <td scope="row" className="px-6 py-4 font-medium text-slate-900 dark:text-white whitespace-nowrap">
-                                    {item.name}
+                                    <div className="flex items-center gap-2">
+                                        {item.name}
+                                        {item.isLowStock && <ExclamationCircleIcon className="h-5 w-5 text-red-500" title="Low Stock Warning" />}
+                                    </div>
                                     {isPharmaMode && item.isScheduleH && <span className="ml-2 px-2 py-0.5 text-xs font-semibold text-white bg-orange-600 dark:bg-orange-700 rounded-full">Sch. H</span>}
                                     <p className="text-xs text-slate-500 dark:text-slate-400 font-normal">{item.company}</p>
                                     {!isPharmaMode && item.barcode && <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">Barcode: {item.barcode}</p>}
@@ -442,7 +451,11 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                                 <td className="px-6 py-4 text-center">{formatStock(item.openingStock, item.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-center">{formatStock(item.purchasedQty, item.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-center">{formatStock(item.soldQty, item.unitsPerStrip)}</td>
-                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.currentStock, item.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center font-bold">
+                                    <span className={item.isLowStock ? 'text-red-600 dark:text-red-400' : ''}>
+                                        {formatStock(item.currentStock, item.unitsPerStrip)}
+                                    </span>
+                                </td>
                                 <td className="px-6 py-4 text-right font-semibold">₹{item.latestMrp.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4 text-right font-semibold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                 <td className="px-6 py-4">
@@ -477,6 +490,70 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No products found.</p></div>
                 )}
             </div>
+        </Card>
+    );
+};
+
+const LowStockView: React.FC<{products: Product[], systemConfig: SystemConfig, onOpenBatchModal: (product: Product) => void }> = ({ products, systemConfig, onOpenBatchModal }) => {
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    
+    const lowStockProducts = useMemo(() => {
+        return products.filter(product => {
+            if (!product.lowStockThreshold || product.lowStockThreshold <= 0) return false;
+            
+            const currentStock = product.batches.reduce((sum, b) => sum + b.stock, 0);
+            const thresholdInBaseUnits = product.lowStockThreshold * (isPharmaMode ? (product.unitsPerStrip || 1) : 1);
+            
+            return currentStock <= thresholdInBaseUnits;
+        }).sort((a, b) => a.name.localeCompare(b.name));
+    }, [products, isPharmaMode]);
+
+    return (
+        <Card title="Low Stock Alerts">
+             <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-red-50 dark:bg-red-900/30">
+                        <tr>
+                            <th scope="col" className="px-6 py-3">Product Name</th>
+                            <th scope="col" className="px-6 py-3">Company</th>
+                            <th scope="col" className="px-6 py-3 text-center">Alert Threshold</th>
+                            <th scope="col" className="px-6 py-3 text-center">Current Stock</th>
+                            <th scope="col" className="px-6 py-3 text-center">Status</th>
+                            <th scope="col" className="px-6 py-3">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {lowStockProducts.map(product => (
+                            <tr key={product.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">
+                                    {product.name}
+                                    {isPharmaMode && <p className="text-xs text-indigo-600 dark:text-indigo-400 font-normal">{product.composition}</p>}
+                                </td>
+                                <td className="px-6 py-4">{product.company}</td>
+                                <td className="px-6 py-4 text-center">
+                                    {product.lowStockThreshold} {isPharmaMode ? 'Strips' : 'Units'}
+                                </td>
+                                <td className="px-6 py-4 text-center font-bold text-red-600 dark:text-red-400">
+                                    {formatStock(product.batches.reduce((s, b) => s + b.stock, 0), product.unitsPerStrip)}
+                                </td>
+                                <td className="px-6 py-4 text-center">
+                                    <span className="px-2 py-1 text-xs font-semibold text-white bg-red-500 rounded-full">Low Stock</span>
+                                </td>
+                                <td className="px-6 py-4">
+                                     <button onClick={() => onOpenBatchModal(product)} className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline whitespace-nowrap">
+                                        View/Add Stock
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {lowStockProducts.length === 0 && (
+                    <div className="text-center py-10 text-slate-600 dark:text-slate-400">
+                        <p>No items are currently below their low stock threshold.</p>
+                    </div>
+                )}
+             </div>
         </Card>
     );
 };
@@ -921,7 +998,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
 
   const getInitialFormState = () => ({
     name: '', company: '', hsnCode: '', gst: defaultGst, barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No',
-    batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
+    batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: '', lowStockThreshold: ''
   });
 
   const [formState, setFormState] = useState(getInitialFormState());
@@ -956,7 +1033,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const { name, company, hsnCode, gst, barcode, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
+    const { name, company, hsnCode, gst, barcode, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice, lowStockThreshold } = formState;
     
     // Duplicate Barcode Check for Retail Mode
     if (!isPharmaMode && barcode && barcode.trim() !== '') {
@@ -981,6 +1058,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
       company,
       hsnCode,
       gst: parseFloat(gst),
+      lowStockThreshold: lowStockThreshold ? parseInt(lowStockThreshold) : undefined,
     };
     
     if (isPharmaMode) {
@@ -1074,6 +1152,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
                 </button>
              </div>
           )}
+          <input name="lowStockThreshold" value={formState.lowStockThreshold} onChange={handleChange} type="number" placeholder={`Low Stock Alert Qty ${isPharmaMode ? '(Strips)' : '(Units)'}`} className={formInputStyle} min="0" />
         </div>
         <h4 className="font-semibold text-slate-700 dark:text-slate-300 pt-2 border-t dark:border-slate-700 mt-4">Initial Stock Details</h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1109,7 +1188,7 @@ interface EditProductModalProps {
 
 const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No', mrp: '', purchasePrice: ''
+    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No', mrp: '', purchasePrice: '', lowStockThreshold: ''
   });
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
@@ -1129,6 +1208,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, pr
             isScheduleH: product.isScheduleH ? 'Yes' : 'No',
             mrp: showPriceFields ? String(batch.mrp) : '',
             purchasePrice: showPriceFields ? String(batch.purchasePrice) : '',
+            lowStockThreshold: String(product.lowStockThreshold || '')
         });
     }
   }, [product, isOpen, showPriceFields]);
@@ -1146,6 +1226,7 @@ const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, pr
         company: formState.company,
         hsnCode: formState.hsnCode,
         gst: parseFloat(formState.gst),
+        lowStockThreshold: formState.lowStockThreshold ? parseInt(formState.lowStockThreshold) : undefined,
     };
 
     if (isPharmaMode) {
@@ -1223,6 +1304,10 @@ const EditProductModal: React.FC<EditProductModalProps> = ({ isOpen, onClose, pr
                 <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
             </div>
           )}
+          <div>
+             <label className="labelStyle">Low Stock Alert Qty {isPharmaMode ? '(Strips)' : '(Units)'}</label>
+             <input name="lowStockThreshold" value={formState.lowStockThreshold} onChange={handleChange} type="number" placeholder="Alert Qty" className={formInputStyle} min="0" />
+          </div>
            {showPriceFields && (
             <>
                 <div>
@@ -1363,7 +1448,7 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
     const [importResult, setImportResult] = useState<{success: number; skipped: number} | null>(null);
     const [isLoading, setIsLoading] = useState(false);
 
-    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'barcode', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'isScheduleH', 'ignore'];
+    const appFields: (keyof Omit<Product, 'id' | 'batches'> | 'ignore')[] = ['name', 'company', 'barcode', 'hsnCode', 'gst', 'composition', 'unitsPerStrip', 'isScheduleH', 'lowStockThreshold', 'ignore'];
     
     const resetState = () => {
         setStep(1);
@@ -1450,6 +1535,14 @@ const ImportProductsModal: React.FC<{ isOpen: boolean; onClose: () => void; onBu
             if (isScheduleHRaw) {
                 const isScheduleHValue = isScheduleHRaw.toLowerCase();
                 product.isScheduleH = isScheduleHValue === 'yes' || isScheduleHValue === 'true' || isScheduleHValue === '1';
+            }
+
+            const lowStockRaw = (row as any)[mapping['lowStockThreshold']];
+            if (lowStockRaw) {
+                const lowStock = parseInt(lowStockRaw, 10);
+                if (!isNaN(lowStock) && lowStock > 0) {
+                    product.lowStockThreshold = lowStock;
+                }
             }
 
             return product;
