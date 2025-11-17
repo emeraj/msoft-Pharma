@@ -12,7 +12,7 @@ import BarcodeScannerModal from './BarcodeScannerModal';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import { generateEscPosCommand } from '../utils/printerUtils';
+import { generateEscPosCommand, sendToRawBt } from '../utils/printerUtils';
 
 interface BillingProps {
   products: Product[];
@@ -420,9 +420,29 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
   const handlePrinterSelection = async (printer: PrinterProfile) => {
-    // Native Bluetooth Printing Logic
+    if (!billToPrint) return;
+
+    // RawBT Logic (Android Web Intent)
+    if (printer.id === 'RAWBT') {
+        const commands = generateEscPosCommand(billToPrint, companyProfile, systemConfig);
+        sendToRawBt(commands);
+        
+        // Clean up logic (since intent opens immediately)
+        setPrinterModalOpen(false);
+        setBillToPrint(null);
+        if (shouldResetAfterPrint) {
+            setCart([]);
+            setCustomerName('');
+            setDoctorName('');
+            if (onCancelEdit && isEditing) onCancelEdit();
+            setShouldResetAfterPrint(false);
+        }
+        return;
+    }
+
+    // Native Bluetooth Printing Logic (Capacitor)
     const isMacAddress = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(printer.id);
-    if (isMacAddress && window.bluetoothSerial && billToPrint) {
+    if (isMacAddress && window.bluetoothSerial) {
          try {
               const isConnected = await new Promise(resolve => window.bluetoothSerial.isConnected(resolve, () => resolve(false)));
               
@@ -450,7 +470,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
               console.error("Bluetooth Print Error", err);
               alert("Failed to print via Bluetooth. Ensure device is paired and on.");
          }
-    } else if (billToPrint) {
+    } else {
         // Fallback to browser print
         executePrint(billToPrint, printer.format);
         setBillToPrint(null);

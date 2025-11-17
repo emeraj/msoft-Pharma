@@ -17,14 +17,17 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     // Helper to add line
     const addLine = (text: string) => commands += text + '\n';
     
+    // Helper to sanitize text (replace Rupee symbol, remove non-ASCII)
+    const sanitize = (str: string) => str.replace(/₹/g, 'Rs.').normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+
     // Header
     commands += ALIGN_CENTER;
     commands += BOLD_ON;
-    addLine(companyProfile.name);
+    addLine(sanitize(companyProfile.name));
     commands += BOLD_OFF;
-    addLine(companyProfile.address);
-    if (companyProfile.phone) addLine(`Ph: ${companyProfile.phone}`);
-    if (companyProfile.gstin) addLine(`GSTIN: ${companyProfile.gstin}`);
+    addLine(sanitize(companyProfile.address));
+    if (companyProfile.phone) addLine(`Ph: ${sanitize(companyProfile.phone)}`);
+    if (companyProfile.gstin) addLine(`GSTIN: ${sanitize(companyProfile.gstin)}`);
     addLine('-'.repeat(32));
     
     // Title
@@ -37,8 +40,8 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     commands += ALIGN_LEFT;
     addLine(`Bill No: ${bill.billNumber}`);
     addLine(`Date: ${new Date(bill.date).toLocaleDateString()} ${new Date(bill.date).toLocaleTimeString()}`);
-    addLine(`Customer: ${bill.customerName}`);
-    if (bill.doctorName) addLine(`Doctor: ${bill.doctorName}`);
+    addLine(`Customer: ${sanitize(bill.customerName)}`);
+    if (bill.doctorName) addLine(`Doctor: ${sanitize(bill.doctorName)}`);
     addLine('-'.repeat(32));
     
     // Items Header
@@ -50,7 +53,7 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     
     // Items
     bill.items.forEach(item => {
-        let name = item.productName;
+        let name = sanitize(item.productName);
         // Truncate or pad name to 14 chars
         if (name.length > 14) name = name.substring(0, 14);
         else name = name.padEnd(14);
@@ -76,8 +79,8 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     
     // Footer
     commands += ALIGN_CENTER;
-    if (systemConfig.remarkLine1) addLine(systemConfig.remarkLine1);
-    if (systemConfig.remarkLine2) addLine(systemConfig.remarkLine2);
+    if (systemConfig.remarkLine1) addLine(sanitize(systemConfig.remarkLine1));
+    if (systemConfig.remarkLine2) addLine(sanitize(systemConfig.remarkLine2));
     
     // Feed lines for cutting
     addLine('');
@@ -85,8 +88,18 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     addLine(''); 
     addLine(''); 
     
-    // Optional Cut Command (GS V 66 n) - Feed n lines and cut
-    // commands += GS + 'V' + '\x42' + '\x03'; 
-    
     return commands;
+};
+
+export const sendToRawBt = (commands: string) => {
+    // RawBT expects Base64 encoded data
+    // We use window.btoa, so we must ensure commands are clean ASCII/binary (handled by sanitize above)
+    try {
+        const base64Data = btoa(commands);
+        const intentUrl = `intent:base64,${base64Data}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;S.browser_fallback_url=https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter;end;`;
+        window.location.href = intentUrl;
+    } catch (e) {
+        console.error("Error encoding data for RawBT:", e);
+        alert("Error creating print command. Please ensure no special characters are used.");
+    }
 };

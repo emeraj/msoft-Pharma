@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Modal from './common/Modal';
-import { PrinterIcon, PlusIcon, CheckCircleIcon, BluetoothIcon, MapPinIcon, InformationCircleIcon, DeviceMobileIcon, UsbIcon } from './icons/Icons';
+import { PrinterIcon, PlusIcon, CheckCircleIcon, BluetoothIcon, MapPinIcon, InformationCircleIcon, DeviceMobileIcon, UsbIcon, CloudIcon } from './icons/Icons';
 import type { PrinterProfile, SystemConfig } from '../types';
 
 interface PrinterSelectionModalProps {
@@ -147,6 +147,11 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       setNewPrinter({ id: device.id, name: device.name, format: 'Thermal', isDefault: false });
       setView('multi_device'); 
   };
+
+  const handleRawBtSelect = () => {
+      setNewPrinter({ id: 'RAWBT', name: 'RawBT (Android App)', format: 'Thermal', isDefault: false });
+      setView('manual_setup');
+  }
 
   const formatIcons = {
     'A4': <div className="w-8 h-10 border-2 border-slate-400 rounded-sm bg-white flex items-center justify-center text-[8px] font-bold text-slate-600">A4</div>,
@@ -310,6 +315,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                             <div className="flex-grow">
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{printer.name}</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">{printer.format} Format</p>
+                                {printer.id === 'RAWBT' && <p className="text-[10px] text-indigo-500 font-semibold">App Integration</p>}
                                 {printer.id.includes(':') && <p className="text-[10px] text-slate-400 font-mono">{printer.id}</p>}
                             </div>
                             {printer.isShared && (
@@ -340,7 +346,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
              <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
                 <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                   You need to pair your printer first if it's not listed above, click here to open settings.
+                   For Browser/Mobile printing, add "Mobile App (RawBT)" or pair your Bluetooth printer first.
                 </p>
             </div>
         </div>
@@ -354,8 +360,17 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                     onClick={() => setView('perm_nearby')}
                     className="flex flex-col items-center justify-center p-6 bg-blue-100 dark:bg-blue-900/30 rounded-2xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-all aspect-square shadow-sm"
                 >
-                    <BluetoothIcon className="h-16 w-16 text-blue-600 mb-4" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">Bluetooth</span>
+                    <BluetoothIcon className="h-12 w-12 text-blue-600 mb-4" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Bluetooth (App)</span>
+                    <span className="text-[10px] text-slate-500">For Native App</span>
+                </button>
+                <button 
+                     onClick={handleRawBtSelect}
+                    className="flex flex-col items-center justify-center p-6 bg-green-100 dark:bg-green-900/30 rounded-2xl hover:bg-green-200 dark:hover:bg-green-900/50 transition-all aspect-square shadow-sm"
+                >
+                    <CloudIcon className="h-12 w-12 text-green-600 mb-4" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Mobile App (RawBT)</span>
+                    <span className="text-[10px] text-slate-500">Best for Browser</span>
                 </button>
                 <button 
                      onClick={() => {
@@ -364,8 +379,9 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                      }}
                     className="flex flex-col items-center justify-center p-6 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm"
                 >
-                    <UsbIcon className="h-16 w-16 text-slate-600 dark:text-slate-400 mb-4" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">USB Cable</span>
+                    <UsbIcon className="h-12 w-12 text-slate-600 dark:text-slate-400 mb-4" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">USB / System</span>
+                    <span className="text-[10px] text-slate-500">Use OS Driver</span>
                 </button>
             </div>
             <div className="flex justify-start">
@@ -412,7 +428,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
                     <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                       You need to pair your printer first if it's not listed above, click here to open settings.
+                       Make sure your Bluetooth is ON and the printer is powered.
                     </p>
                 </div>
           </div>
@@ -430,11 +446,16 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                     className="w-full px-4 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
             </div>
-            {newPrinter.id && (
+            {newPrinter.id && newPrinter.id !== 'RAWBT' && (
                 <div>
                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Device ID (MAC)</label>
                      <input type="text" value={newPrinter.id} readOnly className="w-full px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600 rounded-lg cursor-not-allowed" />
                 </div>
+            )}
+             {newPrinter.id === 'RAWBT' && (
+                 <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg text-sm text-blue-800 dark:text-blue-200">
+                     <p><strong>Note:</strong> This method uses the <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" rel="noopener noreferrer" className="underline">RawBT app</a> to print directly from Chrome/Browsers. Ensure RawBT is installed on your phone.</p>
+                 </div>
             )}
             <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Print Format</label>
