@@ -185,11 +185,11 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             </div>
             
             {/* Feed lines for paper cutting */}
-            <div style={{ textAlign: 'center', marginTop: '10px', paddingBottom: '10mm' }}>
+            <div style={{ textAlign: 'center', marginTop: '5mm', paddingBottom: '25mm', color: 'black', fontSize: '10px' }}>
                 <br />
                 <br />
                 <br />
-                <span style={{ color: 'black', fontSize: '10px' }}>.</span>
+                .
             </div>
         </pre>
     );

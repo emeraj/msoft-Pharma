@@ -12,6 +12,7 @@ import BarcodeScannerModal from './BarcodeScannerModal';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import { generateEscPosCommand } from '../utils/printerUtils';
 
 interface BillingProps {
   products: Product[];
@@ -418,11 +419,42 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
-  const handlePrinterSelection = (printer: PrinterProfile) => {
-      if (billToPrint) {
-          executePrint(billToPrint, printer.format);
-          setBillToPrint(null);
-      }
+  const handlePrinterSelection = async (printer: PrinterProfile) => {
+    // Native Bluetooth Printing Logic
+    const isMacAddress = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(printer.id);
+    if (isMacAddress && window.bluetoothSerial && billToPrint) {
+         try {
+              const isConnected = await new Promise(resolve => window.bluetoothSerial.isConnected(resolve, () => resolve(false)));
+              
+              if (!isConnected) {
+                  // Attempt to connect
+                  await new Promise((resolve, reject) => window.bluetoothSerial.connect(printer.id, resolve, reject));
+              }
+              
+              // Generate and send data
+              const data = generateEscPosCommand(billToPrint, companyProfile, systemConfig);
+              await new Promise((resolve, reject) => window.bluetoothSerial.write(data, resolve, reject));
+              
+              // Cleanup
+              setPrinterModalOpen(false);
+              setBillToPrint(null);
+              if (shouldResetAfterPrint) {
+                setCart([]);
+                setCustomerName('');
+                setDoctorName('');
+                if (onCancelEdit && isEditing) onCancelEdit();
+                setShouldResetAfterPrint(false);
+              }
+
+         } catch (err) {
+              console.error("Bluetooth Print Error", err);
+              alert("Failed to print via Bluetooth. Ensure device is paired and on.");
+         }
+    } else if (billToPrint) {
+        // Fallback to browser print
+        executePrint(billToPrint, printer.format);
+        setBillToPrint(null);
+    }
   };
 
   // Update Config Helper
@@ -874,10 +906,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           isOpen={isPrinterModalOpen}
           onClose={() => { 
             setPrinterModalOpen(false); 
-            // If closed without printing, but bill was saved, we should probably reset the cart anyway
-            // or keep it? Standard behavior: Save clears the cart usually. 
-            // Here executePrint triggers the reset. If they cancel print, cart stays cleared?
-            // Let's just call reset if they close modal without printing IF bill was saved.
             if (shouldResetAfterPrint) {
                 setCart([]);
                 setCustomerName('');

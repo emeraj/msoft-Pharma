@@ -16,7 +16,7 @@ type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_ne
 
 const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
   const [view, setView] = useState<ViewState>('list');
-  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean }>({
+  const [newPrinter, setNewPrinter] = useState<{ id?: string; name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean }>({
     name: '',
     format: 'Thermal',
     isDefault: false,
@@ -51,17 +51,13 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     if (!newPrinter.name) return;
 
     const printer: PrinterProfile = {
-      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`, // Use MAC as ID if available (simple heuristic) or random
+      id: newPrinter.id || (newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`),
       name: newPrinter.name,
       format: newPrinter.format,
       isDefault: newPrinter.isDefault || printers.length === 0,
       isShared: isShared,
     };
     
-    // If using plugin scanning, we might want to store the MAC address specifically as ID.
-    // In the scanning logic below, we use device.id which is the MAC.
-    // If manually entered, we generate an ID.
-
     let updatedPrinters = [...printers];
     if (printer.isDefault) {
       updatedPrinters = updatedPrinters.map(p => ({ ...p, isDefault: false }));
@@ -144,23 +140,11 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
 
     return () => {
         if (timer) clearTimeout(timer);
-        // No explicit stop scan for the plugin in this simple implementation
     };
   }, [view]);
 
   const handleDeviceSelect = (device: {name: string, id: string}) => {
-      // We store the MAC address as the printer ID implicitly if we select it here
-      // For now, pre-fill name. ID assignment happens in handleAddPrinter.
-      // Actually, for bluetooth, we want the ID to be the MAC address. 
-      // Let's handle that by passing the ID through.
-      setNewPrinter({ name: device.name, format: 'Thermal', isDefault: false });
-      // If the device has a MAC-like ID, we might want to preserve it. 
-      // For now, the simple newPrinter state doesn't hold ID.
-      // We'll cheat slightly and put the ID in the name for manual setup if user wants to edit, 
-      // OR just trust manual setup will generate an ID.
-      // BETTER: Let's assume the 'name' field in manual setup is editable, but we want to persist the MAC.
-      // Since manual setup is just Name/Format, we lose the MAC if we don't handle it.
-      // For this specific flow, let's just proceed to multi_device.
+      setNewPrinter({ id: device.id, name: device.name, format: 'Thermal', isDefault: false });
       setView('multi_device'); 
   };
 
@@ -252,7 +236,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-8 px-4">Do you want to use same printer with multiple devices?</h3>
                 
                 <div className="relative mb-10 w-full flex flex-col items-center">
-                     {/* Printer */}
                      <div className="bg-blue-500 p-4 rounded-xl w-24 h-20 flex items-center justify-center mb-4 relative z-10 shadow-lg">
                         <div className="bg-white w-10 h-1.5 absolute top-8 rounded-sm"></div>
                         <div className="bg-white w-10 h-1 absolute bottom-3 flex justify-between px-0.5">
@@ -261,7 +244,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                          <div className="absolute top-3 right-3 w-1.5 h-1.5 bg-white rounded-full"></div>
                      </div>
                      
-                     {/* Phones */}
                      <div className="flex justify-center gap-6 mt-4">
                         <div className="bg-gradient-to-b from-indigo-400 to-purple-500 p-0.5 rounded-lg transform -rotate-12 w-14 h-24 flex items-center justify-center shadow-lg">
                             <div className="w-full h-full bg-slate-800 rounded-lg border-2 border-transparent opacity-30"></div>
@@ -299,8 +281,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     )
   }
 
-  // --- Main Render Logic ---
-
   if (!isOpen) return null;
 
   return (
@@ -330,6 +310,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                             <div className="flex-grow">
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{printer.name}</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">{printer.format} Format</p>
+                                {printer.id.includes(':') && <p className="text-[10px] text-slate-400 font-mono">{printer.id}</p>}
                             </div>
                             {printer.isShared && (
                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full mr-2">Shared</span>
@@ -449,6 +430,12 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                     className="w-full px-4 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
             </div>
+            {newPrinter.id && (
+                <div>
+                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Device ID (MAC)</label>
+                     <input type="text" value={newPrinter.id} readOnly className="w-full px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600 rounded-lg cursor-not-allowed" />
+                </div>
+            )}
             <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Print Format</label>
                 <div className="grid grid-cols-3 gap-3">
