@@ -47,7 +47,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
 
             const config = { 
                 fps: 10, 
-                qrbox: { width: 300, height: 180 }, // Larger box to fill the view as requested
+                qrbox: { width: 280, height: 160 }, // Larger box to fill the view
                 aspectRatio: 1.777778, 
                 formatsToSupport: [
                     Html5QrcodeSupportedFormats.EAN_13,
@@ -121,7 +121,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
   }, [onScanSuccess, readerId]);
 
   return (
-    <div className="relative w-full h-64 rounded-xl overflow-hidden bg-black border border-slate-700 shadow-sm group mb-4">
+    <div className="relative w-full h-56 rounded-xl overflow-hidden bg-black border border-slate-700 shadow-sm group mb-4">
         <div id={readerId} className="w-full h-full"></div>
         
         {/* CSS Override for Video Object Fit to Ensure Cover */}
@@ -140,7 +140,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
         {/* Overlay UI */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
             {/* Scanning Area Marker - Matches qrbox dimensions */}
-            <div className="relative" style={{ width: '300px', height: '180px' }}>
+            <div className="relative" style={{ width: '280px', height: '160px' }}>
                 {/* Dimmed Background using huge borders technique to create 'hole' */}
                 <div className="absolute -inset-[1000px] border-[1000px] border-black/50 pointer-events-none"></div>
                 
@@ -171,9 +171,9 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
 
         <style>{`
             @keyframes scan-laser {
-                0% { transform: translateY(-85px); opacity: 0.3; }
+                0% { transform: translateY(-75px); opacity: 0.3; }
                 50% { opacity: 1; }
-                100% { transform: translateY(85px); opacity: 0.3; }
+                100% { transform: translateY(75px); opacity: 0.3; }
             }
             .animate-scan-laser {
                 animation: scan-laser 2s infinite linear;
