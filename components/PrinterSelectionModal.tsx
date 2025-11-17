@@ -26,14 +26,12 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   const [selectedPrinterId, setSelectedPrinterId] = useState<string>('');
   const [scannedDevices, setScannedDevices] = useState<{name: string, id: string}[]>([]);
   const [isScanning, setIsScanning] = useState(false);
-  const [tempPrinterId, setTempPrinterId] = useState<string | null>(null);
 
   const printers = systemConfig.printers || [];
 
   useEffect(() => {
     if (isOpen) {
       setIsShared(false);
-      setTempPrinterId(null);
       if (printers.length === 0 && initialView === 'list') {
         setView('type_select');
       } else {
@@ -56,7 +54,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     if (!newPrinter.name) return;
 
     const printer: PrinterProfile = {
-      id: tempPrinterId || (newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`),
+      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`,
       name: newPrinter.name,
       format: newPrinter.format,
       isDefault: newPrinter.isDefault || printers.length === 0,
@@ -72,7 +70,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     onUpdateConfig({ ...systemConfig, printers: updatedPrinters });
     setNewPrinter({ name: '', format: 'Thermal', isDefault: false });
     setIsShared(false);
-    setTempPrinterId(null);
     
     setSelectedPrinterId(printer.id);
     setView('list');
@@ -119,21 +116,16 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
 
   const handleBluetoothClick = async () => {
       if ((window as any).BluetoothLe) {
-           // Capacitor Bluetooth LE Scan Logic
+           // Capacitor Bluetooth LE Scan Logic (Simulated using requestDevice similar to Web Bluetooth)
            try {
                 await (window as any).BluetoothLe.initialize();
-                // Filter by the service UUID to find relevant printers
-                const result = await (window as any).BluetoothLe.requestDevice({
-                    services: ['000018f0-0000-1000-8000-00805f9b34fb'] 
+                const device = await (window as any).BluetoothLe.requestDevice({
+                    services: ['000018f0-0000-1000-8000-00805f9b34fb']
                 });
                 
-                if (result) {
-                    const deviceId = result.deviceId;
-                    const deviceName = result.name || 'Thermal Printer';
-                    
-                    setTempPrinterId(deviceId);
+                if (device) {
                     setNewPrinter({
-                        name: deviceName,
+                        name: device.deviceId, // Store ID as name initially to capture the ID
                         format: 'Thermal',
                         isDefault: false
                     });
@@ -142,6 +134,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
            } catch (error: any) {
                console.error("Bluetooth LE Scan Error:", error);
                // Fallback to manual if cancelled or failed
+               // if (error.message !== 'User cancelled') alert("Scan failed: " + error.message);
            }
       } else if (window.bluetoothSerial) {
           // Native environment (Cordova/Legacy)
@@ -488,11 +481,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 />
                  <p className="text-xs text-slate-500 mt-1">For Bluetooth LE, this will store the Device ID.</p>
             </div>
-            {tempPrinterId && (
-                <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-xs text-blue-800 dark:text-blue-200 rounded border border-blue-200 dark:border-blue-800">
-                    Detected Device ID: <strong>{tempPrinterId}</strong>
-                </div>
-            )}
             <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Print Format</label>
                 <div className="grid grid-cols-3 gap-3">

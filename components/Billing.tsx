@@ -8,7 +8,7 @@ import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon } from './icons
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; // For A4
-import BarcodeScannerModal from './BarcodeScannerModal';
+import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -235,6 +235,9 @@ const SubstituteModal: React.FC<{
 
 
 const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit }) => {
+  const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+  const isEditing = !!editingBill;
+
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
@@ -247,16 +250,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
-  const [isScanning, setIsScanning] = useState(false);
+  // Open scanner by default in Retail mode
+  const [showScanner, setShowScanner] = useState(!isPharmaMode);
   
   // Printer Selection State
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
   // To trigger reset after print flow
   const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
-
-  const isPharmaMode = systemConfig.softwareMode === 'Pharma';
-  const isEditing = !!editingBill;
 
   // --- Keyboard Navigation State ---
   const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
@@ -444,7 +445,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const handleScanSuccess = (decodedText: string) => {
       if (isPharmaMode) {
           setSearchTerm(decodedText);
-          // setIsScanning(false); // closeOnScan=true handles this
+          setShowScanner(false); 
       } else {
           // Retail Mode Logic: Auto-add to cart
           const product = products.find(p => p.barcode === decodedText);
@@ -454,6 +455,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                if (availableBatches.length > 0) {
                    handleAddToCart(product, availableBatches[0]);
                } else {
+                   // Use a native notification if available or simple alert (careful with continuous scan flow)
+                   // For improved UX, consider a non-blocking toast in future.
                    alert(`Product "${product.name}" is out of stock.`);
                }
           } else {
@@ -505,43 +508,28 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const shouldReset = forceReset || shouldResetAfterPrint;
 
     // Capacitor Bluetooth LE Thermal Printer
-    // Checking purely for the presence of the global variable (window.BluetoothLe)
     if (printer.format === 'Thermal' && (window as any).BluetoothLe && printer.id) {
         try {
-             const bluetoothLe = (window as any).BluetoothLe;
-             
-             // Initialize
-            await bluetoothLe.initialize();
-            
-            // Attempt connection - assumes device ID is valid (MAC address or UUID)
-            // Note: If already connected, this might throw or succeed depending on implementation
-            try {
-                await bluetoothLe.connect({ deviceId: printer.id });
-            } catch (e) {
-                console.log("Connection might already be active or failed:", e);
-            }
+             // Initialize just in case
+            await (window as any).BluetoothLe.initialize();
             
             const data = generateEscPosBill(bill, companyProfile, systemConfig);
             const hexString = bytesToHex(data);
 
-            await bluetoothLe.write({
+            await (window as any).BluetoothLe.write({
                 deviceId: printer.id,
-                service: "000018f0-0000-1000-8000-00805f9b34fb", // common ESC/POS service
-                characteristic: "00002af1-0000-1000-8000-00805f9b34fb", // common characteristic
+                service: "000018f0-0000-1000-8000-00805f9b34fb",
+                characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
                 value: hexString
             });
-            
-            // Disconnect to release resource
-            await bluetoothLe.disconnect({ deviceId: printer.id });
 
             if (shouldReset) {
                 doReset();
             }
-            return; // CRITICAL: Return here so window.print() is NOT called
+            return;
         } catch (err: any) {
              console.error("Capacitor BLE print failed", err);
-             alert("Bluetooth LE print failed: " + err.message + ". Ensure printer is on and paired.");
-             return; // Stop here on error
+             alert("Bluetooth LE print failed: " + err.message);
         }
     }
 
@@ -835,6 +823,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2">
         <Card title={isEditing ? `Editing Bill: ${editingBill?.billNumber}` : 'Create Bill'}>
+            
+          {showScanner && (
+            <EmbeddedScanner 
+                onScanSuccess={handleScanSuccess}
+                onClose={() => setShowScanner(false)}
+            />
+          )}
+
           <div className="flex gap-2 mb-4">
             <div className="relative flex-grow">
                 <input
@@ -931,9 +927,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             </div>
             {!isPharmaMode && (
                 <button
-                    onClick={() => setIsScanning(true)}
-                    className="p-3 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors"
-                    title="Scan Barcode"
+                    onClick={() => setShowScanner(!showScanner)}
+                    className={`p-3 rounded-lg transition-colors ${showScanner ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`}
+                    title={showScanner ? "Close Camera" : "Open Barcode Scanner"}
                 >
                     <CameraIcon className="h-6 w-6" />
                 </button>
@@ -1089,13 +1085,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             onAddToCart={handleAddToCart}
           />
       )}
-      
-      <BarcodeScannerModal 
-        isOpen={isScanning}
-        onClose={() => setIsScanning(false)}
-        onScanSuccess={handleScanSuccess}
-        closeOnScan={true}
-      />
       
       <PrinterSelectionModal 
           isOpen={isPrinterModalOpen}
