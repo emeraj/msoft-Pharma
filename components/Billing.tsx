@@ -135,6 +135,10 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     return commands;
 };
 
+const bytesToHex = (bytes: number[] | Uint8Array): string => {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
+};
+
 // Web Bluetooth Print Helper
 const printViaWebBluetooth = async (data: Uint8Array) => {
     const nav = navigator as any;
@@ -500,7 +504,45 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
     const shouldReset = forceReset || shouldResetAfterPrint;
 
-    // Native Bluetooth Thermal Printer (Capacitor)
+    // Capacitor Bluetooth LE Thermal Printer
+    if (printer.format === 'Thermal' && (window as any).BluetoothLe && printer.id) {
+        try {
+             // Initialize just in case
+            await (window as any).BluetoothLe.initialize();
+            
+            // Attempt connection
+            try {
+                await (window as any).BluetoothLe.connect({ deviceId: printer.id });
+            } catch (e) {
+                // If already connected, it might throw or just work. 
+                // If connection fails truly, the write will fail.
+                console.log("Connection status:", e);
+            }
+            
+            const data = generateEscPosBill(bill, companyProfile, systemConfig);
+            const hexString = bytesToHex(data);
+
+            await (window as any).BluetoothLe.write({
+                deviceId: printer.id,
+                service: "000018f0-0000-1000-8000-00805f9b34fb",
+                characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
+                value: hexString
+            });
+            
+            // Disconnect to release resource
+            await (window as any).BluetoothLe.disconnect({ deviceId: printer.id });
+
+            if (shouldReset) {
+                doReset();
+            }
+            return;
+        } catch (err: any) {
+             console.error("Capacitor BLE print failed", err);
+             alert("Bluetooth LE print failed: " + err.message);
+        }
+    }
+
+    // Native Bluetooth Thermal Printer (Capacitor Legacy Serial)
     if (printer.format === 'Thermal' && window.bluetoothSerial && printer.id) {
         try {
             // Attempt to connect to the bluetooth device

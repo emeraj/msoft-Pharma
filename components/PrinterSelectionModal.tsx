@@ -26,12 +26,14 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   const [selectedPrinterId, setSelectedPrinterId] = useState<string>('');
   const [scannedDevices, setScannedDevices] = useState<{name: string, id: string}[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [tempPrinterId, setTempPrinterId] = useState<string | null>(null);
 
   const printers = systemConfig.printers || [];
 
   useEffect(() => {
     if (isOpen) {
       setIsShared(false);
+      setTempPrinterId(null);
       if (printers.length === 0 && initialView === 'list') {
         setView('type_select');
       } else {
@@ -54,7 +56,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     if (!newPrinter.name) return;
 
     const printer: PrinterProfile = {
-      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`,
+      id: tempPrinterId || (newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`),
       name: newPrinter.name,
       format: newPrinter.format,
       isDefault: newPrinter.isDefault || printers.length === 0,
@@ -70,6 +72,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     onUpdateConfig({ ...systemConfig, printers: updatedPrinters });
     setNewPrinter({ name: '', format: 'Thermal', isDefault: false });
     setIsShared(false);
+    setTempPrinterId(null);
     
     setSelectedPrinterId(printer.id);
     setView('list');
@@ -114,9 +117,34 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       }
   };
 
-  const handleBluetoothClick = () => {
-      if (window.bluetoothSerial) {
-          // Native environment
+  const handleBluetoothClick = async () => {
+      if ((window as any).BluetoothLe) {
+           // Capacitor Bluetooth LE Scan Logic
+           try {
+                await (window as any).BluetoothLe.initialize();
+                // Filter by the service UUID to find relevant printers
+                const result = await (window as any).BluetoothLe.requestDevice({
+                    services: ['000018f0-0000-1000-8000-00805f9b34fb'] 
+                });
+                
+                if (result) {
+                    const deviceId = result.deviceId;
+                    const deviceName = result.name || 'Thermal Printer';
+                    
+                    setTempPrinterId(deviceId);
+                    setNewPrinter({
+                        name: deviceName,
+                        format: 'Thermal',
+                        isDefault: false
+                    });
+                    setView('manual_setup');
+                }
+           } catch (error: any) {
+               console.error("Bluetooth LE Scan Error:", error);
+               // Fallback to manual if cancelled or failed
+           }
+      } else if (window.bluetoothSerial) {
+          // Native environment (Cordova/Legacy)
           setView('perm_nearby');
       } else if ((navigator as any).bluetooth) {
           // Web environment
@@ -131,7 +159,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       }
   };
 
-  // Native Scanning Logic (Effect)
+  // Native Scanning Logic (Effect) for legacy bluetoothSerial
   useEffect(() => {
     if (view === 'scanning') {
       setIsScanning(true);
@@ -450,15 +478,21 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       {view === 'manual_setup' && (
         <div className="space-y-4 animate-fade-in">
             <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Printer Name</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Printer Name / ID</label>
                 <input 
                     type="text" 
                     value={newPrinter.name}
                     onChange={e => setNewPrinter({...newPrinter, name: e.target.value})}
-                    placeholder="e.g., Counter Thermal, Office A4"
+                    placeholder="e.g. 00:11:22:33:AA:BB or Printer Name"
                     className="w-full px-4 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
+                 <p className="text-xs text-slate-500 mt-1">For Bluetooth LE, this will store the Device ID.</p>
             </div>
+            {tempPrinterId && (
+                <div className="p-2 bg-blue-50 dark:bg-blue-900/30 text-xs text-blue-800 dark:text-blue-200 rounded border border-blue-200 dark:border-blue-800">
+                    Detected Device ID: <strong>{tempPrinterId}</strong>
+                </div>
+            )}
             <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Print Format</label>
                 <div className="grid grid-cols-3 gap-3">

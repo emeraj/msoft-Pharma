@@ -147,5 +147,6 @@ export interface SystemConfig {
 declare global {
   interface Window {
     bluetoothSerial: any;
+    BluetoothLe: any;
   }
 }
