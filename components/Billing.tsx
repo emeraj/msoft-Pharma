@@ -361,122 +361,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  // --- Bluetooth Printing Helper ---
-  const printViaBluetooth = useCallback(async (bill: Bill, printerId?: string) => {
-    if (!(navigator as any).bluetooth) {
-        alert("Web Bluetooth is not supported in this browser.");
-        return;
-    }
-    
-    let device: any = null;
-
-    // Try to reconnect to a known device if printerId is provided
-    if (printerId && (navigator as any).bluetooth.getDevices) {
-        try {
-            const devices = await (navigator as any).bluetooth.getDevices();
-            device = devices.find((d: any) => d.id === printerId);
-        } catch (e) {
-            console.log("Error getting known devices:", e);
-        }
-    }
-
-    if (!device) {
-        try {
-            // Common Bluetooth Thermal Printer Services
-            const services = [0x18f0, 0xffe0];
-            
-            device = await (navigator as any).bluetooth.requestDevice({
-                filters: [
-                    { services: [0x18f0] },
-                    { services: [0xffe0] }
-                ],
-                optionalServices: services
-            }).catch(async (err: any) => {
-                 // If blocked by permissions policy, do not retry fallback
-                 if (err.name === 'SecurityError' || err.message?.includes('permissions policy')) {
-                     throw err;
-                 }
-
-                 if (err.name === 'NotFoundError') {
-                     throw err; // User cancelled
-                 }
-                 // Fallback: Accept all devices if filter fails
-                 return await (navigator as any).bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: services
-                });
-            });
-        } catch (error: any) {
-            console.error("Bluetooth Scan Error:", error);
-             if (error.name === 'SecurityError' || error.message?.includes("permissions policy")) {
-                alert("Bluetooth Access Blocked: The browser has blocked Bluetooth access. This usually happens if the app is running inside a preview pane or iframe. Please open the app in a new full window or tab.");
-            } else if (error.name !== 'NotFoundError') {
-                 alert(`Bluetooth Error: ${error.message}`);
-            }
-            return;
-        }
-    }
-
-    if (!device) return;
-
-    try {
-        const server = await device.gatt.connect();
-        const services = await server.getPrimaryServices();
-        let characteristic: any = null;
-
-        // Find the first writable characteristic
-        for (const service of services) {
-            const characteristics = await service.getCharacteristics();
-            for (const c of characteristics) {
-                if (c.properties.write || c.properties.writeWithoutResponse) {
-                    characteristic = c;
-                    break;
-                }
-            }
-            if (characteristic) break;
-        }
-
-        if (!characteristic) {
-             alert("Could not find a writable characteristic on this device.");
-             return;
-        }
-
-        // Generate Data
-        const encoder = new TextEncoder();
-        let data = '';
-        const ESC = '\x1B';
-        const newline = '\n';
-
-        data += companyProfile.name + newline;
-        data += companyProfile.address + newline;
-        data += 'Bill: ' + bill.billNumber + newline;
-        data += 'Total: ' + bill.grandTotal.toFixed(2) + newline;
-        data += newline + newline;
-
-        await characteristic.writeValue(encoder.encode(data));
-        alert("Sent to printer!");
-
-        // Cleanup logic
-        if (shouldResetAfterPrint) {
-             setCart([]);
-             setCustomerName('');
-             setDoctorName('');
-             if (onCancelEdit && isEditing) onCancelEdit();
-             setShouldResetAfterPrint(false);
-        }
-
-    } catch (error: any) {
-        console.error("Bluetooth Print Error:", error);
-        alert(`Failed to print via Bluetooth: ${error.message}`);
-    }
-  }, [companyProfile, shouldResetAfterPrint, isEditing, onCancelEdit]);
-
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', connectionType?: 'bluetooth' | 'usb' | 'network', printerId?: string) => {
-    if (connectionType === 'bluetooth') {
-        printViaBluetooth(bill, printerId);
-        return;
-    }
-
+  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal') => {
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
@@ -531,11 +416,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              setShouldResetAfterPrint(false);
         }
     }
-  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit, printViaBluetooth]);
+  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer.format, printer.connectionType, printer.id);
+          executePrint(billToPrint, printer.format);
           setBillToPrint(null);
       }
   };
@@ -990,6 +875,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           onClose={() => { 
             setPrinterModalOpen(false); 
             // If closed without printing, but bill was saved, we should probably reset the cart anyway
+            // or keep it? Standard behavior: Save clears the cart usually. 
+            // Here executePrint triggers the reset. If they cancel print, cart stays cleared?
+            // Let's just call reset if they close modal without printing IF bill was saved.
             if (shouldResetAfterPrint) {
                 setCart([]);
                 setCustomerName('');

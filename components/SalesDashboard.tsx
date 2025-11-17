@@ -1,8 +1,7 @@
-
 import React, { useMemo } from 'react';
 import type { Bill, Product } from '../types';
 import Card from './common/Card';
-import { ArchiveIcon, CashIcon, CubeIcon, ReceiptIcon, ChartBarIcon, ExclamationCircleIcon } from './icons/Icons';
+import { ArchiveIcon, CashIcon, CubeIcon, ReceiptIcon, ChartBarIcon } from './icons/Icons';
 
 interface SalesDashboardProps {
   bills: Bill[];
@@ -34,28 +33,13 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products }) => {
         const avgBillValue = totalBills > 0 ? totalRevenue / totalBills : 0;
         const totalItemsSold = bills.reduce((sum, bill) => sum + bill.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
         
-        // Calculate low stock items count
-        const lowStockCount = products.reduce((count, product) => {
-            if (!product.lowStockThreshold || product.lowStockThreshold <= 0) return count;
-            
-            const currentStock = product.batches.reduce((sum, b) => sum + b.stock, 0);
-            // Threshold logic: 
-            // - For retail: threshold is in units, currentStock is in units.
-            // - For pharma: threshold is stored in strips (user input), but currentStock is in units. 
-            //   So compare stock <= threshold * unitsPerStrip
-            const thresholdInBaseUnits = product.lowStockThreshold * (product.unitsPerStrip || 1);
-            
-            return currentStock <= thresholdInBaseUnits ? count + 1 : count;
-        }, 0);
-
         return {
             totalRevenue,
             totalBills,
             avgBillValue,
-            totalItemsSold,
-            lowStockCount
+            totalItemsSold
         };
-    }, [bills, products]);
+    }, [bills]);
 
     const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
@@ -120,12 +104,11 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products }) => {
     <div className="p-4 sm:p-6 space-y-6 animate-fade-in">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Sales Dashboard</h1>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard title="Total Revenue" value={formatCurrency(stats.totalRevenue)} icon={<CashIcon className="h-6 w-6 text-green-800 dark:text-green-200" />} color="bg-green-100 dark:bg-green-900/50" />
             <StatCard title="Total Bills" value={stats.totalBills.toLocaleString('en-IN')} icon={<ReceiptIcon className="h-6 w-6 text-blue-800 dark:text-blue-200" />} color="bg-blue-100 dark:bg-blue-900/50" />
             <StatCard title="Average Bill Value" value={formatCurrency(stats.avgBillValue)} icon={<ChartBarIcon className="h-6 w-6 text-indigo-800 dark:text-indigo-200" />} color="bg-indigo-100 dark:bg-indigo-900/50" />
             <StatCard title="Total Items Sold" value={stats.totalItemsSold.toLocaleString('en-IN')} icon={<CubeIcon className="h-6 w-6 text-yellow-800 dark:text-yellow-200" />} color="bg-yellow-100 dark:bg-yellow-900/50" />
-            <StatCard title="Low Stock Items" value={stats.lowStockCount.toLocaleString('en-IN')} icon={<ExclamationCircleIcon className="h-6 w-6 text-red-800 dark:text-red-200" />} color="bg-red-100 dark:bg-red-900/50" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
