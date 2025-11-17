@@ -50,6 +50,77 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 U';
 };
 
+// Helper to generate ESC/POS commands for Bluetooth printing
+const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemConfig): string => {
+    const ESC = '\x1B';
+    const INIT = ESC + '@'; // Initialize Printer
+    const ALIGN_LEFT = ESC + 'a' + '\x00';
+    const ALIGN_CENTER = ESC + 'a' + '\x01';
+    const ALIGN_RIGHT = ESC + 'a' + '\x02';
+    const BOLD_ON = ESC + 'E' + '\x01';
+    const BOLD_OFF = ESC + 'E' + '\x00';
+    
+    let cmds = INIT;
+    
+    // Header
+    cmds += ALIGN_CENTER;
+    cmds += BOLD_ON + profile.name + BOLD_OFF + '\n';
+    cmds += profile.address + '\n';
+    if (profile.phone) cmds += 'Ph: ' + profile.phone + '\n';
+    if (profile.gstin) cmds += 'GSTIN: ' + profile.gstin + '\n';
+    cmds += '--------------------------------\n';
+    
+    // Bill Details
+    cmds += ALIGN_LEFT;
+    cmds += 'Bill No: ' + bill.billNumber + '\n';
+    cmds += 'Date: ' + new Date(bill.date).toLocaleDateString() + ' ' + new Date(bill.date).toLocaleTimeString() + '\n';
+    cmds += 'Name: ' + bill.customerName + '\n';
+    cmds += '--------------------------------\n';
+    
+    // Items
+    // Simple layout for 32-column printers (standard 58mm)
+    cmds += 'Item             Qty   Rate   Amt\n'; 
+    
+    bill.items.forEach((item) => {
+        // Line 1: Product Name
+        let name = item.productName;
+        // Truncate if too long to avoid mess, or let it wrap naturally
+        cmds += name + '\n';
+        
+        // Line 2: Numbers
+        const qty = item.quantity.toString();
+        const rate = (item.total / item.quantity).toFixed(2); // Effective rate per unit
+        const total = item.total.toFixed(2);
+
+        // Align numbers to the right columns roughly
+        // We use padding spaces. 
+        // Qty (approx col 17), Rate (approx col 23), Amt (approx col 30)
+        const qtyPad = qty.padStart(3, ' ');
+        const ratePad = rate.padStart(7, ' ');
+        const amtPad = total.padStart(7, ' ');
+        
+        cmds += `                ${qtyPad} ${ratePad} ${amtPad}\n`;
+    });
+    cmds += '--------------------------------\n';
+    
+    // Totals
+    cmds += ALIGN_RIGHT;
+    cmds += 'Subtotal: ' + bill.subTotal.toFixed(2) + '\n';
+    cmds += 'GST: ' + bill.totalGst.toFixed(2) + '\n';
+    cmds += BOLD_ON + 'Grand Total: ' + bill.grandTotal.toFixed(2) + BOLD_OFF + '\n';
+    
+    // Footer
+    cmds += ALIGN_CENTER;
+    cmds += '--------------------------------\n';
+    if(config.remarkLine1) cmds += config.remarkLine1 + '\n';
+    if(config.remarkLine2) cmds += config.remarkLine2 + '\n';
+    
+    // Feed lines for cutter (3 lines)
+    cmds += '\n\n\n'; 
+    
+    return cmds;
+};
+
 
 const SubstituteModal: React.FC<{
     isOpen: boolean;
@@ -361,7 +432,53 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal') => {
+  const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile) => {
+    // Check for Bluetooth Thermal Printer Logic
+    if (printer.format === 'Thermal' && window.bluetoothSerial && printer.id) {
+        try {
+            // Attempt to connect to the bluetooth device
+            const isConnected = await new Promise<boolean>((resolve) => {
+                window.bluetoothSerial.isConnected(
+                    () => resolve(true),
+                    () => resolve(false)
+                );
+            });
+
+            if (!isConnected) {
+                 // If not connected, try to connect
+                await new Promise((resolve, reject) => {
+                    window.bluetoothSerial.connect(printer.id, resolve, reject);
+                });
+            }
+            
+            // Generate ESC/POS Commands
+            const data = generateEscPosBill(bill, companyProfile, systemConfig);
+            
+            // Send Data
+            await new Promise((resolve, reject) => {
+                window.bluetoothSerial.write(data, resolve, reject);
+            });
+
+             // Reset Logic after successful Bluetooth print
+             if (shouldResetAfterPrint) {
+                setCart([]);
+                setCustomerName('');
+                setDoctorName('');
+                if (onCancelEdit && isEditing) {
+                    onCancelEdit();
+                }
+                setShouldResetAfterPrint(false);
+            }
+            return; // Exit function, do not open window.print
+
+        } catch (err) {
+            console.error("Bluetooth print failed", err);
+            alert("Bluetooth print failed. Falling back to system print dialog. Please check your printer connection.");
+            // Fallback to standard logic below
+        }
+    }
+
+    // Standard Web Print Logic (Fallback or for A4/A5)
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
@@ -380,9 +497,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
         
-        if (format === 'Thermal') {
+        if (printer.format === 'Thermal') {
              root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-        } else if (format === 'A5') {
+        } else if (printer.format === 'A5') {
              root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
         } else {
              // Default A4
@@ -420,7 +537,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer.format);
+          executePrint(billToPrint, printer); // Pass full printer profile
           setBillToPrint(null);
       }
   };
@@ -874,10 +991,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           isOpen={isPrinterModalOpen}
           onClose={() => { 
             setPrinterModalOpen(false); 
-            // If closed without printing, but bill was saved, we should probably reset the cart anyway
-            // or keep it? Standard behavior: Save clears the cart usually. 
-            // Here executePrint triggers the reset. If they cancel print, cart stays cleared?
-            // Let's just call reset if they close modal without printing IF bill was saved.
             if (shouldResetAfterPrint) {
                 setCart([]);
                 setCustomerName('');
