@@ -382,20 +382,37 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
     if (!device) {
         try {
-            // Standard Printing Service UUID
-            const PRINTING_SERVICE = 0x18f0;
+            // Common Bluetooth Thermal Printer Services
+            const services = [0x18f0, 0xffe0];
+            
             device = await (navigator as any).bluetooth.requestDevice({
-                filters: [{ services: [PRINTING_SERVICE] }],
-                optionalServices: [PRINTING_SERVICE]
-            }).catch(async () => {
+                filters: [
+                    { services: [0x18f0] },
+                    { services: [0xffe0] }
+                ],
+                optionalServices: services
+            }).catch(async (err: any) => {
+                 // If blocked by permissions policy, do not retry fallback
+                 if (err.name === 'SecurityError' || err.message?.includes('permissions policy')) {
+                     throw err;
+                 }
+
+                 if (err.name === 'NotFoundError') {
+                     throw err; // User cancelled
+                 }
                  // Fallback: Accept all devices if filter fails
                  return await (navigator as any).bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: [PRINTING_SERVICE]
+                    optionalServices: services
                 });
             });
-        } catch (error) {
+        } catch (error: any) {
             console.error("Bluetooth Scan Error:", error);
+             if (error.name === 'SecurityError' || error.message?.includes("permissions policy")) {
+                alert("Bluetooth Access Blocked: The browser has blocked Bluetooth access. This usually happens if the app is running inside a preview pane or iframe. Please open the app in a new full window or tab.");
+            } else if (error.name !== 'NotFoundError') {
+                 alert(`Bluetooth Error: ${error.message}`);
+            }
             return;
         }
     }
@@ -448,9 +465,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              setShouldResetAfterPrint(false);
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Bluetooth Print Error:", error);
-        alert("Failed to print via Bluetooth. See console for details.");
+        alert(`Failed to print via Bluetooth: ${error.message}`);
     }
   }, [companyProfile, shouldResetAfterPrint, isEditing, onCancelEdit]);
 

@@ -153,23 +153,45 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     }
     setIsScanning(true);
     try {
-        // Try to find devices supporting Printing Service (0x18F0) or allow user to select any
+        // Common Bluetooth Thermal Printer Services
+        // 0x18f0: Standard Printing Service
+        // 0xffe0: Common proprietary serial service (e.g., GOOJPRT)
+        const services = [0x18f0, 0xffe0];
+        
         const device = await (navigator as any).bluetooth.requestDevice({
-             filters: [{ services: [0x18f0] }], 
-             optionalServices: [0x18f0]
-        }).catch(async () => {
-             // Fallback: Accept all devices to let user pick, useful if service not advertised
-             return await (navigator as any).bluetooth.requestDevice({
-                 acceptAllDevices: true,
-                 optionalServices: [0x18f0]
-            });
+             filters: [
+                { services: [0x18f0] },
+                { services: [0xffe0] }
+             ], 
+             optionalServices: services
+        }).catch(async (err: any) => {
+             // CRITICAL: If permission is disallowed (SecurityError), do NOT try the fallback.
+             if (err.name === 'SecurityError' || err.message?.includes('permissions policy')) {
+                 throw err;
+             }
+             
+             // If filters fail (NotFoundError or similar but not Security), fallback to acceptAllDevices
+             if (err.name !== 'NotFoundError') {
+                 return await (navigator as any).bluetooth.requestDevice({
+                     acceptAllDevices: true,
+                     optionalServices: services
+                });
+             }
+             throw err;
         });
         
         if (device) {
              handleDeviceSelect({ name: device.name || 'Bluetooth Device', id: device.id }, 'bluetooth');
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error("Web Bluetooth Error:", error);
+        if (error.name === 'NotFoundError') {
+            // User cancelled, ignore
+        } else if (error.name === 'SecurityError' || error.message?.includes("permissions policy")) {
+             alert("Bluetooth Access Blocked: This app is likely running in a restricted environment (like an iframe). Please open the app in a new full window/tab to use Bluetooth.");
+        } else {
+            alert(`Bluetooth Error: ${error.message || error}`);
+        }
     } finally {
         setIsScanning(false);
     }
