@@ -50,6 +50,139 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 U';
 };
 
+// Helper to generate ESC/POS commands for Bluetooth printing as Bytes
+const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemConfig): number[] => {
+    const commands: number[] = [];
+    
+    const addBytes = (bytes: number[]) => {
+        commands.push(...bytes);
+    };
+    
+    const addText = (text: string) => {
+        // Basic ASCII conversion, converting ₹ to Rs.
+        const safeText = text.replace(/₹/g, 'Rs.');
+        for (let i = 0; i < safeText.length; i++) {
+            let code = safeText.charCodeAt(i);
+            // Filter non-printable characters if necessary, usually standard ASCII is fine.
+            // Mapping unicode chars to '?' if > 255 might be safer for basic printers
+            if (code > 255) code = 63; // '?'
+            commands.push(code);
+        }
+    };
+    
+    // Initialize Printer: ESC @
+    addBytes([27, 64]);
+    
+    // --- Header ---
+    addBytes([27, 97, 1]); // Center Align: ESC a 1
+    addBytes([27, 69, 1]); // Bold On: ESC E 1
+    addText(profile.name + '\n');
+    addBytes([27, 69, 0]); // Bold Off: ESC E 0
+    
+    addText(profile.address + '\n');
+    if (profile.phone) addText('Ph: ' + profile.phone + '\n');
+    if (profile.gstin) addText('GSTIN: ' + profile.gstin + '\n');
+    addText('--------------------------------\n');
+    
+    // --- Bill Details ---
+    addBytes([27, 97, 0]); // Left Align: ESC a 0
+    addText('Bill No: ' + bill.billNumber + '\n');
+    addText('Date: ' + new Date(bill.date).toLocaleDateString() + ' ' + new Date(bill.date).toLocaleTimeString() + '\n');
+    addText('Name: ' + bill.customerName + '\n');
+    addText('--------------------------------\n');
+    
+    // --- Items ---
+    addText('Item             Qty   Rate   Amt\n'); 
+    
+    bill.items.forEach((item) => {
+        // Truncate name to fit or let it wrap (wrapping is safer in left align)
+        addText(item.productName + '\n');
+        
+        const qty = item.quantity.toString();
+        const rate = (item.total / item.quantity).toFixed(2);
+        const total = item.total.toFixed(2);
+
+        // Simple padding for column alignment
+        // Assuming approx 32 columns: 
+        // Space (16) + Qty (3) + Space(1) + Rate (6) + Space(1) + Amt (6)
+        const qtyPad = qty.padStart(3, ' ');
+        const ratePad = rate.padStart(7, ' ');
+        const amtPad = total.padStart(7, ' ');
+        
+        addText(`                ${qtyPad} ${ratePad} ${amtPad}\n`);
+    });
+    addText('--------------------------------\n');
+    
+    // --- Totals ---
+    addBytes([27, 97, 2]); // Right Align: ESC a 2
+    addText('Subtotal: ' + bill.subTotal.toFixed(2) + '\n');
+    addText('GST: ' + bill.totalGst.toFixed(2) + '\n');
+    addBytes([27, 69, 1]); // Bold On
+    addText('Grand Total: ' + bill.grandTotal.toFixed(2) + '\n');
+    addBytes([27, 69, 0]); // Bold Off
+    
+    // --- Footer ---
+    addBytes([27, 97, 1]); // Center Align: ESC a 1
+    addText('--------------------------------\n');
+    if(config.remarkLine1) addText(config.remarkLine1 + '\n');
+    if(config.remarkLine2) addText(config.remarkLine2 + '\n');
+    addText('. . . .\n');
+    
+    // --- Feed Lines ---
+    // Feed 4 lines to ensure cut does not damage text
+    addBytes([10, 10, 10, 10]); 
+    
+    return commands;
+};
+
+const bytesToHex = (bytes: number[] | Uint8Array): string => {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
+};
+
+// Web Bluetooth Print Helper
+const printViaWebBluetooth = async (data: Uint8Array) => {
+    const nav = navigator as any;
+    if (!nav.bluetooth) {
+        alert("Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera.");
+        return;
+    }
+
+    try {
+        // Use acceptAllDevices to find printers that don't advertise service UUIDs
+        const device = await nav.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] 
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+
+        // Write in chunks of 50 bytes to be safe with BLE MTU
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+            const chunk = data.slice(i, i + CHUNK_SIZE);
+            await characteristic.writeValue(chunk);
+        }
+
+        // Allow a brief moment for buffer to clear before disconnecting
+        setTimeout(() => {
+             if (device.gatt.connected) {
+                device.gatt.disconnect();
+            }
+        }, 1000);
+
+    } catch (error: any) {
+        // Check for cancellation first
+        if (error.name === 'NotFoundError' || error.message?.includes('cancelled')) {
+            // User cancelled the picker, ignore.
+            return;
+        }
+        console.error("Web Bluetooth Print Error:", error);
+        alert("Web Bluetooth printing failed: " + error.message);
+    }
+};
+
 
 const SubstituteModal: React.FC<{
     isOpen: boolean;
@@ -364,27 +497,222 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  // ... (printing logic omitted for brevity, assuming it remains unchanged from previous full version) ...
-  
-  // Simplified executePrint for this example context
-  const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
-      // (Printing implementation matches previous steps)
-      if (shouldResetAfterPrint || forceReset) {
-          setCart([]);
-          setCustomerName('');
-          setDoctorName('');
-          if (onCancelEdit && isEditing) onCancelEdit();
-          setShouldResetAfterPrint(false);
+  const printViaReactNative = async (bill: Bill, printer: PrinterProfile) => {
+      try {
+        await window.BluetoothManager.connect(printer.id); // Connect using address/ID
+        
+        const printerAPI = window.BluetoothEscposPrinter;
+
+        // Helper to format lines using alignment options
+        const printLine = async (text: string, align: number = 0, size: number = 0) => {
+             await printerAPI.printText(text, {
+                 widthtimes: size,
+                 heigthtimes: size,
+                 alignment: align // 0: left, 1: center, 2: right
+             });
+        };
+
+        // Header
+        await printLine(companyProfile.name + "\n", 1, 1);
+        await printLine(companyProfile.address + "\n", 1);
+        if(companyProfile.phone) await printLine("Ph: " + companyProfile.phone + "\n", 1);
+        if(companyProfile.gstin) await printLine("GSTIN: " + companyProfile.gstin + "\n", 1);
+        await printLine("--------------------------------\n", 1);
+        
+        // Bill Details
+        await printLine(`Bill No: ${bill.billNumber}\n`, 0);
+        await printLine(`Date: ${new Date(bill.date).toLocaleDateString()}\n`, 0);
+        await printLine(`Customer: ${bill.customerName}\n`, 0);
+        await printLine("--------------------------------\n", 1);
+
+        // Items Header
+        // Using fixed width formatting is tricky with variable fonts, but simple layout works best.
+        await printLine("Item           Qty   Rate   Amt\n", 0); 
+        
+        for(const item of bill.items) {
+             await printLine(`${item.productName}\n`, 0);
+             
+             const qty = item.quantity.toString();
+             const rate = (item.total / item.quantity).toFixed(2);
+             const total = item.total.toFixed(2);
+             
+             // Construct line manually with spaces if specific column API is missing
+             // Aligning visually for standard 32 char thermal width
+             // 12345678901234567890123456789012
+             //              10   100.00  1000.00
+             const line = `               ${qty}   ${rate}  ${total}\n`;
+             await printLine(line, 0);
+        }
+        
+        await printLine("--------------------------------\n", 1);
+        
+        // Totals
+        await printLine(`Subtotal: ${bill.subTotal.toFixed(2)}\n`, 2);
+        await printLine(`GST: ${bill.totalGst.toFixed(2)}\n`, 2);
+        await printLine(`Total: ${bill.grandTotal.toFixed(2)}\n`, 2, 1); // Double height total
+        
+        await printLine("--------------------------------\n", 1);
+        
+        // Footer
+        if (systemConfig.remarkLine1) await printLine(systemConfig.remarkLine1 + "\n", 1);
+        if (systemConfig.remarkLine2) await printLine(systemConfig.remarkLine2 + "\n", 1);
+        await printLine("\nThank you!\n\n\n", 1);
+
+      } catch (e) {
+        console.error("Native Print Error:", e);
+        alert("Printer Connection Error: " + String(e));
       }
-  }, [shouldResetAfterPrint, isEditing, onCancelEdit]);
+  };
+
+  const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
+    const doReset = () => {
+        setCart([]);
+        setCustomerName('');
+        setDoctorName('');
+        if (onCancelEdit && isEditing) {
+            onCancelEdit();
+        }
+        setShouldResetAfterPrint(false);
+    };
+
+    const shouldReset = forceReset || shouldResetAfterPrint;
+
+    // 1. React Native Specific Wrapper
+    if (printer.format === 'Thermal' && window.BluetoothManager) {
+        await printViaReactNative(bill, printer);
+        if (shouldReset) doReset();
+        return;
+    }
+
+    // 2. Capacitor Bluetooth LE Thermal Printer
+    if (printer.format === 'Thermal' && (window as any).BluetoothLe && printer.id) {
+        try {
+             // Initialize just in case
+            await (window as any).BluetoothLe.initialize();
+            
+            const data = generateEscPosBill(bill, companyProfile, systemConfig);
+            const hexString = bytesToHex(data);
+
+            await (window as any).BluetoothLe.write({
+                deviceId: printer.id,
+                service: "000018f0-0000-1000-8000-00805f9b34fb",
+                characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
+                value: hexString
+            });
+
+            if (shouldReset) {
+                doReset();
+            }
+            return;
+        } catch (err: any) {
+             console.error("Capacitor BLE print failed", err);
+             alert("Bluetooth LE print failed: " + err.message);
+        }
+    }
+
+    // 3. Native Bluetooth Thermal Printer (Capacitor Legacy Serial)
+    if (printer.format === 'Thermal' && window.bluetoothSerial && printer.id) {
+        try {
+            // Attempt to connect to the bluetooth device
+            const isConnected = await new Promise<boolean>((resolve) => {
+                window.bluetoothSerial.isConnected(
+                    () => resolve(true),
+                    () => resolve(false)
+                );
+            });
+
+            if (!isConnected) {
+                 // If not connected, try to connect
+                await new Promise((resolve, reject) => {
+                    window.bluetoothSerial.connect(printer.id, resolve, reject);
+                });
+            }
+            
+            // Generate ESC/POS Commands (Bytes)
+            const data = generateEscPosBill(bill, companyProfile, systemConfig);
+            
+            // Send Data (as numeric array)
+            await new Promise((resolve, reject) => {
+                window.bluetoothSerial.write(data, resolve, reject);
+            });
+
+             // Reset Logic after successful Bluetooth print
+             if (shouldReset) {
+                doReset();
+            }
+            return; // Exit function, do not open window.print
+
+        } catch (err) {
+            console.error("Bluetooth print failed", err);
+            alert("Bluetooth print failed. Falling back to system print dialog. Please check your printer connection.");
+            // Fallback to standard logic below
+        }
+    }
+    
+    // 4. Web Bluetooth Thermal Printer (Browser)
+    if (printer.format === 'Thermal' && !window.bluetoothSerial && (navigator as any).bluetooth) {
+        const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
+        await printViaWebBluetooth(bytes);
+        
+        if (shouldReset) {
+            doReset();
+        }
+        return;
+    }
+
+    // 5. Standard Web Print Logic (Fallback or for A4/A5)
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+        const style = printWindow.document.createElement('style');
+        style.innerHTML = `
+            @page { 
+                size: auto;
+                margin: 0mm; 
+            }
+            body {
+                margin: 0;
+            }
+        `;
+        printWindow.document.head.appendChild(style);
+        
+        const rootEl = document.createElement('div');
+        printWindow.document.body.appendChild(rootEl);
+        const root = ReactDOM.createRoot(rootEl);
+        
+        if (printer.format === 'Thermal') {
+             root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        } else if (printer.format === 'A5') {
+             root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        } else {
+             // Default A4
+             root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
+        }
+        
+        setTimeout(() => {
+            printWindow.document.title = ' ';
+            printWindow.print();
+            printWindow.close();
+            
+            if (shouldReset) {
+                doReset();
+            }
+        }, 500);
+    } else {
+        alert("Please enable popups to print the bill.");
+        if (shouldReset) {
+             doReset();
+        }
+    }
+  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer); 
+          executePrint(billToPrint, printer); // Pass full printer profile
           setBillToPrint(null);
       }
   };
 
+  // Update Config Helper
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
          const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
@@ -403,14 +731,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
     if (isUpdate && onUpdateBill) {
         const billData = {
-            date: editingBill.date, 
+            date: editingBill.date, // Keep original date on edit
             customerName: customerName || 'Walk-in',
             doctorName: doctorName.trim(),
             items: cart,
             subTotal,
             totalGst,
             grandTotal,
-            billNumber: editingBill.billNumber
+            billNumber: editingBill.billNumber // Keep original bill number
         };
         savedBill = await onUpdateBill(editingBill.id, billData, editingBill);
     } else if (!isUpdate && onGenerateBill) {
@@ -432,7 +760,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             executePrint(savedBill, defaultPrinter, true);
         } else {
             setBillToPrint(savedBill);
-            setShouldResetAfterPrint(true); 
+            setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
             setPrinterModalOpen(true);
         }
     } else {
@@ -460,7 +788,94 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (searchResults.length === 0 || navigableBatchesByProduct.every(b => b.length === 0)) return;
-        // ... (keyboard navigation logic same as before) ...
+
+        const findNext = (current: { product: number; batch: number }) => {
+            let { product, batch } = current;
+
+            if (product === -1) { // Not initialized, find first valid item
+                const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
+                 return firstProductIndex !== -1 ? { product: firstProductIndex, batch: 0 } : current;
+            }
+            
+            const currentProductBatches = navigableBatchesByProduct[product];
+            if (batch < currentProductBatches.length - 1) {
+                return { product, batch: batch + 1 };
+            }
+
+            let nextProductIndex = product + 1;
+            while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) {
+                nextProductIndex++;
+            }
+
+            if (nextProductIndex < navigableBatchesByProduct.length) {
+                return { product: nextProductIndex, batch: 0 };
+            }
+            
+            // Wrap around to the first valid item
+            const firstValidIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
+            return firstValidIndex !== -1 ? { product: firstValidIndex, batch: 0 } : current;
+        };
+
+        const findPrev = (current: { product: number; batch: number }) => {
+            let { product, batch } = current;
+
+            if (product === -1) { // Not initialized, find last valid item
+                let lastProductIndex = navigableBatchesByProduct.length - 1;
+                while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) {
+                    lastProductIndex--;
+                }
+                return lastProductIndex !== -1 ? { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 } : current;
+            }
+
+            if (batch > 0) {
+                return { product, batch: batch - 1 };
+            }
+
+            let prevProductIndex = product - 1;
+            while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) {
+                prevProductIndex--;
+            }
+
+            if (prevProductIndex >= 0) {
+                const prevProductBatches = navigableBatchesByProduct[prevProductIndex];
+                return { product: prevProductIndex, batch: prevProductBatches.length - 1 };
+            }
+            
+             // Wrap around to the last valid item
+            let lastValidIndex = navigableBatchesByProduct.length - 1;
+            while (lastValidIndex >= 0 && navigableBatchesByProduct[lastValidIndex].length === 0) {
+                lastValidIndex--;
+            }
+            return lastValidIndex !== -1 ? { product: lastValidIndex, batch: navigableBatchesByProduct[lastValidIndex].length - 1 } : current;
+        };
+
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                setActiveIndices(findNext);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setActiveIndices(findPrev);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (activeIndices.product !== -1 && activeIndices.batch !== -1) {
+                    const product = searchResults[activeIndices.product];
+                    const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch];
+                    if (product && batch) {
+                        handleAddToCart(product, batch);
+                    }
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                setSearchTerm('');
+                break;
+            default:
+                break;
+        }
     };
 
     const handleStripQtyKeyDown = (e: React.KeyboardEvent, batchId: string) => {
