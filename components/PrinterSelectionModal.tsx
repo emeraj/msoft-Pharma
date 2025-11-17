@@ -9,13 +9,14 @@ interface PrinterSelectionModalProps {
   onClose: () => void;
   systemConfig: SystemConfig;
   onUpdateConfig: (config: SystemConfig) => void;
-  onSelectPrinter: (printer: PrinterProfile) => void;
+  onSelectPrinter?: (printer: PrinterProfile) => void;
+  initialView?: ViewState;
 }
 
 type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_nearby' | 'perm_location' | 'multi_device';
 
-const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
-  const [view, setView] = useState<ViewState>('list');
+const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter, initialView = 'list' }) => {
+  const [view, setView] = useState<ViewState>(initialView);
   const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean }>({
     name: '',
     format: 'Thermal',
@@ -31,37 +32,35 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   useEffect(() => {
     if (isOpen) {
       setIsShared(false);
-      if (printers.length === 0) {
+      if (printers.length === 0 && initialView === 'list') {
         setView('type_select');
       } else {
-        setView('list');
-        const defaultPrinter = printers.find(p => p.isDefault);
-        if (defaultPrinter) {
-          setSelectedPrinterId(defaultPrinter.id);
-        } else {
-          setSelectedPrinterId(printers[0]?.id || '');
+        setView(initialView);
+        if (initialView === 'list') {
+             const defaultPrinter = printers.find(p => p.isDefault);
+             if (defaultPrinter) {
+               setSelectedPrinterId(defaultPrinter.id);
+             } else {
+               setSelectedPrinterId(printers[0]?.id || '');
+             }
         }
       }
     }
     setScannedDevices([]);
     setIsScanning(false);
-  }, [isOpen, printers]);
+  }, [isOpen, printers, initialView]);
 
   const handleAddPrinter = () => {
     if (!newPrinter.name) return;
 
     const printer: PrinterProfile = {
-      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`, // Use MAC as ID if available (simple heuristic) or random
+      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`,
       name: newPrinter.name,
       format: newPrinter.format,
       isDefault: newPrinter.isDefault || printers.length === 0,
       isShared: isShared,
     };
     
-    // If using plugin scanning, we might want to store the MAC address specifically as ID.
-    // In the scanning logic below, we use device.id which is the MAC.
-    // If manually entered, we generate an ID.
-
     let updatedPrinters = [...printers];
     if (printer.isDefault) {
       updatedPrinters = updatedPrinters.map(p => ({ ...p, isDefault: false }));
@@ -78,23 +77,67 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
 
   const handlePrint = () => {
     const printer = printers.find(p => p.id === selectedPrinterId);
-    if (printer) {
+    if (printer && onSelectPrinter) {
       onSelectPrinter(printer);
       onClose();
     }
   };
   
-  // Scanning Logic
-  useEffect(() => {
-    let timer: number;
+  // Web Bluetooth Scanning
+  const handleWebBluetoothScan = async () => {
+      try {
+          const nav = navigator as any;
+          if (!nav.bluetooth) {
+              alert("Web Bluetooth is not supported on this browser/device.");
+              return;
+          }
+          // Request device - filtering for ESC/POS service
+          const device = await nav.bluetooth.requestDevice({
+              filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
+              optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
+          });
 
+          if (device) {
+              setNewPrinter({ 
+                  name: device.name || 'Bluetooth Printer', 
+                  format: 'Thermal', 
+                  isDefault: false 
+              });
+              // Skip to manual setup but pre-fill the name
+              setView('manual_setup');
+          }
+      } catch (error: any) {
+          if (error.name !== 'NotFoundError') {
+              console.error("Web Bluetooth Scan Error:", error);
+              alert("Could not connect to printer: " + error.message);
+          }
+      }
+  };
+
+  const handleBluetoothClick = () => {
+      if (window.bluetoothSerial) {
+          // Native environment
+          setView('perm_nearby');
+      } else if ((navigator as any).bluetooth) {
+          // Web environment
+          handleWebBluetoothScan();
+      } else {
+          // Not supported
+          const proceed = window.confirm("Bluetooth scanning is not supported in this environment. Do you want to enter details manually?");
+          if (proceed) {
+              setNewPrinter({ name: '', format: 'Thermal', isDefault: false });
+              setView('multi_device');
+          }
+      }
+  };
+
+  // Native Scanning Logic (Effect)
+  useEffect(() => {
     if (view === 'scanning') {
       setIsScanning(true);
       setScannedDevices([]);
 
-      // Check if cordova bluetooth plugin is available
       if (window.bluetoothSerial) {
-        // Real scanning
         const onDiscover = (device: any) => {
             setScannedDevices(prev => {
                 if (prev.some(d => d.id === device.address)) return prev;
@@ -107,12 +150,10 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             setIsScanning(false);
         };
         
-        // List paired devices first
         window.bluetoothSerial.list((devices: any[]) => {
             const mapped = devices.map(d => ({ name: d.name || 'Unknown', id: d.address }));
             setScannedDevices(mapped);
             
-            // Then discover unpaired
             window.bluetoothSerial.discoverUnpaired((unpaired: any[]) => {
                  const mappedUnpaired = unpaired.map(d => ({ name: d.name || 'Unknown', id: d.address }));
                  setScannedDevices(prev => {
@@ -127,40 +168,16 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                  setIsScanning(false);
             }, onError);
         }, onError);
-
       } else {
-        // Fallback / Simulation
-        timer = window.setTimeout(() => {
-            setScannedDevices([
-                { name: 'Printer001', id: 'DC:0D:30:A2:F1:A4' },
-                { name: 'Galaxy A20', id: 'FC:AA:B6:7F:BB:FB' },
-                { name: 'realme TechLife Buds T100', id: '98:34:8C:38:B3:1A' },
-                { name: 'OnePlus Nord Buds 2r', id: 'Device4' },
-            ]);
-            setIsScanning(false);
-        }, 2000);
+          setIsScanning(false);
       }
     }
-
-    return () => {
-        if (timer) clearTimeout(timer);
-        // No explicit stop scan for the plugin in this simple implementation
-    };
   }, [view]);
 
   const handleDeviceSelect = (device: {name: string, id: string}) => {
-      // We store the MAC address as the printer ID implicitly if we select it here
-      // For now, pre-fill name. ID assignment happens in handleAddPrinter.
-      // Actually, for bluetooth, we want the ID to be the MAC address. 
-      // Let's handle that by passing the ID through.
       setNewPrinter({ name: device.name, format: 'Thermal', isDefault: false });
-      // If the device has a MAC-like ID, we might want to preserve it. 
-      // For now, the simple newPrinter state doesn't hold ID.
-      // We'll cheat slightly and put the ID in the name for manual setup if user wants to edit, 
-      // OR just trust manual setup will generate an ID.
-      // BETTER: Let's assume the 'name' field in manual setup is editable, but we want to persist the MAC.
-      // Since manual setup is just Name/Format, we lose the MAC if we don't handle it.
-      // For this specific flow, let's just proceed to multi_device.
+      // In a real app, we would store device.id (MAC) hidden or use it as ID.
+      // For now, mapping name to name for simplicity in the manual step.
       setView('multi_device'); 
   };
 
@@ -170,7 +187,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     'Thermal': <div className="w-6 h-10 border-x-2 border-t-2 border-b-2 border-slate-400 border-b-transparent rounded-t-sm bg-white flex items-center justify-center text-[8px] font-bold text-slate-600 relative"><div className="absolute -bottom-1 w-full h-2 border-t border-dashed border-slate-400"></div>T</div>
   };
 
-  // --- Permission Views ---
+  // --- Render ---
   
   if (view === 'perm_nearby') {
       return (
@@ -192,7 +209,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                           Don't allow
                       </button>
                   </div>
-                  <div className="mt-8 text-slate-400 text-sm">No devices discovered yet</div>
               </div>
           </Modal>
       );
@@ -252,7 +268,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-8 px-4">Do you want to use same printer with multiple devices?</h3>
                 
                 <div className="relative mb-10 w-full flex flex-col items-center">
-                     {/* Printer */}
                      <div className="bg-blue-500 p-4 rounded-xl w-24 h-20 flex items-center justify-center mb-4 relative z-10 shadow-lg">
                         <div className="bg-white w-10 h-1.5 absolute top-8 rounded-sm"></div>
                         <div className="bg-white w-10 h-1 absolute bottom-3 flex justify-between px-0.5">
@@ -261,7 +276,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                          <div className="absolute top-3 right-3 w-1.5 h-1.5 bg-white rounded-full"></div>
                      </div>
                      
-                     {/* Phones */}
                      <div className="flex justify-center gap-6 mt-4">
                         <div className="bg-gradient-to-b from-indigo-400 to-purple-500 p-0.5 rounded-lg transform -rotate-12 w-14 h-24 flex items-center justify-center shadow-lg">
                             <div className="w-full h-full bg-slate-800 rounded-lg border-2 border-transparent opacity-30"></div>
@@ -299,13 +313,11 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     )
   }
 
-  // --- Main Render Logic ---
-
   if (!isOpen) return null;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={
-        view === 'list' ? 'Select Printer' : 
+        view === 'list' ? 'Manage Printers' : 
         view === 'type_select' ? 'Configure printer' :
         view === 'scanning' ? 'Select your printer' :
         'Add New Printer'
@@ -349,17 +361,21 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                         <PlusIcon className="h-4 w-4" /> Add Printer
                     </button>
                     <div className="flex gap-2">
-                        <button onClick={onClose} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Cancel</button>
-                        <button onClick={handlePrint} className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 flex items-center gap-2">
-                            <PrinterIcon className="h-5 w-5" /> Print
+                        <button onClick={onClose} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                            {onSelectPrinter ? 'Cancel' : 'Close'}
                         </button>
+                        {onSelectPrinter && (
+                            <button onClick={handlePrint} className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 flex items-center gap-2">
+                                <PrinterIcon className="h-5 w-5" /> Print
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
              <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
                 <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                   You need to pair your printer first if it's not listed above, click here to open settings.
+                   Note: Ensure your Bluetooth printer is powered on. For native apps, pair it in system settings first.
                 </p>
             </div>
         </div>
@@ -370,7 +386,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             <p className="text-slate-600 dark:text-slate-400">Select printer connection type</p>
             <div className="grid grid-cols-2 gap-4">
                 <button 
-                    onClick={() => setView('perm_nearby')}
+                    onClick={handleBluetoothClick}
                     className="flex flex-col items-center justify-center p-6 bg-blue-100 dark:bg-blue-900/30 rounded-2xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-all aspect-square shadow-sm"
                 >
                     <BluetoothIcon className="h-16 w-16 text-blue-600 mb-4" />
@@ -428,12 +444,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                       </div>
                   )}
               </div>
-               <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
-                    <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                       You need to pair your printer first if it's not listed above, click here to open settings.
-                    </p>
-                </div>
           </div>
       )}
 

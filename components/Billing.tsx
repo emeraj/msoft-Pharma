@@ -135,6 +135,47 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     return commands;
 };
 
+// Web Bluetooth Print Helper
+const printViaWebBluetooth = async (data: Uint8Array) => {
+    const nav = navigator as any;
+    if (!nav.bluetooth) {
+        alert("Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera.");
+        return;
+    }
+
+    try {
+        // Request device - filters for standard ESC/POS service
+        const device = await nav.bluetooth.requestDevice({
+            filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }],
+            // optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] 
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+
+        // Write in chunks of 50 bytes to be safe with BLE MTU
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+            const chunk = data.slice(i, i + CHUNK_SIZE);
+            await characteristic.writeValue(chunk);
+        }
+
+        // Allow a brief moment for buffer to clear before disconnecting
+        setTimeout(() => {
+             if (device.gatt.connected) {
+                device.gatt.disconnect();
+            }
+        }, 1000);
+
+    } catch (error: any) {
+        console.error("Web Bluetooth Print Error:", error);
+        if (error.name !== 'NotFoundError') { // Ignor user cancellation
+             alert("Web Bluetooth printing failed: " + error.message);
+        }
+    }
+};
+
 
 const SubstituteModal: React.FC<{
     isOpen: boolean;
@@ -447,7 +488,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   }, [cart]);
 
   const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile) => {
-    // Check for Bluetooth Thermal Printer Logic
+    // Native Bluetooth Thermal Printer (Capacitor)
     if (printer.format === 'Thermal' && window.bluetoothSerial && printer.id) {
         try {
             // Attempt to connect to the bluetooth device
@@ -490,6 +531,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             alert("Bluetooth print failed. Falling back to system print dialog. Please check your printer connection.");
             // Fallback to standard logic below
         }
+    }
+    
+    // Web Bluetooth Thermal Printer (Browser)
+    if (printer.format === 'Thermal' && !window.bluetoothSerial && (navigator as any).bluetooth) {
+        const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
+        await printViaWebBluetooth(bytes);
+        
+        if (shouldResetAfterPrint) {
+            setCart([]);
+            setCustomerName('');
+            setDoctorName('');
+            if (onCancelEdit && isEditing) {
+                onCancelEdit();
+            }
+            setShouldResetAfterPrint(false);
+        }
+        return;
     }
 
     // Standard Web Print Logic (Fallback or for A4/A5)
