@@ -135,6 +135,7 @@ export interface PrinterProfile {
   format: 'A4' | 'A5' | 'Thermal';
   isDefault: boolean;
   isShared?: boolean;
+  connectionType?: 'bluetooth' | 'usb' | 'network';
 }
 
 export interface SystemConfig {
@@ -147,8 +148,5 @@ export interface SystemConfig {
 declare global {
   interface Window {
     bluetoothSerial: any;
-    BluetoothLe: any;
-    BluetoothManager: any;
-    BluetoothEscposPrinter: any;
   }
 }

@@ -2,9 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile } from '../types';
 import Modal from './common/Modal';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, BluetoothIcon, PlusIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
-import PrinterSelectionModal from './PrinterSelectionModal';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -56,7 +55,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [profile, setProfile] = useState<CompanyProfile>(companyProfile);
   const [config, setConfig] = useState<SystemConfig>(systemConfig);
-  const [isPrinterWizardOpen, setIsPrinterWizardOpen] = useState(false);
+  
+  // Local state for printer form
+  const [newPrinterName, setNewPrinterName] = useState('');
+  const [newPrinterFormat, setNewPrinterFormat] = useState<'A4' | 'A5' | 'Thermal'>('Thermal');
 
   useEffect(() => {
     if (isOpen) {
@@ -85,6 +87,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onClose();
   };
 
+  const handleAddPrinter = () => {
+      if (!newPrinterName) return;
+      const newPrinter: PrinterProfile = {
+          id: `printer_${Date.now()}`,
+          name: newPrinterName,
+          format: newPrinterFormat,
+          isDefault: (config.printers || []).length === 0
+      };
+      const updatedPrinters = [...(config.printers || []), newPrinter];
+      const newConfig = { ...config, printers: updatedPrinters };
+      setConfig(newConfig);
+      onSystemConfigChange(newConfig); // Save immediately
+      setNewPrinterName('');
+      setNewPrinterFormat('Thermal');
+  };
+
   const handleDeletePrinter = (id: string) => {
       if (!window.confirm('Are you sure you want to remove this printer?')) return;
       const updatedPrinters = (config.printers || []).filter(p => p.id !== id);
@@ -103,12 +121,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           isDefault: p.id === id
       }));
       const newConfig = { ...config, printers: updatedPrinters };
-      setConfig(newConfig);
-      onSystemConfigChange(newConfig);
-  };
-
-  // Callback for PrinterSelectionModal to update config
-  const handlePrinterConfigUpdate = (newConfig: SystemConfig) => {
       setConfig(newConfig);
       onSystemConfigChange(newConfig);
   };
@@ -271,17 +283,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           return (
             <div className="space-y-6 animate-fade-in">
                 <div>
-                    <div className="flex justify-between items-center mb-4">
-                        <div>
-                             <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Printer Management</h4>
-                             <p className="text-sm text-slate-600 dark:text-slate-400">Configure your thermal or standard printers.</p>
+                    <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Printer Management</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                        Configure the printers you use. When printing a bill, you can select which printer configuration (and format) to use.
+                    </p>
+                    
+                    {/* Add Printer Form */}
+                    <div className="flex flex-col sm:flex-row gap-4 items-end bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border dark:border-slate-600">
+                        <div className="flex-grow w-full sm:w-auto">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Printer Name</label>
+                            <input 
+                                type="text" 
+                                value={newPrinterName}
+                                onChange={e => setNewPrinterName(e.target.value)}
+                                placeholder="e.g., Counter Thermal, Office A4"
+                                className={formInputStyle}
+                            />
                         </div>
-                        <button 
-                            onClick={() => setIsPrinterWizardOpen(true)}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 shadow-sm transition-colors"
-                        >
-                            <PlusIcon className="h-5 w-5" />
-                            Add / Scan Printer
+                        <div className="w-full sm:w-auto">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Format</label>
+                            <select 
+                                value={newPrinterFormat} 
+                                onChange={e => setNewPrinterFormat(e.target.value as any)}
+                                className={formSelectStyle}
+                            >
+                                <option value="Thermal">Thermal</option>
+                                <option value="A5">A5</option>
+                                <option value="A4">A4</option>
+                            </select>
+                        </div>
+                        <button onClick={handleAddPrinter} className="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700">
+                            Add Printer
                         </button>
                     </div>
 
@@ -297,10 +329,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 {printer.name}
                                                 {printer.isDefault && <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Default</span>}
                                             </p>
-                                            <p className="text-xs text-slate-500 font-mono flex items-center gap-1">
-                                                {printer.format === 'Thermal' && <BluetoothIcon className="h-3 w-3" />}
-                                                {printer.format} Format
-                                            </p>
+                                            <p className="text-sm text-slate-500">{printer.format} Format</p>
                                         </div>
                                         <div className="flex items-center gap-3">
                                             {!printer.isDefault && (
@@ -308,7 +337,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     Set as Default
                                                 </button>
                                             )}
-                                            <button onClick={() => handleDeletePrinter(printer.id)} className="text-red-500 hover:text-red-700 p-1 bg-red-50 dark:bg-red-900/20 rounded-full">
+                                            <button onClick={() => handleDeletePrinter(printer.id)} className="text-red-500 hover:text-red-700 p-1">
                                                 <TrashIcon className="h-4 w-4" />
                                             </button>
                                         </div>
@@ -316,31 +345,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 ))}
                             </div>
                         ) : (
-                            <div className="text-center py-8 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed dark:border-slate-700">
-                                <PrinterIcon className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                                <p>No printers configured.</p>
-                                <p className="text-xs">Click "Add / Scan Printer" to setup a new device.</p>
-                            </div>
+                            <p className="text-center py-4 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-dashed dark:border-slate-700">
+                                No printers configured. Please add one above.
+                            </p>
                         )}
-                    </div>
-
-                    {/* Help Section */}
-                    <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800/50">
-                        <h5 className="font-semibold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-2">
-                            <BluetoothIcon className="h-4 w-4" />
-                            How it works
-                        </h5>
-                        <ul className="text-sm text-blue-900 dark:text-blue-200 space-y-2 list-disc list-inside">
-                            <li>
-                                <strong>Android App:</strong> Enable Bluetooth on your phone. Pair your thermal printer in Android settings first. Then click "Add / Scan Printer" and select "Bluetooth" to find it here.
-                            </li>
-                            <li>
-                                <strong>Web Browser (Chrome/Edge):</strong> Click "Add / Scan Printer" -> "Bluetooth". A browser dialog will appear. Select your printer to pair it directly with the website.
-                            </li>
-                            <li>
-                                <strong>USB Printers:</strong> Use "Add / Scan Printer" -> "USB Cable". You usually just need to install the printer driver on your PC and use the system print dialog.
-                            </li>
-                        </ul>
                     </div>
                 </div>
             </div>
@@ -350,7 +358,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
 
   return (
-    <>
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
       <div>
         <div className="flex border-b dark:border-slate-700 mb-4 overflow-x-auto">
@@ -379,17 +386,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
     `}</style>
     </Modal>
-
-    {/* Printer Wizard Modal - Rendered on top of Settings */}
-    <PrinterSelectionModal 
-        isOpen={isPrinterWizardOpen}
-        onClose={() => setIsPrinterWizardOpen(false)}
-        systemConfig={config}
-        onUpdateConfig={handlePrinterConfigUpdate}
-        initialView="type_select"
-        // onSelectPrinter is deliberately omitted to enable "Manager Mode" behavior (hiding Print buttons)
-    />
-    </>
   );
 };
 
