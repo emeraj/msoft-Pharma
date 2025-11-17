@@ -505,40 +505,43 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const shouldReset = forceReset || shouldResetAfterPrint;
 
     // Capacitor Bluetooth LE Thermal Printer
+    // Checking purely for the presence of the global variable (window.BluetoothLe)
     if (printer.format === 'Thermal' && (window as any).BluetoothLe && printer.id) {
         try {
-             // Initialize just in case
-            await (window as any).BluetoothLe.initialize();
+             const bluetoothLe = (window as any).BluetoothLe;
+             
+             // Initialize
+            await bluetoothLe.initialize();
             
-            // Attempt connection
+            // Attempt connection - assumes device ID is valid (MAC address or UUID)
+            // Note: If already connected, this might throw or succeed depending on implementation
             try {
-                await (window as any).BluetoothLe.connect({ deviceId: printer.id });
+                await bluetoothLe.connect({ deviceId: printer.id });
             } catch (e) {
-                // If already connected, it might throw or just work. 
-                // If connection fails truly, the write will fail.
-                console.log("Connection status:", e);
+                console.log("Connection might already be active or failed:", e);
             }
             
             const data = generateEscPosBill(bill, companyProfile, systemConfig);
             const hexString = bytesToHex(data);
 
-            await (window as any).BluetoothLe.write({
+            await bluetoothLe.write({
                 deviceId: printer.id,
-                service: "000018f0-0000-1000-8000-00805f9b34fb",
-                characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
+                service: "000018f0-0000-1000-8000-00805f9b34fb", // common ESC/POS service
+                characteristic: "00002af1-0000-1000-8000-00805f9b34fb", // common characteristic
                 value: hexString
             });
             
             // Disconnect to release resource
-            await (window as any).BluetoothLe.disconnect({ deviceId: printer.id });
+            await bluetoothLe.disconnect({ deviceId: printer.id });
 
             if (shouldReset) {
                 doReset();
             }
-            return;
+            return; // CRITICAL: Return here so window.print() is NOT called
         } catch (err: any) {
              console.error("Capacitor BLE print failed", err);
-             alert("Bluetooth LE print failed: " + err.message);
+             alert("Bluetooth LE print failed: " + err.message + ". Ensure printer is on and paired.");
+             return; // Stop here on error
         }
     }
 
