@@ -173,10 +173,13 @@ const printViaWebBluetooth = async (data: Uint8Array) => {
         }, 1000);
 
     } catch (error: any) {
-        console.error("Web Bluetooth Print Error:", error);
-        if (error.name !== 'NotFoundError') { // Ignor user cancellation
-             alert("Web Bluetooth printing failed: " + error.message);
+        // Check for cancellation first to avoid noisy logs
+        if (error.name === 'NotFoundError' || error.message?.includes('cancelled')) {
+            // User cancelled the picker, ignore.
+            return;
         }
+        console.error("Web Bluetooth Print Error:", error);
+        alert("Web Bluetooth printing failed: " + error.message);
     }
 };
 
