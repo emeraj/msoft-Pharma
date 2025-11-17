@@ -47,6 +47,38 @@ const exportToCsv = (filename: string, data: any[]) => {
   }
 };
 
+const printViaHiddenIframe = (content: React.ReactNode) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-10000px';
+    iframe.style.left = '-10000px';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+        doc.open();
+        doc.write('<html><head><title>Print</title>');
+        doc.write('<style>@page { size: auto; margin: 0mm; } body { margin: 0; }</style>');
+        doc.write('</head><body><div id="print-root"></div></body></html>');
+        doc.close();
+        
+        const root = ReactDOM.createRoot(doc.getElementById('print-root') as HTMLElement);
+        root.render(content);
+
+        setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => {
+                if (document.body.contains(iframe)) {
+                    document.body.removeChild(iframe);
+                }
+            }, 2000);
+        }, 500);
+    }
+};
 
 interface DayBookProps {
   bills: Bill[];
@@ -88,8 +120,13 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
   }, [selectedDate]);
 
   const handlePrintClick = (bill: Bill) => {
-    setBillToPrint(bill);
-    setPrinterModalOpen(true);
+      const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+      if (defaultPrinter) {
+          handlePrinterSelection(defaultPrinter, bill);
+      } else {
+        setBillToPrint(bill);
+        setPrinterModalOpen(true);
+      }
   };
   
   const handleUpdateConfig = (newConfig: SystemConfig) => {
@@ -99,43 +136,20 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
      }
   };
 
-  const handlePrinterSelection = (printer: PrinterProfile) => {
-      if (billToPrint) {
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-            printWindow.document.title = ' ';
-            const style = printWindow.document.createElement('style');
-            style.innerHTML = `
-                @page { 
-                    size: auto;
-                    margin: 0; 
-                }
-                body {
-                    margin: 0;
-                }
-            `;
-            printWindow.document.head.appendChild(style);
-            
-            const printRoot = document.createElement('div');
-            printWindow.document.body.appendChild(printRoot);
-            
-            const root = ReactDOM.createRoot(printRoot);
-            
-            if (printer.format === 'Thermal') {
-                root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-            } else if (printer.format === 'A5') {
-                root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-            } else {
-                root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
-            }
-
-            setTimeout(() => {
-                printWindow.focus();
-                printWindow.print();
-                printWindow.close();
-                setBillToPrint(null);
-            }, 500);
-        }
+  const handlePrinterSelection = (printer: PrinterProfile, bill: Bill | null = null) => {
+      const targetBill = bill || billToPrint;
+      if (targetBill) {
+          let content;
+          if (printer.format === 'Thermal') {
+              content = <ThermalPrintableBill bill={targetBill} companyProfile={companyProfile} systemConfig={systemConfig} />;
+          } else if (printer.format === 'A5') {
+              content = <PrintableA5Bill bill={targetBill} companyProfile={companyProfile} systemConfig={systemConfig} />;
+          } else {
+              content = <PrintableBill bill={targetBill} companyProfile={companyProfile} />;
+          }
+          printViaHiddenIframe(content);
+          setBillToPrint(null);
+          setPrinterModalOpen(false);
       }
   };
 
@@ -237,7 +251,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
           onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }}
           systemConfig={systemConfig}
           onUpdateConfig={handleUpdateConfig}
-          onSelectPrinter={handlePrinterSelection}
+          onSelectPrinter={(printer) => handlePrinterSelection(printer)}
       />
     </div>
   );

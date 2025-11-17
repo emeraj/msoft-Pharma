@@ -51,6 +51,39 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 U';
 };
 
+const printViaHiddenIframe = (content: React.ReactNode) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-10000px';
+    iframe.style.left = '-10000px';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+        doc.open();
+        doc.write('<html><head><title>Print</title>');
+        doc.write('<style>@page { size: auto; margin: 0mm; } body { margin: 0; }</style>');
+        doc.write('</head><body><div id="print-root"></div></body></html>');
+        doc.close();
+        
+        const root = ReactDOM.createRoot(doc.getElementById('print-root') as HTMLElement);
+        root.render(content);
+
+        setTimeout(() => {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            setTimeout(() => {
+                if (document.body.contains(iframe)) {
+                    document.body.removeChild(iframe);
+                }
+            }, 2000);
+        }, 500);
+    }
+};
+
 
 const SubstituteModal: React.FC<{
     isOpen: boolean;
@@ -362,118 +395,60 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal') => {
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-        const style = printWindow.document.createElement('style');
-        style.innerHTML = `
-            @page { 
-                size: auto;
-                margin: 0mm; 
-            }
-            body {
-                margin: 0;
-            }
-        `;
-        printWindow.document.head.appendChild(style);
-        
-        const rootEl = document.createElement('div');
-        printWindow.document.body.appendChild(rootEl);
-        const root = ReactDOM.createRoot(rootEl);
-        
-        if (format === 'Thermal') {
-             root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-        } else if (format === 'A5') {
-             root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+  const handlePrintOperation = useCallback(async (bill: Bill, printer: PrinterProfile, shouldReset: boolean) => {
+        if (printer.id === 'RAWBT') {
+            const commands = generateEscPosCommand(bill, companyProfile, systemConfig);
+            sendToRawBt(commands);
         } else {
-             // Default A4
-             root.render(<PrintableBill bill={bill} companyProfile={companyProfile} />);
-        }
-        
-        setTimeout(() => {
-            printWindow.document.title = ' ';
-            printWindow.print();
-            printWindow.close();
-            
-            if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) {
-                    onCancelEdit();
+            const isMacAddress = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(printer.id);
+            if (isMacAddress && window.bluetoothSerial) {
+                 try {
+                      const isConnected = await new Promise(resolve => window.bluetoothSerial.isConnected(resolve, () => resolve(false)));
+                      
+                      if (!isConnected) {
+                          // Attempt to connect
+                          await new Promise((resolve, reject) => window.bluetoothSerial.connect(printer.id, resolve, reject));
+                      }
+                      
+                      // Generate and send data
+                      const data = generateEscPosCommand(bill, companyProfile, systemConfig);
+                      await new Promise((resolve, reject) => window.bluetoothSerial.write(data, resolve, reject));
+
+                 } catch (err) {
+                      console.error("Bluetooth Print Error", err);
+                      alert("Failed to print via Bluetooth. Ensure device is paired and on.");
+                 }
+            } else {
+                // Hidden Iframe Print
+                let content;
+                if (printer.format === 'Thermal') {
+                     content = <ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />;
+                } else if (printer.format === 'A5') {
+                     content = <PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />;
+                } else {
+                     content = <PrintableBill bill={bill} companyProfile={companyProfile} />;
                 }
-                setShouldResetAfterPrint(false);
+                printViaHiddenIframe(content);
             }
-        }, 500);
-    } else {
-        alert("Please enable popups to print the bill.");
-        if (shouldResetAfterPrint) {
-             setCart([]);
-             setCustomerName('');
-             setDoctorName('');
-             if (onCancelEdit && isEditing) {
-                 onCancelEdit();
-             }
-             setShouldResetAfterPrint(false);
         }
-    }
-  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
-
-  const handlePrinterSelection = async (printer: PrinterProfile) => {
-    if (!billToPrint) return;
-
-    // RawBT Logic (Android Web Intent)
-    if (printer.id === 'RAWBT') {
-        const commands = generateEscPosCommand(billToPrint, companyProfile, systemConfig);
-        sendToRawBt(commands);
         
-        // Clean up logic (since intent opens immediately)
-        setPrinterModalOpen(false);
-        setBillToPrint(null);
-        if (shouldResetAfterPrint) {
+        // Cleanup Logic
+        if (shouldReset) {
             setCart([]);
             setCustomerName('');
             setDoctorName('');
-            if (onCancelEdit && isEditing) onCancelEdit();
-            setShouldResetAfterPrint(false);
+            if (onCancelEdit && isEditing) {
+                onCancelEdit();
+            }
         }
-        return;
-    }
+  }, [companyProfile, systemConfig, isEditing, onCancelEdit]);
 
-    // Native Bluetooth Printing Logic (Capacitor)
-    const isMacAddress = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(printer.id);
-    if (isMacAddress && window.bluetoothSerial) {
-         try {
-              const isConnected = await new Promise(resolve => window.bluetoothSerial.isConnected(resolve, () => resolve(false)));
-              
-              if (!isConnected) {
-                  // Attempt to connect
-                  await new Promise((resolve, reject) => window.bluetoothSerial.connect(printer.id, resolve, reject));
-              }
-              
-              // Generate and send data
-              const data = generateEscPosCommand(billToPrint, companyProfile, systemConfig);
-              await new Promise((resolve, reject) => window.bluetoothSerial.write(data, resolve, reject));
-              
-              // Cleanup
-              setPrinterModalOpen(false);
-              setBillToPrint(null);
-              if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) onCancelEdit();
-                setShouldResetAfterPrint(false);
-              }
-
-         } catch (err) {
-              console.error("Bluetooth Print Error", err);
-              alert("Failed to print via Bluetooth. Ensure device is paired and on.");
-         }
-    } else {
-        // Fallback to browser print
-        executePrint(billToPrint, printer.format);
+  const handlePrinterSelection = (printer: PrinterProfile) => {
+    if (billToPrint) {
+        handlePrintOperation(billToPrint, printer, shouldResetAfterPrint);
+        setPrinterModalOpen(false);
         setBillToPrint(null);
+        setShouldResetAfterPrint(false);
     }
   };
 
@@ -520,14 +495,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
 
     if (savedBill) {
-        setBillToPrint(savedBill);
-        setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
-        setPrinterModalOpen(true);
+        const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+        if (defaultPrinter) {
+            handlePrintOperation(savedBill, defaultPrinter, true);
+        } else {
+            setBillToPrint(savedBill);
+            setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
+            setPrinterModalOpen(true);
+        }
     } else {
         console.error("Failed to save/update bill.");
         alert("There was an error saving the bill. Please try again.");
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig.printers, handlePrintOperation]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
