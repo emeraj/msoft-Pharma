@@ -53,31 +53,49 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
 // Helper to generate ESC/POS commands for Bluetooth printing as Bytes
 const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemConfig): number[] => {
     const commands: number[] = [];
-    
+    const ESC = 27;
+    const GS = 29;
+    const LF = 10;
+
     const addBytes = (bytes: number[]) => {
         commands.push(...bytes);
     };
-    
+
     const addText = (text: string) => {
-        // Basic ASCII conversion, converting ₹ to Rs.
         const safeText = text.replace(/₹/g, 'Rs.');
         for (let i = 0; i < safeText.length; i++) {
             let code = safeText.charCodeAt(i);
-            // Filter non-printable characters if necessary, usually standard ASCII is fine.
-            // Mapping unicode chars to '?' if > 255 might be safer for basic printers
             if (code > 255) code = 63; // '?'
             commands.push(code);
         }
     };
     
+    // Helper to create a line with left and right aligned text for 32 columns
+    const addRow = (left: string, right: string) => {
+        const width = 32;
+        const space = width - left.length - right.length;
+        if (space < 1) {
+            // If text is too long, just print it with one space or wrap (simple approach)
+            addText(left + " " + right + "\n");
+        } else {
+            addText(left + " ".repeat(space) + right + "\n");
+        }
+    };
+    
+    const addCenter = (text: string) => {
+        addBytes([ESC, 97, 1]); // Center
+        addText(text + "\n");
+        addBytes([ESC, 97, 0]); // Left
+    };
+
     // Initialize Printer: ESC @
-    addBytes([27, 64]);
+    addBytes([ESC, 64]);
     
     // --- Header ---
-    addBytes([27, 97, 1]); // Center Align: ESC a 1
-    addBytes([27, 69, 1]); // Bold On: ESC E 1
+    addBytes([ESC, 97, 1]); // Center Align
+    addBytes([ESC, 69, 1]); // Bold On
     addText(profile.name + '\n');
-    addBytes([27, 69, 0]); // Bold Off: ESC E 0
+    addBytes([ESC, 69, 0]); // Bold Off
     
     addText(profile.address + '\n');
     if (profile.phone) addText('Ph: ' + profile.phone + '\n');
@@ -85,52 +103,75 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText('--------------------------------\n');
     
     // --- Bill Details ---
-    addBytes([27, 97, 0]); // Left Align: ESC a 0
-    addText('Bill No: ' + bill.billNumber + '\n');
-    addText('Date: ' + new Date(bill.date).toLocaleDateString() + ' ' + new Date(bill.date).toLocaleTimeString() + '\n');
+    addBytes([ESC, 97, 0]); // Left Align
+    addRow('Bill No: ' + bill.billNumber, '');
+    addRow('Date: ' + new Date(bill.date).toLocaleDateString(), new Date(bill.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
     addText('Name: ' + bill.customerName + '\n');
     addText('--------------------------------\n');
     
     // --- Items ---
-    addText('Item             Qty   Rate   Amt\n'); 
+    // Format: 
+    // Product Name
+    // Qty x Rate                    Total
     
     bill.items.forEach((item) => {
-        // Truncate name to fit or let it wrap (wrapping is safer in left align)
+        addBytes([ESC, 69, 1]); // Bold On for Product Name
         addText(item.productName + '\n');
-        
-        const qty = item.quantity.toString();
-        const rate = (item.total / item.quantity).toFixed(2);
-        const total = item.total.toFixed(2);
+        addBytes([ESC, 69, 0]); // Bold Off
 
-        // Simple padding for column alignment
-        // Assuming approx 32 columns: 
-        // Space (16) + Qty (3) + Space(1) + Rate (6) + Space(1) + Amt (6)
-        const qtyPad = qty.padStart(3, ' ');
-        const ratePad = rate.padStart(7, ' ');
-        const amtPad = total.padStart(7, ' ');
+        const qtyRate = `${item.quantity} x ${item.total / item.quantity > 0 ? (item.total / item.quantity).toFixed(2) : '0.00'}`;
+        const total = item.total.toFixed(2);
         
-        addText(`                ${qtyPad} ${ratePad} ${amtPad}\n`);
+        addRow(qtyRate, total);
     });
     addText('--------------------------------\n');
     
     // --- Totals ---
-    addBytes([27, 97, 2]); // Right Align: ESC a 2
-    addText('Subtotal: ' + bill.subTotal.toFixed(2) + '\n');
-    addText('GST: ' + bill.totalGst.toFixed(2) + '\n');
-    addBytes([27, 69, 1]); // Bold On
-    addText('Grand Total: ' + bill.grandTotal.toFixed(2) + '\n');
-    addBytes([27, 69, 0]); // Bold Off
+    addRow('Subtotal:', bill.subTotal.toFixed(2));
+    addRow('GST:', bill.totalGst.toFixed(2));
+    
+    addBytes([ESC, 69, 1]); // Bold On
+    addBytes([GS, 33, 17]); // Double Height (optional, some printers might not support GS ! n) or use ESC ! n
+    // Let's stick to simple bold for broad compatibility
+    addRow('Grand Total:', bill.grandTotal.toFixed(2));
+    addBytes([ESC, 33, 0]); // Reset size
+    addBytes([ESC, 69, 0]); // Bold Off
     
     // --- Footer ---
-    addBytes([27, 97, 1]); // Center Align: ESC a 1
     addText('--------------------------------\n');
+    addBytes([ESC, 97, 1]); // Center Align
     if(config.remarkLine1) addText(config.remarkLine1 + '\n');
     if(config.remarkLine2) addText(config.remarkLine2 + '\n');
+    
+    // --- QR Code for UPI ---
+    if (profile.upiId && bill.grandTotal > 0) {
+        // UPI URL string
+        const upiStr = `upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name.substring(0, 20))}&am=${bill.grandTotal.toFixed(2)}&cu=INR`;
+        const len = upiStr.length + 3;
+        const pL = len % 256;
+        const pH = Math.floor(len / 256);
+        
+        addText('\n');
+        addText('Scan to Pay\n');
+        
+        // Function 167: Set module size (size 4-6 is usually good)
+        addBytes([GS, 40, 107, 3, 0, 49, 67, 5]); 
+        // Function 169: Set error correction level (L=48, M=49, Q=50, H=51)
+        addBytes([GS, 40, 107, 3, 0, 49, 69, 48]); 
+        // Function 180: Store data in symbol storage area
+        addBytes([GS, 40, 107, pL, pH, 49, 80, 48]);
+        for (let i = 0; i < upiStr.length; i++) {
+            commands.push(upiStr.charCodeAt(i));
+        }
+        // Function 181: Print symbol data in symbol storage area
+        addBytes([GS, 40, 107, 3, 0, 49, 81, 48]);
+        addText('\n');
+    }
+
     addText('. . . .\n');
     
     // --- Feed Lines ---
-    // Feed 4 lines to ensure cut does not damage text
-    addBytes([10, 10, 10, 10]); 
+    addBytes([LF, LF, LF, LF]); 
     
     return commands;
 };
@@ -502,61 +543,79 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         await window.BluetoothManager.connect(printer.id); // Connect using address/ID
         
         const printerAPI = window.BluetoothEscposPrinter;
-
-        // Helper to format lines using alignment options
-        const printLine = async (text: string, align: number = 0, size: number = 0) => {
-             await printerAPI.printText(text, {
-                 widthtimes: size,
-                 heigthtimes: size,
-                 alignment: align // 0: left, 1: center, 2: right
-             });
+        
+        // Helper to center text
+        const printCentered = async (text: string, isBold: boolean = false) => {
+            await printerAPI.printText(text, {
+                alignment: 1, // Center
+                widthtimes: isBold ? 1 : 0,
+                heigthtimes: isBold ? 1 : 0,
+                fonttype: isBold ? 1 : 0
+            });
+        };
+        
+        // Helper to print row
+        const printRow = async (left: string, right: string) => {
+            // Construct a string with padding if direct column support isn't perfect
+            const width = 32; // standard thermal width in chars
+            let space = width - left.length - right.length;
+            if (space < 1) space = 1;
+            await printerAPI.printText(left + " ".repeat(space) + right + "\n", {});
         };
 
         // Header
-        await printLine(companyProfile.name + "\n", 1, 1);
-        await printLine(companyProfile.address + "\n", 1);
-        if(companyProfile.phone) await printLine("Ph: " + companyProfile.phone + "\n", 1);
-        if(companyProfile.gstin) await printLine("GSTIN: " + companyProfile.gstin + "\n", 1);
-        await printLine("--------------------------------\n", 1);
+        await printCentered(companyProfile.name + "\n", true);
+        await printCentered(companyProfile.address + "\n");
+        if(companyProfile.phone) await printCentered("Ph: " + companyProfile.phone + "\n");
+        if(companyProfile.gstin) await printCentered("GSTIN: " + companyProfile.gstin + "\n");
+        await printerAPI.printText("--------------------------------\n", {});
         
         // Bill Details
-        await printLine(`Bill No: ${bill.billNumber}\n`, 0);
-        await printLine(`Date: ${new Date(bill.date).toLocaleDateString()}\n`, 0);
-        await printLine(`Customer: ${bill.customerName}\n`, 0);
-        await printLine("--------------------------------\n", 1);
+        await printerAPI.printText(`Bill No: ${bill.billNumber}\n`, {});
+        await printerAPI.printText(`Date: ${new Date(bill.date).toLocaleDateString()} ${new Date(bill.date).toLocaleTimeString()}\n`, {});
+        await printerAPI.printText(`Name: ${bill.customerName}\n`, {});
+        await printerAPI.printText("--------------------------------\n", {});
 
-        // Items Header
-        // Using fixed width formatting is tricky with variable fonts, but simple layout works best.
-        await printLine("Item           Qty   Rate   Amt\n", 0); 
-        
+        // Items
         for(const item of bill.items) {
-             await printLine(`${item.productName}\n`, 0);
+             // Line 1: Name
+             await printerAPI.printText(`${item.productName}\n`, { fonttype: 1 }); // Bold
              
-             const qty = item.quantity.toString();
-             const rate = (item.total / item.quantity).toFixed(2);
+             // Line 2: Qty x Rate .... Total
+             const qtyRate = `${item.quantity} x ${item.mrp.toFixed(2)}`;
              const total = item.total.toFixed(2);
-             
-             // Construct line manually with spaces if specific column API is missing
-             // Aligning visually for standard 32 char thermal width
-             // 12345678901234567890123456789012
-             //              10   100.00  1000.00
-             const line = `               ${qty}   ${rate}  ${total}\n`;
-             await printLine(line, 0);
+             await printRow(qtyRate, total);
         }
         
-        await printLine("--------------------------------\n", 1);
+        await printerAPI.printText("--------------------------------\n", {});
         
         // Totals
-        await printLine(`Subtotal: ${bill.subTotal.toFixed(2)}\n`, 2);
-        await printLine(`GST: ${bill.totalGst.toFixed(2)}\n`, 2);
-        await printLine(`Total: ${bill.grandTotal.toFixed(2)}\n`, 2, 1); // Double height total
+        await printRow("Subtotal:", bill.subTotal.toFixed(2));
+        await printRow("GST:", bill.totalGst.toFixed(2));
         
-        await printLine("--------------------------------\n", 1);
+        await printerAPI.printText("\n", {});
+        // Grand Total (Bold)
+        await printerAPI.printText(`Grand Total:       ${bill.grandTotal.toFixed(2)}\n`, { fonttype: 1, widthtimes: 1, heigthtimes: 1 });
+        
+        await printerAPI.printText("--------------------------------\n", {});
         
         // Footer
-        if (systemConfig.remarkLine1) await printLine(systemConfig.remarkLine1 + "\n", 1);
-        if (systemConfig.remarkLine2) await printLine(systemConfig.remarkLine2 + "\n", 1);
-        await printLine("\nThank you!\n\n\n", 1);
+        if (systemConfig.remarkLine1) await printCentered(systemConfig.remarkLine1 + "\n");
+        if (systemConfig.remarkLine2) await printCentered(systemConfig.remarkLine2 + "\n");
+        
+        // QR Code
+        if (companyProfile.upiId && bill.grandTotal > 0) {
+             const upiStr = `upi://pay?pa=${companyProfile.upiId}&pn=${encodeURIComponent(companyProfile.name.substring(0, 20))}&am=${bill.grandTotal.toFixed(2)}&cu=INR`;
+             await printCentered("Scan to Pay\n");
+             // Standard call for react-native-bluetooth-escpos-printer
+             // content, width (pixels/dots), correction level (1=L, 2=M, 3=Q, 4=H)
+             try {
+                await printerAPI.printQRCode(upiStr, 200, 1);
+             } catch(e) { console.error("QR Print Error", e); }
+             await printerAPI.printText("\n", {});
+        }
+
+        await printCentered("Thank you!\n\n\n");
 
       } catch (e) {
         console.error("Native Print Error:", e);
