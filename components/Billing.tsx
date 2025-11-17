@@ -361,7 +361,91 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal') => {
+  // --- Bluetooth Printing Helper ---
+  const printViaBluetooth = useCallback(async (bill: Bill) => {
+    if (!(navigator as any).bluetooth) {
+        alert("Web Bluetooth is not supported in this browser.");
+        return;
+    }
+    
+    try {
+        const device = await (navigator as any).bluetooth.requestDevice({
+            filters: [{ services: ['printer_service_id'] }],
+            acceptAllDevices: false, // Using strict filter as per prompt example logic, or fallback to acceptAll if fails
+            optionalServices: ['printer_service_id'] // standard printing service usually 000018f0-...
+        }).catch(async () => {
+            // Fallback to acceptAll if specific filter fails or user wants to see all
+             return await (navigator as any).bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'battery_service']
+            });
+        });
+
+        if (!device) return;
+
+        const server = await device.gatt.connect();
+        // Need to find a writable characteristic. Usually generic printing service.
+        // For generic thermal printers, often it's a specific UUID or just the first writable one in the primary service.
+        // Since we don't know the exact service UUID, we might need to discover.
+        // This example assumes we found a writable one or tries to find one.
+        // A robust implementation would enumerate services/characteristics.
+        // Here we'll use a simplified logic assuming a standard service or just finding first writable.
+
+        const services = await server.getPrimaryServices();
+        let characteristic: any = null;
+
+        for (const service of services) {
+            const characteristics = await service.getCharacteristics();
+            for (const c of characteristics) {
+                if (c.properties.write || c.properties.writeWithoutResponse) {
+                    characteristic = c;
+                    break;
+                }
+            }
+            if (characteristic) break;
+        }
+
+        if (!characteristic) {
+             alert("Could not find a writable characteristic on this device.");
+             return;
+        }
+
+        // Generate Data
+        const encoder = new TextEncoder();
+        let data = '';
+        const ESC = '\x1B';
+        const newline = '\n';
+
+        data += companyProfile.name + newline;
+        data += companyProfile.address + newline;
+        data += 'Bill: ' + bill.billNumber + newline;
+        data += 'Total: ' + bill.grandTotal.toFixed(2) + newline;
+        data += newline + newline;
+
+        await characteristic.writeValue(encoder.encode(data));
+        alert("Sent to printer!");
+
+        // Cleanup logic
+        if (shouldResetAfterPrint) {
+             setCart([]);
+             setCustomerName('');
+             setDoctorName('');
+             if (onCancelEdit && isEditing) onCancelEdit();
+             setShouldResetAfterPrint(false);
+        }
+
+    } catch (error) {
+        console.error("Bluetooth Print Error:", error);
+        alert("Failed to print via Bluetooth. See console for details.");
+    }
+  }, [companyProfile, shouldResetAfterPrint, isEditing, onCancelEdit]);
+
+  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', connectionType?: 'bluetooth' | 'usb' | 'network') => {
+    if (connectionType === 'bluetooth') {
+        printViaBluetooth(bill);
+        return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
@@ -416,11 +500,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              setShouldResetAfterPrint(false);
         }
     }
-  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
+  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit, printViaBluetooth]);
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer.format);
+          executePrint(billToPrint, printer.format, printer.connectionType);
           setBillToPrint(null);
       }
   };
@@ -875,9 +959,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           onClose={() => { 
             setPrinterModalOpen(false); 
             // If closed without printing, but bill was saved, we should probably reset the cart anyway
-            // or keep it? Standard behavior: Save clears the cart usually. 
-            // Here executePrint triggers the reset. If they cancel print, cart stays cleared?
-            // Let's just call reset if they close modal without printing IF bill was saved.
             if (shouldResetAfterPrint) {
                 setCart([]);
                 setCustomerName('');

@@ -16,7 +16,7 @@ type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_ne
 
 const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
   const [view, setView] = useState<ViewState>('list');
-  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean }>({
+  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean; connectionType?: 'bluetooth' | 'usb' | 'network' }>({
     name: '',
     format: 'Thermal',
     isDefault: false,
@@ -56,12 +56,9 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       format: newPrinter.format,
       isDefault: newPrinter.isDefault || printers.length === 0,
       isShared: isShared,
+      connectionType: newPrinter.connectionType,
     };
     
-    // If using plugin scanning, we might want to store the MAC address specifically as ID.
-    // In the scanning logic below, we use device.id which is the MAC.
-    // If manually entered, we generate an ID.
-
     let updatedPrinters = [...printers];
     if (printer.isDefault) {
       updatedPrinters = updatedPrinters.map(p => ({ ...p, isDefault: false }));
@@ -89,12 +86,12 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     let timer: number;
 
     if (view === 'scanning') {
-      setIsScanning(true);
       setScannedDevices([]);
 
       // Check if cordova bluetooth plugin is available
       if (window.bluetoothSerial) {
-        // Real scanning
+        setIsScanning(true);
+        // Real scanning with Cordova
         const onDiscover = (device: any) => {
             setScannedDevices(prev => {
                 if (prev.some(d => d.id === device.address)) return prev;
@@ -128,39 +125,55 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             }, onError);
         }, onError);
 
-      } else {
-        // Fallback / Simulation
+      } else if (!(navigator as any).bluetooth) {
+        // Fallback simulation if Web Bluetooth is NOT available and NO Cordova
+        setIsScanning(true);
         timer = window.setTimeout(() => {
             setScannedDevices([
-                { name: 'Printer001', id: 'DC:0D:30:A2:F1:A4' },
-                { name: 'Galaxy A20', id: 'FC:AA:B6:7F:BB:FB' },
-                { name: 'realme TechLife Buds T100', id: '98:34:8C:38:B3:1A' },
-                { name: 'OnePlus Nord Buds 2r', id: 'Device4' },
+                { name: 'Printer001 (Simulated)', id: 'DC:0D:30:A2:F1:A4' },
             ]);
             setIsScanning(false);
         }, 2000);
+      } else {
+          // Web Bluetooth is available, but we don't auto-scan.
+          // We wait for user action.
+          setIsScanning(false);
       }
     }
 
     return () => {
         if (timer) clearTimeout(timer);
-        // No explicit stop scan for the plugin in this simple implementation
     };
   }, [view]);
 
-  const handleDeviceSelect = (device: {name: string, id: string}) => {
-      // We store the MAC address as the printer ID implicitly if we select it here
-      // For now, pre-fill name. ID assignment happens in handleAddPrinter.
-      // Actually, for bluetooth, we want the ID to be the MAC address. 
-      // Let's handle that by passing the ID through.
-      setNewPrinter({ name: device.name, format: 'Thermal', isDefault: false });
-      // If the device has a MAC-like ID, we might want to preserve it. 
-      // For now, the simple newPrinter state doesn't hold ID.
-      // We'll cheat slightly and put the ID in the name for manual setup if user wants to edit, 
-      // OR just trust manual setup will generate an ID.
-      // BETTER: Let's assume the 'name' field in manual setup is editable, but we want to persist the MAC.
-      // Since manual setup is just Name/Format, we lose the MAC if we don't handle it.
-      // For this specific flow, let's just proceed to multi_device.
+  const startWebBluetoothScan = async () => {
+    if (!(navigator as any).bluetooth) {
+        alert("Web Bluetooth is not supported in this browser.");
+        return;
+    }
+    setIsScanning(true);
+    try {
+        // Request device with broad filters to find printers.
+        // '000018f0-0000-1000-8000-00805f9b34fb' is the standard Bluetooth service UUID for Printing.
+        // Some thermal printers might use serial port UUIDs or custom ones.
+        // Using acceptAllDevices: true allows finding any device, but requires optionalServices to access them.
+        const device = await (navigator as any).bluetooth.requestDevice({
+             acceptAllDevices: true,
+             optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'battery_service', 'device_information']
+        });
+        
+        if (device) {
+             handleDeviceSelect({ name: device.name || 'Bluetooth Device', id: device.id }, 'bluetooth');
+        }
+    } catch (error) {
+        console.error("Web Bluetooth Error:", error);
+    } finally {
+        setIsScanning(false);
+    }
+  };
+
+  const handleDeviceSelect = (device: {name: string, id: string}, type: 'bluetooth' | 'usb' = 'bluetooth') => {
+      setNewPrinter({ name: device.name, format: 'Thermal', isDefault: false, connectionType: type });
       setView('multi_device'); 
   };
 
@@ -329,7 +342,10 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                             </div>
                             <div className="flex-grow">
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{printer.name}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">{printer.format} Format</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {printer.format} Format 
+                                    {printer.connectionType === 'bluetooth' && ' (Bluetooth)'}
+                                </p>
                             </div>
                             {printer.isShared && (
                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full mr-2">Shared</span>
@@ -378,7 +394,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 </button>
                 <button 
                      onClick={() => {
-                         setNewPrinter({ name: '', format: 'Thermal', isDefault: false });
+                         setNewPrinter({ name: '', format: 'Thermal', isDefault: false, connectionType: 'usb' });
                          setView('multi_device');
                      }}
                     className="flex flex-col items-center justify-center p-6 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm"
@@ -403,12 +419,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                           <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600 mb-4"></div>
                           <p className="text-lg text-slate-600 dark:text-slate-400">Scanning for printers...</p>
                       </div>
-                  ) : scannedDevices.length === 0 ? (
-                       <div className="flex flex-col items-center justify-center py-12">
-                           <p className="text-slate-600 dark:text-slate-400">No devices found.</p>
-                           <button onClick={() => setView('scanning')} className="mt-4 text-indigo-600 hover:underline">Try Again</button>
-                       </div>
-                  ) : (
+                  ) : scannedDevices.length > 0 ? (
                       <div className="space-y-2">
                           {scannedDevices.map((device, idx) => (
                               <div 
@@ -426,12 +437,27 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                               </div>
                           ))}
                       </div>
+                  ) : (
+                       <div className="flex flex-col items-center justify-center py-12">
+                           <p className="text-slate-600 dark:text-slate-400 mb-4">
+                             {window.bluetoothSerial ? 'No devices found.' : 'Start scanning to find Bluetooth printers.'}
+                           </p>
+                           {(navigator as any).bluetooth && !window.bluetoothSerial && (
+                               <button onClick={startWebBluetoothScan} className="px-6 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 flex items-center gap-2">
+                                   <BluetoothIcon className="h-5 w-5" />
+                                   Scan for Bluetooth Printer
+                               </button>
+                           )}
+                           {window.bluetoothSerial && (
+                               <button onClick={() => setView('scanning')} className="mt-4 text-indigo-600 hover:underline">Try Again</button>
+                           )}
+                       </div>
                   )}
               </div>
                <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
                     <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                       You need to pair your printer first if it's not listed above, click here to open settings.
+                       Ensure your printer is on and visible.
                     </p>
                 </div>
           </div>
