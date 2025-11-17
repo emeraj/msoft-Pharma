@@ -109,9 +109,10 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
         isRunningRef.current = true;
     } catch (err: any) {
         console.error("Scanner start error:", err);
-        if (err?.name === 'NotAllowedError' || err?.message?.includes('Permission')) {
+        // Explicitly check for permission denied errors
+        if (err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError' || err?.message?.toLowerCase().includes('permission')) {
              setPermissionDenied(true);
-             setError("Camera permission denied.");
+             setError(null); // Don't show generic error, show the permission UI
         } else {
              setError("Could not start camera. " + (err?.message || "Unknown error."));
         }
@@ -159,13 +160,13 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
           {/* Permission Request UI */}
           {permissionDenied && (
              <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/90 p-6">
-                 <div className="bg-white dark:bg-slate-800 p-6 rounded-lg text-center max-w-xs w-full shadow-2xl">
+                 <div className="bg-white dark:bg-slate-800 p-6 rounded-lg text-center max-w-xs w-full shadow-2xl animate-fade-in">
                      <div className="mx-auto bg-red-100 dark:bg-red-900/50 w-16 h-16 rounded-full flex items-center justify-center mb-4">
                          <CameraIcon className="h-8 w-8 text-red-600 dark:text-red-400" />
                      </div>
                      <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Permission Required</h3>
                      <p className="text-sm text-slate-600 dark:text-slate-300 mb-6">
-                         Access to the camera is required to scan barcodes. Please enable camera permissions in your browser settings.
+                         We need access to your camera to scan barcodes. Please allow access in your browser settings.
                      </p>
                      <button 
                         onClick={startScanner} 
@@ -186,26 +187,28 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
           {/* Fullscreen Scanner Container */}
           <div id={readerId} className="w-full h-full"></div>
 
-          {/* Visual Overlay */}
-          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-               {/* Darkened borders */}
-              <div className="absolute top-0 left-0 right-0 h-[calc(50%-125px)] bg-black/60"></div>
-              <div className="absolute bottom-0 left-0 right-0 h-[calc(50%-125px)] bg-black/60"></div>
-              <div className="absolute top-[calc(50%-125px)] left-0 w-[calc(50%-125px)] h-[250px] bg-black/60"></div>
-              <div className="absolute top-[calc(50%-125px)] right-0 w-[calc(50%-125px)] h-[250px] bg-black/60"></div>
+          {/* Visual Overlay - Only show if no permission error */}
+          {!permissionDenied && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                {/* Darkened borders */}
+                <div className="absolute top-0 left-0 right-0 h-[calc(50%-125px)] bg-black/60"></div>
+                <div className="absolute bottom-0 left-0 right-0 h-[calc(50%-125px)] bg-black/60"></div>
+                <div className="absolute top-[calc(50%-125px)] left-0 w-[calc(50%-125px)] h-[250px] bg-black/60"></div>
+                <div className="absolute top-[calc(50%-125px)] right-0 w-[calc(50%-125px)] h-[250px] bg-black/60"></div>
 
-              {/* Scanning Box */}
-              <div className="relative w-[250px] h-[250px] border-2 border-white/50 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                   {/* Corner markers */}
-                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-green-500 -mt-1 -ml-1"></div>
-                   <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-green-500 -mt-1 -mr-1"></div>
-                   <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-green-500 -mb-1 -ml-1"></div>
-                   <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-green-500 -mb-1 -mr-1"></div>
-                   
-                   {/* Laser Scan Line */}
-                   <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500 shadow-[0_0_4px_#ff0000] animate-scan-line"></div>
-              </div>
-          </div>
+                {/* Scanning Box */}
+                <div className="relative w-[250px] h-[250px] border-2 border-white/50 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                    {/* Corner markers */}
+                    <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-green-500 -mt-1 -ml-1"></div>
+                    <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-green-500 -mt-1 -mr-1"></div>
+                    <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-green-500 -mb-1 -ml-1"></div>
+                    <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-green-500 -mb-1 -mr-1"></div>
+                    
+                    {/* Laser Scan Line */}
+                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-500 shadow-[0_0_4px_#ff0000] animate-scan-line"></div>
+                </div>
+            </div>
+          )}
 
           {/* Success Feedback */}
           {scanFeedback && (
@@ -216,7 +219,7 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
       </div>
       
       {/* Controls */}
-      <div className="bg-black/80 p-6 flex flex-col items-center gap-4 pb-8">
+      <div className="bg-black/80 p-6 flex flex-col items-center gap-4 pb-8 safe-area-bottom">
           <p className="text-white text-sm text-center opacity-80">
               {closeOnScan ? 'Align barcode within frame to scan' : 'Continuous Mode: Scan multiple items'}
           </p>
@@ -238,6 +241,16 @@ const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({ isOpen, onClo
         }
         .animate-scan-line {
             animation: scan-line 2s linear infinite;
+        }
+        @keyframes fade-in {
+            0% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+            animation: fade-in 0.2s ease-out forwards;
+        }
+        .safe-area-bottom {
+            padding-bottom: env(safe-area-inset-bottom, 20px);
         }
       `}</style>
     </div>

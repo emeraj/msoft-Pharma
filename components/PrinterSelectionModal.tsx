@@ -103,7 +103,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
 
         const onError = (err: any) => {
             console.error("Bluetooth Scan Error", err);
-            setScanError("Failed to scan. Ensure Bluetooth is on.");
+            setScanError("Failed to scan. Ensure Bluetooth is on and permissions are granted.");
             setIsScanning(false);
         };
         
@@ -127,7 +127,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
         }, onError);
 
       } else {
-        // Not native
+        // Not native - Likely running on web
         setScanError("Bluetooth scanning is only available in the native Android/iOS app.");
         setIsScanning(false);
       }
@@ -268,7 +268,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
                     <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
                     <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                       Running in Browser. For thermal printing, please use 'Mobile App (RawBT)' (on Android) or use the System Print dialog (PDF/USB). Direct Bluetooth is not supported in browser.
+                       Running in Browser. Bluetooth scanning is not supported here. Use <strong>'Mobile App (RawBT)'</strong> for thermal printing on Android, or <strong>'System Printer'</strong> for USB/WiFi printers.
                     </p>
                 </div>
              )}
@@ -324,13 +324,13 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                           <p className="text-lg text-slate-600 dark:text-slate-400">Scanning for printers...</p>
                       </div>
                   ) : scanError ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                             <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 p-4 rounded-full mb-4">
                                 <BluetoothIcon className="h-8 w-8" />
                             </div>
                             <p className="text-slate-800 dark:text-slate-200 font-medium mb-2">{scanError}</p>
-                            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">
-                                Direct Bluetooth scanning requires the Native App. If you are on the web, please use <strong>RawBT</strong> or <strong>System Printer</strong>.
+                            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                                Try using <strong>'Mobile App (RawBT)'</strong> or <strong>'System Printer'</strong> if you are not using the native app.
                             </p>
                             <button onClick={() => setView('type_select')} className="mt-6 text-indigo-600 hover:underline">Back to Options</button>
                         </div>
