@@ -184,12 +184,11 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
                 {systemConfig.remarkLine2 && <p style={{margin: '2px 0'}}>{systemConfig.remarkLine2}</p>}
             </div>
             
-            {/* Feed lines for paper cutting */}
-            <div style={{ textAlign: 'center', marginTop: '5mm', paddingBottom: '25mm', color: 'black', fontSize: '10px' }}>
-                <br />
-                <br />
-                <br />
-                .
+            {/* Feed lines for browser printing */}
+            <div style={{ textAlign: 'center', marginTop: '8mm', paddingBottom: '10mm', color: '#888', fontSize: '10px' }}>
+                <div style={{borderTop: '1px dashed #000', margin: '0 10mm 5px 10mm'}}></div>
+                - Cut Here -
+                <br /><br /><br />
             </div>
         </pre>
     );

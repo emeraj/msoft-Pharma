@@ -12,6 +12,10 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     const BOLD_ON = ESC + 'E' + '\x01';
     const BOLD_OFF = ESC + 'E' + '\x00';
     
+    // Feed control
+    const FEED_3_LINES = ESC + 'd' + '\x03'; // Print and feed 3 lines
+    const CUT_PAPER = GS + 'V' + '\x42' + '\x00'; // Feed paper to cut position and cut (Function B)
+
     let commands = INIT;
     
     // Helper to add line
@@ -82,11 +86,11 @@ export const generateEscPosCommand = (bill: Bill, companyProfile: CompanyProfile
     if (systemConfig.remarkLine1) addLine(sanitize(systemConfig.remarkLine1));
     if (systemConfig.remarkLine2) addLine(sanitize(systemConfig.remarkLine2));
     
-    // Feed lines for cutting
-    addLine('');
-    addLine('');
-    addLine(''); 
-    addLine(''); 
+    // Feed lines for cutting (Ensures paper comes out enough)
+    commands += FEED_3_LINES;
+    
+    // Trigger Cut (If supported by printer)
+    commands += CUT_PAPER;
     
     return commands;
 };
