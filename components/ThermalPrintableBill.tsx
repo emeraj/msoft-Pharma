@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
@@ -181,6 +182,12 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             <div style={{ ...styles.textCenter, ...styles.mt2, fontSize: '11px' }}>
                 {systemConfig.remarkLine1 && <p style={{margin: '2px 0'}}>{systemConfig.remarkLine1}</p>}
                 {systemConfig.remarkLine2 && <p style={{margin: '2px 0'}}>{systemConfig.remarkLine2}</p>}
+            </div>
+            
+            {/* Feed lines for paper cutting */}
+            <div style={{ textAlign: 'center', marginTop: '10px' }}>
+                <br /><br /><br />
+                <span style={{ color: '#ddd', fontSize: '8px' }}>.</span>
             </div>
         </pre>
     );
