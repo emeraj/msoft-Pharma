@@ -362,38 +362,52 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   }, [cart]);
 
   // --- Bluetooth Printing Helper ---
-  const printViaBluetooth = useCallback(async (bill: Bill) => {
+  const printViaBluetooth = useCallback(async (bill: Bill, printerId?: string) => {
     if (!(navigator as any).bluetooth) {
         alert("Web Bluetooth is not supported in this browser.");
         return;
     }
     
-    try {
-        const device = await (navigator as any).bluetooth.requestDevice({
-            filters: [{ services: ['printer_service_id'] }],
-            acceptAllDevices: false, // Using strict filter as per prompt example logic, or fallback to acceptAll if fails
-            optionalServices: ['printer_service_id'] // standard printing service usually 000018f0-...
-        }).catch(async () => {
-            // Fallback to acceptAll if specific filter fails or user wants to see all
-             return await (navigator as any).bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'battery_service']
+    let device: any = null;
+
+    // Try to reconnect to a known device if printerId is provided
+    if (printerId && (navigator as any).bluetooth.getDevices) {
+        try {
+            const devices = await (navigator as any).bluetooth.getDevices();
+            device = devices.find((d: any) => d.id === printerId);
+        } catch (e) {
+            console.log("Error getting known devices:", e);
+        }
+    }
+
+    if (!device) {
+        try {
+            // Standard Printing Service UUID
+            const PRINTING_SERVICE = 0x18f0;
+            device = await (navigator as any).bluetooth.requestDevice({
+                filters: [{ services: [PRINTING_SERVICE] }],
+                optionalServices: [PRINTING_SERVICE]
+            }).catch(async () => {
+                 // Fallback: Accept all devices if filter fails
+                 return await (navigator as any).bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [PRINTING_SERVICE]
+                });
             });
-        });
+        } catch (error) {
+            console.error("Bluetooth Scan Error:", error);
+            return;
+        }
+    }
 
-        if (!device) return;
+    if (!device) return;
 
+    try {
         const server = await device.gatt.connect();
-        // Need to find a writable characteristic. Usually generic printing service.
-        // For generic thermal printers, often it's a specific UUID or just the first writable one in the primary service.
-        // Since we don't know the exact service UUID, we might need to discover.
-        // This example assumes we found a writable one or tries to find one.
-        // A robust implementation would enumerate services/characteristics.
-        // Here we'll use a simplified logic assuming a standard service or just finding first writable.
-
         const services = await server.getPrimaryServices();
         let characteristic: any = null;
 
+        // Find the first writable characteristic
         for (const service of services) {
             const characteristics = await service.getCharacteristics();
             for (const c of characteristics) {
@@ -440,9 +454,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
   }, [companyProfile, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
-  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', connectionType?: 'bluetooth' | 'usb' | 'network') => {
+  const executePrint = useCallback((bill: Bill, format: 'A4' | 'A5' | 'Thermal', connectionType?: 'bluetooth' | 'usb' | 'network', printerId?: string) => {
     if (connectionType === 'bluetooth') {
-        printViaBluetooth(bill);
+        printViaBluetooth(bill, printerId);
         return;
     }
 
@@ -504,7 +518,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
-          executePrint(billToPrint, printer.format, printer.connectionType);
+          executePrint(billToPrint, printer.format, printer.connectionType, printer.id);
           setBillToPrint(null);
       }
   };

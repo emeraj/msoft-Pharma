@@ -153,13 +153,16 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     }
     setIsScanning(true);
     try {
-        // Request device with broad filters to find printers.
-        // '000018f0-0000-1000-8000-00805f9b34fb' is the standard Bluetooth service UUID for Printing.
-        // Some thermal printers might use serial port UUIDs or custom ones.
-        // Using acceptAllDevices: true allows finding any device, but requires optionalServices to access them.
+        // Try to find devices supporting Printing Service (0x18F0) or allow user to select any
         const device = await (navigator as any).bluetooth.requestDevice({
-             acceptAllDevices: true,
-             optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', 'battery_service', 'device_information']
+             filters: [{ services: [0x18f0] }], 
+             optionalServices: [0x18f0]
+        }).catch(async () => {
+             // Fallback: Accept all devices to let user pick, useful if service not advertised
+             return await (navigator as any).bluetooth.requestDevice({
+                 acceptAllDevices: true,
+                 optionalServices: [0x18f0]
+            });
         });
         
         if (device) {
