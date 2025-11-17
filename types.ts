@@ -148,5 +148,7 @@ declare global {
   interface Window {
     bluetoothSerial: any;
     BluetoothLe: any;
+    BluetoothManager: any;
+    BluetoothEscposPrinter: any;
   }
 }

@@ -115,8 +115,11 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   };
 
   const handleBluetoothClick = async () => {
-      if ((window as any).BluetoothLe) {
-           // Capacitor Bluetooth LE Scan Logic (Simulated using requestDevice similar to Web Bluetooth)
+      if (window.BluetoothManager) {
+          // Special React Native Interface
+          setView('scanning');
+      } else if ((window as any).BluetoothLe) {
+           // Capacitor Bluetooth LE Scan Logic
            try {
                 await (window as any).BluetoothLe.initialize();
                 const device = await (window as any).BluetoothLe.requestDevice({
@@ -133,8 +136,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 }
            } catch (error: any) {
                console.error("Bluetooth LE Scan Error:", error);
-               // Fallback to manual if cancelled or failed
-               // if (error.message !== 'User cancelled') alert("Scan failed: " + error.message);
            }
       } else if (window.bluetoothSerial) {
           // Native environment (Cordova/Legacy)
@@ -152,12 +153,53 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       }
   };
 
-  // Native Scanning Logic (Effect) for legacy bluetoothSerial
+  // Scanning Logic
   useEffect(() => {
     if (view === 'scanning') {
       setIsScanning(true);
       setScannedDevices([]);
 
+      // React Native Specific Interface
+      if (window.BluetoothManager) {
+          const scanNative = async () => {
+             try {
+                 const found = await window.BluetoothManager.scanDevices();
+                 let devices = [];
+                 
+                 // Parse result based on common return types (string JSON or object)
+                 if (found && found.found) {
+                     try { devices = JSON.parse(found.found); } catch(e) { console.warn('JSON parse err', e); }
+                 } else if (typeof found === 'string') {
+                     try { devices = JSON.parse(found); } catch(e) { console.warn('JSON parse err', e); }
+                 } else if (Array.isArray(found)) {
+                     devices = found;
+                 }
+
+                 const mapped = devices.map((d: any) => ({
+                     name: d.name || d.address || 'Unknown',
+                     id: d.address // Address is critical for connection
+                 }));
+                 
+                 setScannedDevices(prev => {
+                     // Merge and dedup
+                     const combined = [...prev];
+                     mapped.forEach((d: any) => {
+                         if (!combined.some(existing => existing.id === d.id)) combined.push(d);
+                     });
+                     return combined;
+                 });
+
+             } catch (e) {
+                 console.warn('Native scan err', e);
+             } finally {
+                 setIsScanning(false);
+             }
+          };
+          scanNative();
+          return;
+      }
+
+      // Capacitor/Cordova Legacy Serial
       if (window.bluetoothSerial) {
         const onDiscover = (device: any) => {
             setScannedDevices(prev => {
@@ -196,9 +238,9 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   }, [view]);
 
   const handleDeviceSelect = (device: {name: string, id: string}) => {
-      setNewPrinter({ name: device.name, format: 'Thermal', isDefault: false });
-      // In a real app, we would store device.id (MAC) hidden or use it as ID.
-      // For now, mapping name to name for simplicity in the manual step.
+      // Store address as ID, but let user confirm name in manual setup if needed.
+      // For specific React Native plugin, the address is the key.
+      setNewPrinter({ name: device.id, format: 'Thermal', isDefault: false });
       setView('multi_device'); 
   };
 
@@ -479,7 +521,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                     placeholder="e.g. 00:11:22:33:AA:BB or Printer Name"
                     className="w-full px-4 py-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
-                 <p className="text-xs text-slate-500 mt-1">For Bluetooth LE, this will store the Device ID.</p>
+                 <p className="text-xs text-slate-500 mt-1">For Bluetooth printers, this should ideally be the device address (e.g., AA:BB:CC:DD:EE:FF).</p>
             </div>
             <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Print Format</label>

@@ -80,7 +80,7 @@ const useBarcodeScanner = (
 
                 const config = { 
                     fps: 10, 
-                    qrbox: { width: 250, height: 250 },
+                    qrbox: { width: 200, height: 100 }, // Rectangular box for barcodes, fits h-48
                     aspectRatio: 1.777778, // 16:9 aspect ratio
                     formatsToSupport: [
                         Html5QrcodeSupportedFormats.EAN_13,
@@ -163,18 +163,18 @@ const ScannerUI: React.FC<ScannerUIProps> = ({ readerId, error, overlayText }) =
         {error && <div className="text-red-500 mb-4 text-center px-4">{error}</div>}
         
         <div className="relative w-full rounded-xl overflow-hidden bg-black shadow-lg">
-            <div id={readerId} className="w-full h-60 bg-black"></div>
+            <div id={readerId} className="w-full h-48 bg-black"></div>
             
             {/* Laser Effect Overlay */}
             {!error && (
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div className="w-3/4 h-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-scan-laser"></div>
-                    <div className="absolute inset-0 border-2 border-white/30 rounded-xl"></div>
+                    <div className="absolute inset-0 border-2 border-white/20 rounded-xl"></div>
                     {/* Corner markers */}
-                    <div className="absolute top-4 left-4 w-8 h-8 border-t-4 border-l-4 border-red-500/70 rounded-tl-lg"></div>
-                    <div className="absolute top-4 right-4 w-8 h-8 border-t-4 border-r-4 border-red-500/70 rounded-tr-lg"></div>
-                    <div className="absolute bottom-4 left-4 w-8 h-8 border-b-4 border-l-4 border-red-500/70 rounded-bl-lg"></div>
-                    <div className="absolute bottom-4 right-4 w-8 h-8 border-b-4 border-r-4 border-red-500/70 rounded-br-lg"></div>
+                    <div className="absolute top-3 left-3 w-6 h-6 border-t-2 border-l-2 border-red-500/70 rounded-tl-lg"></div>
+                    <div className="absolute top-3 right-3 w-6 h-6 border-t-2 border-r-2 border-red-500/70 rounded-tr-lg"></div>
+                    <div className="absolute bottom-3 left-3 w-6 h-6 border-b-2 border-l-2 border-red-500/70 rounded-bl-lg"></div>
+                    <div className="absolute bottom-3 right-3 w-6 h-6 border-b-2 border-r-2 border-red-500/70 rounded-br-lg"></div>
                 </div>
             )}
             
@@ -196,11 +196,11 @@ const ScannerUI: React.FC<ScannerUIProps> = ({ readerId, error, overlayText }) =
                 border-radius: 0.75rem;
             }
             @keyframes scan-laser {
-                0% { transform: translateY(-80px); opacity: 0; }
+                0% { transform: translateY(-40px); opacity: 0; }
                 10% { opacity: 1; }
                 50% { opacity: 1; }
                 90% { opacity: 1; }
-                100% { transform: translateY(80px); opacity: 0; }
+                100% { transform: translateY(40px); opacity: 0; }
             }
             .animate-scan-laser {
                 animation: scan-laser 2s linear infinite;

@@ -126,7 +126,7 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText('--------------------------------\n');
     if(config.remarkLine1) addText(config.remarkLine1 + '\n');
     if(config.remarkLine2) addText(config.remarkLine2 + '\n');
-    addText('. . .\n');
+    addText('. . . .\n');
     
     // --- Feed Lines ---
     // Feed 4 lines to ensure cut does not damage text
@@ -494,6 +494,73 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return { subTotal, totalGst, grandTotal };
   }, [cart]);
 
+  const printViaReactNative = async (bill: Bill, printer: PrinterProfile) => {
+      try {
+        await window.BluetoothManager.connect(printer.id); // Connect using address/ID
+        
+        const printerAPI = window.BluetoothEscposPrinter;
+
+        // Helper to format lines using alignment options
+        const printLine = async (text: string, align: number = 0, size: number = 0) => {
+             await printerAPI.printText(text, {
+                 widthtimes: size,
+                 heigthtimes: size,
+                 alignment: align // 0: left, 1: center, 2: right
+             });
+        };
+
+        // Header
+        await printLine(companyProfile.name + "\n", 1, 1);
+        await printLine(companyProfile.address + "\n", 1);
+        if(companyProfile.phone) await printLine("Ph: " + companyProfile.phone + "\n", 1);
+        if(companyProfile.gstin) await printLine("GSTIN: " + companyProfile.gstin + "\n", 1);
+        await printLine("--------------------------------\n", 1);
+        
+        // Bill Details
+        await printLine(`Bill No: ${bill.billNumber}\n`, 0);
+        await printLine(`Date: ${new Date(bill.date).toLocaleDateString()}\n`, 0);
+        await printLine(`Customer: ${bill.customerName}\n`, 0);
+        await printLine("--------------------------------\n", 1);
+
+        // Items Header
+        // Using fixed width formatting is tricky with variable fonts, but simple layout works best.
+        await printLine("Item           Qty   Rate   Amt\n", 0); 
+        
+        for(const item of bill.items) {
+             await printLine(`${item.productName}\n`, 0);
+             
+             const qty = item.quantity.toString();
+             const rate = (item.total / item.quantity).toFixed(2);
+             const total = item.total.toFixed(2);
+             
+             // Construct line manually with spaces if specific column API is missing
+             // Aligning visually for standard 32 char thermal width
+             // 12345678901234567890123456789012
+             //              10   100.00  1000.00
+             const line = `               ${qty}   ${rate}  ${total}\n`;
+             await printLine(line, 0);
+        }
+        
+        await printLine("--------------------------------\n", 1);
+        
+        // Totals
+        await printLine(`Subtotal: ${bill.subTotal.toFixed(2)}\n`, 2);
+        await printLine(`GST: ${bill.totalGst.toFixed(2)}\n`, 2);
+        await printLine(`Total: ${bill.grandTotal.toFixed(2)}\n`, 2, 1); // Double height total
+        
+        await printLine("--------------------------------\n", 1);
+        
+        // Footer
+        if (systemConfig.remarkLine1) await printLine(systemConfig.remarkLine1 + "\n", 1);
+        if (systemConfig.remarkLine2) await printLine(systemConfig.remarkLine2 + "\n", 1);
+        await printLine("\nThank you!\n\n\n", 1);
+
+      } catch (e) {
+        console.error("Native Print Error:", e);
+        alert("Printer Connection Error: " + String(e));
+      }
+  };
+
   const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
     const doReset = () => {
         setCart([]);
@@ -507,7 +574,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
     const shouldReset = forceReset || shouldResetAfterPrint;
 
-    // Capacitor Bluetooth LE Thermal Printer
+    // 1. React Native Specific Wrapper
+    if (printer.format === 'Thermal' && window.BluetoothManager) {
+        await printViaReactNative(bill, printer);
+        if (shouldReset) doReset();
+        return;
+    }
+
+    // 2. Capacitor Bluetooth LE Thermal Printer
     if (printer.format === 'Thermal' && (window as any).BluetoothLe && printer.id) {
         try {
              // Initialize just in case
@@ -533,7 +607,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         }
     }
 
-    // Native Bluetooth Thermal Printer (Capacitor Legacy Serial)
+    // 3. Native Bluetooth Thermal Printer (Capacitor Legacy Serial)
     if (printer.format === 'Thermal' && window.bluetoothSerial && printer.id) {
         try {
             // Attempt to connect to the bluetooth device
@@ -572,7 +646,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         }
     }
     
-    // Web Bluetooth Thermal Printer (Browser)
+    // 4. Web Bluetooth Thermal Printer (Browser)
     if (printer.format === 'Thermal' && !window.bluetoothSerial && (navigator as any).bluetooth) {
         const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
         await printViaWebBluetooth(bytes);
@@ -583,7 +657,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         return;
     }
 
-    // Standard Web Print Logic (Fallback or for A4/A5)
+    // 5. Standard Web Print Logic (Fallback or for A4/A5)
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const style = printWindow.document.createElement('style');
