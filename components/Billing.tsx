@@ -50,75 +50,89 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 U';
 };
 
-// Helper to generate ESC/POS commands for Bluetooth printing
-const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemConfig): string => {
-    const ESC = '\x1B';
-    const INIT = ESC + '@'; // Initialize Printer
-    const ALIGN_LEFT = ESC + 'a' + '\x00';
-    const ALIGN_CENTER = ESC + 'a' + '\x01';
-    const ALIGN_RIGHT = ESC + 'a' + '\x02';
-    const BOLD_ON = ESC + 'E' + '\x01';
-    const BOLD_OFF = ESC + 'E' + '\x00';
+// Helper to generate ESC/POS commands for Bluetooth printing as Bytes
+const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemConfig): number[] => {
+    const commands: number[] = [];
     
-    let cmds = INIT;
+    const addBytes = (bytes: number[]) => {
+        commands.push(...bytes);
+    };
     
-    // Header
-    cmds += ALIGN_CENTER;
-    cmds += BOLD_ON + profile.name + BOLD_OFF + '\n';
-    cmds += profile.address + '\n';
-    if (profile.phone) cmds += 'Ph: ' + profile.phone + '\n';
-    if (profile.gstin) cmds += 'GSTIN: ' + profile.gstin + '\n';
-    cmds += '--------------------------------\n';
+    const addText = (text: string) => {
+        // Basic ASCII conversion, converting ₹ to Rs.
+        const safeText = text.replace(/₹/g, 'Rs.');
+        for (let i = 0; i < safeText.length; i++) {
+            let code = safeText.charCodeAt(i);
+            // Filter non-printable characters if necessary, usually standard ASCII is fine.
+            // Mapping unicode chars to '?' if > 255 might be safer for basic printers
+            if (code > 255) code = 63; // '?'
+            commands.push(code);
+        }
+    };
     
-    // Bill Details
-    cmds += ALIGN_LEFT;
-    cmds += 'Bill No: ' + bill.billNumber + '\n';
-    cmds += 'Date: ' + new Date(bill.date).toLocaleDateString() + ' ' + new Date(bill.date).toLocaleTimeString() + '\n';
-    cmds += 'Name: ' + bill.customerName + '\n';
-    cmds += '--------------------------------\n';
+    // Initialize Printer: ESC @
+    addBytes([27, 64]);
     
-    // Items
-    // Simple layout for 32-column printers (standard 58mm)
-    cmds += 'Item             Qty   Rate   Amt\n'; 
+    // --- Header ---
+    addBytes([27, 97, 1]); // Center Align: ESC a 1
+    addBytes([27, 69, 1]); // Bold On: ESC E 1
+    addText(profile.name + '\n');
+    addBytes([27, 69, 0]); // Bold Off: ESC E 0
+    
+    addText(profile.address + '\n');
+    if (profile.phone) addText('Ph: ' + profile.phone + '\n');
+    if (profile.gstin) addText('GSTIN: ' + profile.gstin + '\n');
+    addText('--------------------------------\n');
+    
+    // --- Bill Details ---
+    addBytes([27, 97, 0]); // Left Align: ESC a 0
+    addText('Bill No: ' + bill.billNumber + '\n');
+    addText('Date: ' + new Date(bill.date).toLocaleDateString() + ' ' + new Date(bill.date).toLocaleTimeString() + '\n');
+    addText('Name: ' + bill.customerName + '\n');
+    addText('--------------------------------\n');
+    
+    // --- Items ---
+    addText('Item             Qty   Rate   Amt\n'); 
     
     bill.items.forEach((item) => {
-        // Line 1: Product Name
-        let name = item.productName;
-        // Truncate if too long to avoid mess, or let it wrap naturally
-        cmds += name + '\n';
+        // Truncate name to fit or let it wrap (wrapping is safer in left align)
+        addText(item.productName + '\n');
         
-        // Line 2: Numbers
         const qty = item.quantity.toString();
-        const rate = (item.total / item.quantity).toFixed(2); // Effective rate per unit
+        const rate = (item.total / item.quantity).toFixed(2);
         const total = item.total.toFixed(2);
 
-        // Align numbers to the right columns roughly
-        // We use padding spaces. 
-        // Qty (approx col 17), Rate (approx col 23), Amt (approx col 30)
+        // Simple padding for column alignment
+        // Assuming approx 32 columns: 
+        // Space (16) + Qty (3) + Space(1) + Rate (6) + Space(1) + Amt (6)
         const qtyPad = qty.padStart(3, ' ');
         const ratePad = rate.padStart(7, ' ');
         const amtPad = total.padStart(7, ' ');
         
-        cmds += `                ${qtyPad} ${ratePad} ${amtPad}\n`;
+        addText(`                ${qtyPad} ${ratePad} ${amtPad}\n`);
     });
-    cmds += '--------------------------------\n';
+    addText('--------------------------------\n');
     
-    // Totals
-    cmds += ALIGN_RIGHT;
-    cmds += 'Subtotal: ' + bill.subTotal.toFixed(2) + '\n';
-    cmds += 'GST: ' + bill.totalGst.toFixed(2) + '\n';
-    cmds += BOLD_ON + 'Grand Total: ' + bill.grandTotal.toFixed(2) + BOLD_OFF + '\n';
+    // --- Totals ---
+    addBytes([27, 97, 2]); // Right Align: ESC a 2
+    addText('Subtotal: ' + bill.subTotal.toFixed(2) + '\n');
+    addText('GST: ' + bill.totalGst.toFixed(2) + '\n');
+    addBytes([27, 69, 1]); // Bold On
+    addText('Grand Total: ' + bill.grandTotal.toFixed(2) + '\n');
+    addBytes([27, 69, 0]); // Bold Off
     
-    // Footer
-    cmds += ALIGN_CENTER;
-    cmds += '--------------------------------\n';
-    if(config.remarkLine1) cmds += config.remarkLine1 + '\n';
-    if(config.remarkLine2) cmds += config.remarkLine2 + '\n';
+    // --- Footer ---
+    addBytes([27, 97, 1]); // Center Align: ESC a 1
+    addText('--------------------------------\n');
+    if(config.remarkLine1) addText(config.remarkLine1 + '\n');
+    if(config.remarkLine2) addText(config.remarkLine2 + '\n');
+    addText('. . .\n');
     
-    // Feed lines for cutter (3 lines)
-    cmds += '\n\n\n'; 
+    // --- Feed Lines ---
+    // Feed 4 lines to ensure cut does not damage text
+    addBytes([10, 10, 10, 10]); 
     
-    return cmds;
+    return commands;
 };
 
 
@@ -451,10 +465,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                 });
             }
             
-            // Generate ESC/POS Commands
+            // Generate ESC/POS Commands (Bytes)
             const data = generateEscPosBill(bill, companyProfile, systemConfig);
             
-            // Send Data
+            // Send Data (as numeric array)
             await new Promise((resolve, reject) => {
                 window.bluetoothSerial.write(data, resolve, reject);
             });
