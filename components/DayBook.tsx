@@ -48,20 +48,29 @@ const exportToCsv = (filename: string, data: any[]) => {
 };
 
 const printViaHiddenIframe = (content: React.ReactNode) => {
+    const existingFrame = document.getElementById('printing-frame');
+    if (existingFrame) {
+        document.body.removeChild(existingFrame);
+    }
+
     const iframe = document.createElement('iframe');
+    iframe.id = 'printing-frame';
     iframe.style.position = 'fixed';
-    iframe.style.top = '-10000px';
-    iframe.style.left = '-10000px';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
+    iframe.style.top = '0';
+    iframe.style.left = '0';
+    iframe.style.width = '1px';
+    iframe.style.height = '1px';
+    iframe.style.opacity = '0';
     iframe.style.border = 'none';
+    iframe.style.pointerEvents = 'none';
+    iframe.style.zIndex = '-1';
     document.body.appendChild(iframe);
 
     const doc = iframe.contentWindow?.document;
     if (doc) {
         doc.open();
-        doc.write('<html><head><title>Print</title>');
-        doc.write('<style>@page { size: auto; margin: 0mm; } body { margin: 0; }</style>');
+        doc.write('<!DOCTYPE html><html><head><title>Print</title>');
+        doc.write('<style>@page { size: auto; margin: 0mm; } body { margin: 0; background-color: white; }</style>');
         doc.write('</head><body><div id="print-root"></div></body></html>');
         doc.close();
         
@@ -69,13 +78,18 @@ const printViaHiddenIframe = (content: React.ReactNode) => {
         root.render(content);
 
         setTimeout(() => {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-            setTimeout(() => {
-                if (document.body.contains(iframe)) {
-                    document.body.removeChild(iframe);
-                }
-            }, 2000);
+            try {
+                iframe.contentWindow?.focus();
+                iframe.contentWindow?.print();
+            } catch (e) {
+                console.error("Print error:", e);
+            } finally {
+                setTimeout(() => {
+                    if (document.body.contains(iframe)) {
+                        document.body.removeChild(iframe);
+                    }
+                }, 2000);
+            }
         }, 500);
     }
 };
@@ -139,6 +153,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
   const handlePrinterSelection = (printer: PrinterProfile, bill: Bill | null = null) => {
       const targetBill = bill || billToPrint;
       if (targetBill) {
+          // Same logic as Billing, though condensed here for simplicity
           let content;
           if (printer.format === 'Thermal') {
               content = <ThermalPrintableBill bill={targetBill} companyProfile={companyProfile} systemConfig={systemConfig} />;

@@ -52,36 +52,58 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
 };
 
 const printViaHiddenIframe = (content: React.ReactNode) => {
+    // Clean up any existing iframe
+    const existingFrame = document.getElementById('printing-frame');
+    if (existingFrame) {
+        document.body.removeChild(existingFrame);
+    }
+
     const iframe = document.createElement('iframe');
+    iframe.id = 'printing-frame';
     iframe.style.position = 'fixed';
-    iframe.style.top = '-10000px';
-    iframe.style.left = '-10000px';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
+    iframe.style.top = '0';
+    iframe.style.left = '0';
+    iframe.style.width = '1px';
+    iframe.style.height = '1px';
+    iframe.style.opacity = '0';
     iframe.style.border = 'none';
+    iframe.style.pointerEvents = 'none';
+    iframe.style.zIndex = '-1';
     document.body.appendChild(iframe);
 
     const doc = iframe.contentWindow?.document;
     if (doc) {
         doc.open();
-        doc.write('<html><head><title>Print</title>');
-        doc.write('<style>@page { size: auto; margin: 0mm; } body { margin: 0; }</style>');
+        doc.write('<!DOCTYPE html><html><head><title>Print</title>');
+        doc.write('<style>@page { size: auto; margin: 0mm; } body { margin: 0; background-color: white; }</style>');
         doc.write('</head><body><div id="print-root"></div></body></html>');
         doc.close();
         
         const root = ReactDOM.createRoot(doc.getElementById('print-root') as HTMLElement);
         root.render(content);
 
+        // Wait for content to render and styles to apply
         setTimeout(() => {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-            setTimeout(() => {
-                if (document.body.contains(iframe)) {
-                    document.body.removeChild(iframe);
-                }
-            }, 2000);
+            try {
+                iframe.contentWindow?.focus();
+                iframe.contentWindow?.print();
+            } catch (e) {
+                console.error("Print error:", e);
+            } finally {
+                // Cleanup after a delay (allow print dialog to capture content)
+                // On mobile, this timeout might fire while dialog is open, but the content is usually already captured.
+                setTimeout(() => {
+                    if (document.body.contains(iframe)) {
+                        document.body.removeChild(iframe);
+                    }
+                }, 2000);
+            }
         }, 500);
     }
+};
+
+const isNativePlatform = () => {
+    return (window as any).Capacitor?.isNativePlatform() || false;
 };
 
 
@@ -150,13 +172,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const lastAddedBatchIdRef = useRef<string | null>(null);
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const [isScanning, setIsScanning] = useState(false);
   
   // Printer Selection State
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
-  // To trigger reset after print flow
   const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
 
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
@@ -167,16 +189,24 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const activeItemRef = useRef<HTMLLIElement>(null);
 
   useEffect(() => {
+      audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
+  }, []);
+
+  const playScanSound = () => {
+      if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play().catch(e => console.error("Audio play failed", e));
+      }
+  };
+
+  useEffect(() => {
     if (lastAddedBatchIdRef.current) {
-        // Find the newly added item to decide which input to focus
         const newItem = cart.find(item => item.batchId === lastAddedBatchIdRef.current);
         let inputToFocus: HTMLInputElement | null | undefined = null;
 
         if (newItem && isPharmaMode && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) {
-            // If it's a strip-based product, focus the strip input first
             inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current);
         } else {
-            // Otherwise, focus the main quantity (tab) input
             inputToFocus = cartItemTabInputRefs.current.get(lastAddedBatchIdRef.current);
         }
         
@@ -184,7 +214,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             inputToFocus.focus();
             inputToFocus.select();
         }
-        lastAddedBatchIdRef.current = null; // Reset after focus
+        lastAddedBatchIdRef.current = null;
     }
   }, [cart, isPharmaMode]);
 
@@ -236,10 +266,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     );
   }, [searchResults, today, isPharmaMode]);
 
-  // --- Keyboard Navigation Effects ---
   useEffect(() => {
     if (searchTerm && searchResults.length > 0) {
-      // Find the first product with navigable batches
       const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
       if (firstProductIndex !== -1) {
         setActiveIndices({ product: firstProductIndex, batch: 0 });
@@ -269,11 +297,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
         const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
         
-        // If it's not a strip-based product, strip quantity should always be 0.
         let sQty = isPharmaMode && unitsPerStrip > 1 ? Math.max(0, stripQty) : 0;
         let lQty = Math.max(0, looseQty);
         
-        // Auto-correct loose quantity if it exceeds strip size and it's a strip-based product
         if (isPharmaMode && unitsPerStrip > 1 && lQty >= unitsPerStrip) {
             sQty += Math.floor(lQty / unitsPerStrip);
             lQty = lQty % unitsPerStrip;
@@ -293,7 +319,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }));
   };
 
-  const handleAddToCart = (product: Product, batch: Batch) => {
+  const handleAddToCart = (product: Product, batch: Batch, fromScanner = false) => {
     if (isPharmaMode) {
         const expiry = getExpiryDate(batch.expiryDate);
         if (expiry < today) {
@@ -306,11 +332,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1;
     
     if (existingItem) {
-        // If it's not a strip-based product, just increment loose quantity.
         if (unitsPerStrip <= 1) {
             updateCartItem(existingItem.batchId, 0, existingItem.looseQty + 1);
         } else {
-            // Otherwise, calculate based on total units
             const newTotalUnits = existingItem.quantity + 1;
             const newStripQty = Math.floor(newTotalUnits / unitsPerStrip);
             const newLooseQty = newTotalUnits % unitsPerStrip;
@@ -335,7 +359,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         ...(isPharmaMode && product.composition && { composition: product.composition }),
         ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }),
       };
-      lastAddedBatchIdRef.current = newItem.batchId;
+      if (!fromScanner) {
+         lastAddedBatchIdRef.current = newItem.batchId;
+      }
       setCart(currentCart => [...currentCart, newItem]);
     }
     setSearchTerm('');
@@ -348,16 +374,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const handleScanSuccess = (decodedText: string) => {
       if (isPharmaMode) {
           setSearchTerm(decodedText);
-          // setIsScanning(false); // closeOnScan=true handles this
       } else {
-          // Retail Mode Logic: Auto-add to cart
+          // Retail Mode Logic: Auto-add to cart (Continuous)
           const product = products.find(p => p.barcode === decodedText);
           if (product) {
-               // Find first batch with stock
                const availableBatches = product.batches.filter(b => b.stock > 0);
                if (availableBatches.length > 0) {
-                   handleAddToCart(product, availableBatches[0]);
+                   handleAddToCart(product, availableBatches[0], true);
+                   playScanSound();
                } else {
+                   // Play error sound if possible or just alert
                    alert(`Product "${product.name}" is out of stock.`);
                }
           } else {
@@ -368,7 +394,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const handleFindSubstitutes = (product: Product) => {
     if (!product.composition || product.composition.trim() === '') {
-        alert('Composition details not available for this product. Please update it in the inventory.');
+        alert('Composition details not available for this product.');
         return;
     }
     const compositionToFind = product.composition.trim().toLowerCase();
@@ -400,26 +426,24 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             const commands = generateEscPosCommand(bill, companyProfile, systemConfig);
             sendToRawBt(commands);
         } else {
-            const isMacAddress = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(printer.id);
-            if (isMacAddress && window.bluetoothSerial) {
+            // Check Native Bluetooth
+            if (isNativePlatform() && (window as any).bluetoothSerial) {
                  try {
-                      const isConnected = await new Promise(resolve => window.bluetoothSerial.isConnected(resolve, () => resolve(false)));
-                      
-                      if (!isConnected) {
-                          // Attempt to connect
-                          await new Promise((resolve, reject) => window.bluetoothSerial.connect(printer.id, resolve, reject));
-                      }
-                      
-                      // Generate and send data
-                      const data = generateEscPosCommand(bill, companyProfile, systemConfig);
-                      await new Promise((resolve, reject) => window.bluetoothSerial.write(data, resolve, reject));
+                     const commands = generateEscPosCommand(bill, companyProfile, systemConfig);
+                     const isConnected = await new Promise(resolve => (window as any).bluetoothSerial.isConnected(resolve, () => resolve(false)));
+                     
+                     if (!isConnected) {
+                        await new Promise((resolve, reject) => (window as any).bluetoothSerial.connect(printer.id, resolve, reject));
+                     }
+                     await new Promise((resolve, reject) => (window as any).bluetoothSerial.write(commands, resolve, reject));
 
                  } catch (err) {
                       console.error("Bluetooth Print Error", err);
-                      alert("Failed to print via Bluetooth. Ensure device is paired and on.");
+                      alert("Failed to print via Bluetooth. Ensure device is paired and powered on.");
+                      // Fallback to iframe? No, native won't print well via iframe if thermal.
                  }
             } else {
-                // Hidden Iframe Print
+                // Standard Browser Print (or System Print Service on Mobile)
                 let content;
                 if (printer.format === 'Thermal') {
                      content = <ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />;
@@ -432,7 +456,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             }
         }
         
-        // Cleanup Logic
         if (shouldReset) {
             setCart([]);
             setCustomerName('');
@@ -452,7 +475,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     }
   };
 
-  // Update Config Helper
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
          const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
@@ -471,14 +493,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
     if (isUpdate && onUpdateBill) {
         const billData = {
-            date: editingBill.date, // Keep original date on edit
+            date: editingBill.date,
             customerName: customerName || 'Walk-in',
             doctorName: doctorName.trim(),
             items: cart,
             subTotal,
             totalGst,
             grandTotal,
-            billNumber: editingBill.billNumber // Keep original bill number
+            billNumber: editingBill.billNumber
         };
         savedBill = await onUpdateBill(editingBill.id, billData, editingBill);
     } else if (!isUpdate && onGenerateBill) {
@@ -497,15 +519,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     if (savedBill) {
         const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
         if (defaultPrinter) {
+            // Directly print to default without modal
             handlePrintOperation(savedBill, defaultPrinter, true);
         } else {
+            // Open modal to select/add printer
             setBillToPrint(savedBill);
-            setShouldResetAfterPrint(true); // Flag to reset cart after printing is done
+            setShouldResetAfterPrint(true);
             setPrinterModalOpen(true);
         }
     } else {
-        console.error("Failed to save/update bill.");
-        alert("There was an error saving the bill. Please try again.");
+        alert("There was an error saving the bill.");
     }
   }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig.printers, handlePrintOperation]);
   
@@ -513,17 +536,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.altKey && event.key.toLowerCase() === 'p') {
         event.preventDefault();
-        if (cart.length > 0) {
-          handleSaveBill();
-        }
+        if (cart.length > 0) handleSaveBill();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cart.length, handleSaveBill]);
   
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -531,90 +548,50 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
         const findNext = (current: { product: number; batch: number }) => {
             let { product, batch } = current;
-
-            if (product === -1) { // Not initialized, find first valid item
+            if (product === -1) {
                 const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
                  return firstProductIndex !== -1 ? { product: firstProductIndex, batch: 0 } : current;
             }
-            
             const currentProductBatches = navigableBatchesByProduct[product];
-            if (batch < currentProductBatches.length - 1) {
-                return { product, batch: batch + 1 };
-            }
-
+            if (batch < currentProductBatches.length - 1) return { product, batch: batch + 1 };
             let nextProductIndex = product + 1;
-            while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) {
-                nextProductIndex++;
-            }
-
-            if (nextProductIndex < navigableBatchesByProduct.length) {
-                return { product: nextProductIndex, batch: 0 };
-            }
-            
-            // Wrap around to the first valid item
+            while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) nextProductIndex++;
+            if (nextProductIndex < navigableBatchesByProduct.length) return { product: nextProductIndex, batch: 0 };
             const firstValidIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0);
             return firstValidIndex !== -1 ? { product: firstValidIndex, batch: 0 } : current;
         };
 
         const findPrev = (current: { product: number; batch: number }) => {
             let { product, batch } = current;
-
-            if (product === -1) { // Not initialized, find last valid item
+            if (product === -1) {
                 let lastProductIndex = navigableBatchesByProduct.length - 1;
-                while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) {
-                    lastProductIndex--;
-                }
+                while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) lastProductIndex--;
                 return lastProductIndex !== -1 ? { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 } : current;
             }
-
-            if (batch > 0) {
-                return { product, batch: batch - 1 };
-            }
-
+            if (batch > 0) return { product, batch: batch - 1 };
             let prevProductIndex = product - 1;
-            while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) {
-                prevProductIndex--;
-            }
-
+            while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) prevProductIndex--;
             if (prevProductIndex >= 0) {
                 const prevProductBatches = navigableBatchesByProduct[prevProductIndex];
                 return { product: prevProductIndex, batch: prevProductBatches.length - 1 };
             }
-            
-             // Wrap around to the last valid item
             let lastValidIndex = navigableBatchesByProduct.length - 1;
-            while (lastValidIndex >= 0 && navigableBatchesByProduct[lastValidIndex].length === 0) {
-                lastValidIndex--;
-            }
+            while (lastValidIndex >= 0 && navigableBatchesByProduct[lastValidIndex].length === 0) lastValidIndex--;
             return lastValidIndex !== -1 ? { product: lastValidIndex, batch: navigableBatchesByProduct[lastValidIndex].length - 1 } : current;
         };
 
-
         switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                setActiveIndices(findNext);
-                break;
-            case 'ArrowUp':
-                e.preventDefault();
-                setActiveIndices(findPrev);
-                break;
+            case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break;
+            case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break;
             case 'Enter':
                 e.preventDefault();
                 if (activeIndices.product !== -1 && activeIndices.batch !== -1) {
                     const product = searchResults[activeIndices.product];
                     const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch];
-                    if (product && batch) {
-                        handleAddToCart(product, batch);
-                    }
+                    if (product && batch) handleAddToCart(product, batch);
                 }
                 break;
-            case 'Escape':
-                e.preventDefault();
-                setSearchTerm('');
-                break;
-            default:
-                break;
+            case 'Escape': e.preventDefault(); setSearchTerm(''); break;
         }
     };
 
@@ -622,10 +599,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         if (e.key === 'Enter') {
             e.preventDefault();
             const tabInput = cartItemTabInputRefs.current.get(batchId);
-            if (tabInput) {
-                tabInput.focus();
-                tabInput.select();
-            }
+            tabInput?.focus();
+            tabInput?.select();
         }
     };
 
@@ -899,7 +874,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         isOpen={isScanning}
         onClose={() => setIsScanning(false)}
         onScanSuccess={handleScanSuccess}
-        closeOnScan={true}
+        closeOnScan={isPharmaMode} // Close on scan for Pharma (search), stay open for Retail (add to cart)
       />
       
       <PrinterSelectionModal 

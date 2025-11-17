@@ -14,6 +14,8 @@ interface PrinterSelectionModalProps {
 
 type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_nearby' | 'perm_location' | 'multi_device';
 
+const isNative = () => (window as any).Capacitor?.isNativePlatform() || false;
+
 const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
   const [view, setView] = useState<ViewState>('list');
   const [newPrinter, setNewPrinter] = useState<{ id?: string; name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean }>({
@@ -87,10 +89,10 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     if (view === 'scanning') {
       setIsScanning(true);
       setScannedDevices([]);
+      const win = window as any;
 
-      // Check if cordova bluetooth plugin is available
-      if (window.bluetoothSerial) {
-        // Real scanning
+      // Check if bluetooth plugin is available
+      if (win.bluetoothSerial) {
         const onDiscover = (device: any) => {
             setScannedDevices(prev => {
                 if (prev.some(d => d.id === device.address)) return prev;
@@ -103,13 +105,11 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             setIsScanning(false);
         };
         
-        // List paired devices first
-        window.bluetoothSerial.list((devices: any[]) => {
+        win.bluetoothSerial.list((devices: any[]) => {
             const mapped = devices.map(d => ({ name: d.name || 'Unknown', id: d.address }));
             setScannedDevices(mapped);
             
-            // Then discover unpaired
-            window.bluetoothSerial.discoverUnpaired((unpaired: any[]) => {
+            win.bluetoothSerial.discoverUnpaired((unpaired: any[]) => {
                  const mappedUnpaired = unpaired.map(d => ({ name: d.name || 'Unknown', id: d.address }));
                  setScannedDevices(prev => {
                      const combined = [...prev];
@@ -125,16 +125,14 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
         }, onError);
 
       } else {
-        // Fallback / Simulation
+        // Fallback / Simulation for browser
         timer = window.setTimeout(() => {
             setScannedDevices([
                 { name: 'Printer001', id: 'DC:0D:30:A2:F1:A4' },
                 { name: 'Galaxy A20', id: 'FC:AA:B6:7F:BB:FB' },
-                { name: 'realme TechLife Buds T100', id: '98:34:8C:38:B3:1A' },
-                { name: 'OnePlus Nord Buds 2r', id: 'Device4' },
             ]);
             setIsScanning(false);
-        }, 2000);
+        }, 1500);
       }
     }
 
@@ -160,7 +158,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   };
 
   // --- Permission Views ---
-  
   if (view === 'perm_nearby') {
       return (
           <Modal isOpen={true} onClose={() => setView('type_select')} title="">
@@ -171,114 +168,42 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                       </div>
                   </div>
                   <h3 className="text-xl font-medium text-slate-900 dark:text-white mb-8 px-2 leading-relaxed">
-                      Allow Billing Fast to find, connect to, and determine the relative position of nearby devices?
+                      Search for nearby Bluetooth devices?
                   </h3>
                   <div className="flex flex-col w-full gap-3">
-                      <button onClick={() => setView('perm_location')} className="w-full py-3 bg-pink-200 hover:bg-pink-300 text-pink-900 rounded-full font-semibold transition-colors">
+                      <button onClick={() => setView('scanning')} className="w-full py-3 bg-pink-200 hover:bg-pink-300 text-pink-900 rounded-full font-semibold transition-colors">
                           Allow
                       </button>
                       <button onClick={() => setView('type_select')} className="w-full py-3 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-pink-900 dark:text-pink-300 rounded-full font-semibold transition-colors">
-                          Don't allow
-                      </button>
-                  </div>
-                  <div className="mt-8 text-slate-400 text-sm">No devices discovered yet</div>
-              </div>
-          </Modal>
-      );
-  }
-
-  if (view === 'perm_location') {
-      return (
-          <Modal isOpen={true} onClose={() => setView('type_select')} title="">
-              <div className="flex flex-col items-center text-center p-6">
-                  <div className="mb-6">
-                       <MapPinIcon className="h-12 w-12 text-pink-500" />
-                  </div>
-                  <h3 className="text-xl font-medium text-slate-900 dark:text-white mb-6 px-2 leading-relaxed">
-                      Allow Billing Fast to access this device's location?
-                  </h3>
-                  
-                  <div className="flex justify-center gap-12 w-full mb-8">
-                       <div className="flex flex-col items-center gap-2">
-                           <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-400 relative">
-                               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                               <MapPinIcon className="h-8 w-8 text-blue-500 absolute -top-1" />
-                           </div>
-                           <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Precise</span>
-                       </div>
-                       <div className="flex flex-col items-center gap-2 opacity-50">
-                            <div className="w-16 h-16 rounded-full border-2 border-dashed border-slate-400 flex items-center justify-center">
-                               <div className="w-10 h-10 bg-slate-300 dark:bg-slate-600 rounded-full opacity-50"></div>
-                           </div>
-                           <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Approximate</span>
-                       </div>
-                  </div>
-
-                  <div className="flex flex-col w-full gap-3">
-                      <button onClick={() => setView('scanning')} className="w-full py-3 bg-pink-200 hover:bg-pink-300 text-pink-900 rounded-full font-semibold transition-colors">
-                          While using the app
-                      </button>
-                      <button onClick={() => setView('scanning')} className="w-full py-3 bg-pink-200 hover:bg-pink-300 text-pink-900 rounded-full font-semibold transition-colors">
-                          Only this time
-                      </button>
-                      <button onClick={() => setView('type_select')} className="w-full py-3 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-pink-900 dark:text-pink-300 rounded-full font-semibold transition-colors">
-                          Don't allow
+                          Cancel
                       </button>
                   </div>
               </div>
           </Modal>
       );
   }
-  
+
   if (view === 'multi_device') {
     return (
         <Modal isOpen={true} onClose={onClose} title="Configure printer">
-             <div className="absolute top-5 right-12 z-10">
-                <button onClick={() => setView('type_select')} className="px-4 py-1.5 bg-slate-800 text-white text-sm font-medium rounded-full hover:bg-slate-700">Previous</button>
-             </div>
-             
              <div className="flex flex-col items-center text-center p-4 pt-8">
-                <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-8 px-4">Do you want to use same printer with multiple devices?</h3>
-                
-                <div className="relative mb-10 w-full flex flex-col items-center">
-                     <div className="bg-blue-500 p-4 rounded-xl w-24 h-20 flex items-center justify-center mb-4 relative z-10 shadow-lg">
-                        <div className="bg-white w-10 h-1.5 absolute top-8 rounded-sm"></div>
-                        <div className="bg-white w-10 h-1 absolute bottom-3 flex justify-between px-0.5">
-                            {[...Array(8)].map((_, i) => <div key={i} className="w-0.5 h-full bg-blue-500"></div>)}
-                        </div>
-                         <div className="absolute top-3 right-3 w-1.5 h-1.5 bg-white rounded-full"></div>
-                     </div>
-                     
-                     <div className="flex justify-center gap-6 mt-4">
-                        <div className="bg-gradient-to-b from-indigo-400 to-purple-500 p-0.5 rounded-lg transform -rotate-12 w-14 h-24 flex items-center justify-center shadow-lg">
-                            <div className="w-full h-full bg-slate-800 rounded-lg border-2 border-transparent opacity-30"></div>
-                        </div>
-                         <div className="bg-gradient-to-b from-indigo-400 to-purple-500 p-0.5 rounded-lg w-14 h-24 flex items-center justify-center shadow-lg -mt-4 z-10">
-                            <div className="w-full h-full bg-slate-800 rounded-lg border-2 border-transparent opacity-30"></div>
-                             <div className="absolute top-1 w-4 h-1 bg-white/50 rounded-full"></div>
-                        </div>
-                         <div className="bg-gradient-to-b from-indigo-400 to-purple-500 p-0.5 rounded-lg transform rotate-12 w-14 h-24 flex items-center justify-center shadow-lg">
-                            <div className="w-full h-full bg-slate-800 rounded-lg border-2 border-transparent opacity-30"></div>
-                        </div>
-                     </div>
-                </div>
-                
+                <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-4 px-4">Do you want to share this printer?</h3>
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-8 max-w-xs leading-relaxed">
-                    Click 'yes' if there are multiple staff/devices who want to use the same printer for printing receipt.
+                    If 'Yes', this printer configuration will be saved to the cloud and available to other devices logged into this account.
                 </p>
                 
                 <div className="flex gap-4 w-full">
                     <button 
                         onClick={() => { setIsShared(false); setView('manual_setup'); }} 
-                        className="flex-1 py-3 bg-red-400 hover:bg-red-500 text-white rounded-lg font-semibold transition-colors shadow-sm"
+                        className="flex-1 py-3 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-semibold transition-colors shadow-sm"
                     >
-                        No, I don't want
+                        Local Only
                     </button>
                     <button 
                         onClick={() => { setIsShared(true); setView('manual_setup'); }} 
                         className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold transition-colors shadow-sm"
                     >
-                        Yes, enable it.
+                        Yes, Share
                     </button>
                 </div>
              </div>
@@ -291,9 +216,9 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={
         view === 'list' ? 'Select Printer' : 
-        view === 'type_select' ? 'Configure printer' :
-        view === 'scanning' ? 'Select your printer' :
-        'Add New Printer'
+        view === 'type_select' ? 'Add Printer' :
+        view === 'scanning' ? 'Scanning...' :
+        'Printer Details'
     }>
       {view === 'list' && (
         <div className="flex flex-col h-full">
@@ -316,11 +241,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{printer.name}</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">{printer.format} Format</p>
                                 {printer.id === 'RAWBT' && <p className="text-[10px] text-indigo-500 font-semibold">App Integration</p>}
-                                {printer.id.includes(':') && <p className="text-[10px] text-slate-400 font-mono">{printer.id}</p>}
                             </div>
-                            {printer.isShared && (
-                                 <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full mr-2">Shared</span>
-                            )}
                             {printer.isDefault && (
                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">Default</span>
                             )}
@@ -343,26 +264,35 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                     </div>
                 </div>
             </div>
-             <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
-                <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                   For Browser/Mobile printing, add "Mobile App (RawBT)" or pair your Bluetooth printer first.
-                </p>
-            </div>
+             {isNative() ? (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500 rounded-r-lg flex gap-3 items-start">
+                    <InformationCircleIcon className="h-5 w-5 text-blue-700 dark:text-blue-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-blue-800 dark:text-blue-200 font-medium">
+                       Running on Android/iOS. Add a Bluetooth printer for direct thermal printing, or use 'Mobile App (RawBT)'.
+                    </p>
+                </div>
+             ) : (
+                <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
+                    <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
+                       Running in Browser. For thermal printing, install RawBT on phone or use system print dialog.
+                    </p>
+                </div>
+             )}
         </div>
       )}
 
       {view === 'type_select' && (
         <div className="space-y-6 animate-fade-in">
-            <p className="text-slate-600 dark:text-slate-400">Select printer connection type</p>
+            <p className="text-slate-600 dark:text-slate-400 text-center">Choose how you connect to your printer</p>
             <div className="grid grid-cols-2 gap-4">
                 <button 
                     onClick={() => setView('perm_nearby')}
                     className="flex flex-col items-center justify-center p-6 bg-blue-100 dark:bg-blue-900/30 rounded-2xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-all aspect-square shadow-sm"
                 >
                     <BluetoothIcon className="h-12 w-12 text-blue-600 mb-4" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Bluetooth (App)</span>
-                    <span className="text-[10px] text-slate-500">For Native App</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Bluetooth Printer</span>
+                    <span className="text-[10px] text-slate-500">Direct Connection</span>
                 </button>
                 <button 
                      onClick={handleRawBtSelect}
@@ -370,21 +300,21 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 >
                     <CloudIcon className="h-12 w-12 text-green-600 mb-4" />
                     <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Mobile App (RawBT)</span>
-                    <span className="text-[10px] text-slate-500">Best for Browser</span>
+                    <span className="text-[10px] text-slate-500">Best for Web</span>
                 </button>
                 <button 
                      onClick={() => {
                          setNewPrinter({ name: '', format: 'Thermal', isDefault: false });
                          setView('multi_device');
                      }}
-                    className="flex flex-col items-center justify-center p-6 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm"
+                    className="flex flex-col items-center justify-center p-6 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm col-span-2"
                 >
                     <UsbIcon className="h-12 w-12 text-slate-600 dark:text-slate-400 mb-4" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">USB / System</span>
-                    <span className="text-[10px] text-slate-500">Use OS Driver</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">System Printer (USB/WiFi)</span>
+                    <span className="text-[10px] text-slate-500">Uses OS Print Dialog</span>
                 </button>
             </div>
-            <div className="flex justify-start">
+            <div className="flex justify-center">
                  {printers.length > 0 && (
                     <button onClick={() => setView('list')} className="text-indigo-600 hover:underline">Back to List</button>
                  )}
@@ -402,8 +332,9 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                       </div>
                   ) : scannedDevices.length === 0 ? (
                        <div className="flex flex-col items-center justify-center py-12">
-                           <p className="text-slate-600 dark:text-slate-400">No devices found.</p>
-                           <button onClick={() => setView('scanning')} className="mt-4 text-indigo-600 hover:underline">Try Again</button>
+                           <p className="text-slate-600 dark:text-slate-400">No Bluetooth devices found.</p>
+                           <button onClick={() => setView('scanning')} className="mt-4 text-indigo-600 hover:underline">Retry Scan</button>
+                           {!isNative() && <p className="text-xs text-red-500 mt-2">(Bluetooth scan only works in Native App)</p>}
                        </div>
                   ) : (
                       <div className="space-y-2">
@@ -425,12 +356,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                       </div>
                   )}
               </div>
-               <div className="mt-4 p-3 bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500 rounded-r-lg flex gap-3 items-start">
-                    <InformationCircleIcon className="h-5 w-5 text-yellow-700 dark:text-yellow-500 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-yellow-800 dark:text-yellow-200 font-medium">
-                       Make sure your Bluetooth is ON and the printer is powered.
-                    </p>
-                </div>
           </div>
       )}
 
@@ -448,13 +373,13 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             </div>
             {newPrinter.id && newPrinter.id !== 'RAWBT' && (
                 <div>
-                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Device ID (MAC)</label>
+                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Device ID</label>
                      <input type="text" value={newPrinter.id} readOnly className="w-full px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600 rounded-lg cursor-not-allowed" />
                 </div>
             )}
              {newPrinter.id === 'RAWBT' && (
                  <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-                     <p><strong>Note:</strong> This method uses the <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" rel="noopener noreferrer" className="underline">RawBT app</a> to print directly from Chrome/Browsers. Ensure RawBT is installed on your phone.</p>
+                     <p><strong>Instructions:</strong> Install the <a href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" rel="noopener noreferrer" className="underline font-bold">RawBT Driver App</a> on your phone. Configure your printer inside RawBT first.</p>
                  </div>
             )}
             <div>
@@ -487,7 +412,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <label htmlFor="isDefault" className="text-sm text-slate-700 dark:text-slate-300">Make this the default printer</label>
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700">
-                <button onClick={() => setView('multi_device')} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Back</button>
+                <button onClick={() => setView('type_select')} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Back</button>
                 <button onClick={handleAddPrinter} disabled={!newPrinter.name} className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
                     Save Printer
                 </button>
