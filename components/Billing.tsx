@@ -70,9 +70,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         }
     };
     
-    // Helper to create a line with left and right aligned text for 32 columns
+    // Helper to create a line with left and right aligned text for 48 columns (80mm)
     const addRow = (left: string, right: string) => {
-        const width = 32;
+        const width = 48; // Changed from 32 to 48 for 80mm paper
         const space = width - left.length - right.length;
         if (space < 1) {
             // If text is too long, just print it with one space or wrap (simple approach)
@@ -100,14 +100,14 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText(profile.address + '\n');
     if (profile.phone) addText('Ph: ' + profile.phone + '\n');
     if (profile.gstin) addText('GSTIN: ' + profile.gstin + '\n');
-    addText('--------------------------------\n');
+    addText('-'.repeat(48) + '\n');
     
     // --- Bill Details ---
     addBytes([ESC, 97, 0]); // Left Align
     addRow('Bill No: ' + bill.billNumber, '');
     addRow('Date: ' + new Date(bill.date).toLocaleDateString(), new Date(bill.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
     addText('Name: ' + bill.customerName + '\n');
-    addText('--------------------------------\n');
+    addText('-'.repeat(48) + '\n');
     
     // --- Items ---
     // Format: 
@@ -124,21 +124,20 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         
         addRow(qtyRate, total);
     });
-    addText('--------------------------------\n');
+    addText('-'.repeat(48) + '\n');
     
     // --- Totals ---
     addRow('Subtotal:', bill.subTotal.toFixed(2));
     addRow('GST:', bill.totalGst.toFixed(2));
     
     addBytes([ESC, 69, 1]); // Bold On
-    addBytes([GS, 33, 17]); // Double Height (optional, some printers might not support GS ! n) or use ESC ! n
-    // Let's stick to simple bold for broad compatibility
+    // addBytes([GS, 33, 17]); // Double Height (optional)
     addRow('Grand Total:', bill.grandTotal.toFixed(2));
-    addBytes([ESC, 33, 0]); // Reset size
+    // addBytes([ESC, 33, 0]); // Reset size
     addBytes([ESC, 69, 0]); // Bold Off
     
     // --- Footer ---
-    addText('--------------------------------\n');
+    addText('-'.repeat(48) + '\n');
     addBytes([ESC, 97, 1]); // Center Align
     if(config.remarkLine1) addText(config.remarkLine1 + '\n');
     if(config.remarkLine2) addText(config.remarkLine2 + '\n');
@@ -181,47 +180,82 @@ const bytesToHex = (bytes: number[] | Uint8Array): string => {
 };
 
 // Web Bluetooth Print Helper
-const printViaWebBluetooth = async (data: Uint8Array) => {
+const printViaWebBluetooth = async (data: Uint8Array, printerId?: string) => {
     const nav = navigator as any;
     if (!nav.bluetooth) {
-        alert("Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera.");
-        return;
+        throw new Error("Web Bluetooth is not supported in this browser. Please use Chrome, Edge, or Opera.");
     }
 
-    try {
-        // Use acceptAllDevices to find printers that don't advertise service UUIDs
-        const device = await nav.bluetooth.requestDevice({
+    let device = null;
+
+    // 1. Try to get already permitted devices (Auto-connect)
+    if (printerId && nav.bluetooth.getDevices) {
+        try {
+            const devices = await nav.bluetooth.getDevices();
+            if (devices && devices.length > 0) {
+                // Find the device by ID
+                device = devices.find((d: any) => d.id === printerId);
+            }
+        } catch (e) {
+            console.warn("Could not retrieve allowed devices:", e);
+        }
+    }
+
+    // 2. If no device found or no ID, request user to select (Shows Picker)
+    if (!device) {
+        device = await nav.bluetooth.requestDevice({
             acceptAllDevices: true,
             optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] 
         });
-
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-        const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-
-        // Write in chunks of 50 bytes to be safe with BLE MTU
-        const CHUNK_SIZE = 50;
-        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-            const chunk = data.slice(i, i + CHUNK_SIZE);
-            await characteristic.writeValue(chunk);
-        }
-
-        // Allow a brief moment for buffer to clear before disconnecting
-        setTimeout(() => {
-             if (device.gatt.connected) {
-                device.gatt.disconnect();
-            }
-        }, 1000);
-
-    } catch (error: any) {
-        // Check for cancellation first
-        if (error.name === 'NotFoundError' || error.message?.includes('cancelled')) {
-            // User cancelled the picker, ignore.
-            return;
-        }
-        console.error("Web Bluetooth Print Error:", error);
-        alert("Web Bluetooth printing failed: " + error.message);
     }
+
+    if (!device) throw new Error("No device selected.");
+
+    // 3. Connect to GATT Server
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+    const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+
+    // 4. Write Data
+    // Write in chunks of 50 bytes to be safe with BLE MTU
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+        const chunk = data.slice(i, i + CHUNK_SIZE);
+        await characteristic.writeValue(chunk);
+    }
+
+    // Allow a brief moment for buffer to clear before disconnecting
+    setTimeout(() => {
+            if (device.gatt.connected) {
+            device.gatt.disconnect();
+        }
+    }, 1000);
+};
+
+const ConnectingModal: React.FC<{ isOpen: boolean; printerName: string; printerId?: string }> = ({ isOpen, printerName, printerId }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[60] flex justify-center items-center backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center animate-fade-in-up">
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">Connecting printer</h3>
+                <p className="text-slate-600 dark:text-slate-400 mb-8">We are trying to connect to your printer</p>
+                
+                <div className="flex justify-center mb-8 relative">
+                     <div className="animate-spin rounded-full h-16 w-16 border-4 border-indigo-100 dark:border-slate-700 border-t-slate-800 dark:border-t-white"></div>
+                </div>
+                
+                <p className="font-medium text-slate-800 dark:text-slate-200">Connecting to your printer</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-mono">{printerName}{printerId ? ` (${printerId})` : ''}</p>
+            </div>
+            <style>{`
+                @keyframes fade-in-up {
+                    0% { opacity: 0; transform: translateY(20px); }
+                    100% { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in-up { animation: fade-in-up 0.3s ease-out forwards; }
+            `}</style>
+        </div>
+    );
 };
 
 
@@ -302,6 +336,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
   // To trigger reset after print flow
   const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
+
+  // Connection UI State
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingPrinterInfo, setConnectingPrinterInfo] = useState<{name: string, id: string}>({name: '', id: ''});
 
   // --- Keyboard Navigation State ---
   const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
@@ -710,11 +748,22 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     
     // 4. Web Bluetooth Thermal Printer (Browser)
     if (printer.format === 'Thermal' && !window.bluetoothSerial && (navigator as any).bluetooth) {
-        const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
-        await printViaWebBluetooth(bytes);
-        
-        if (shouldReset) {
-            doReset();
+        setIsConnecting(true);
+        setConnectingPrinterInfo({name: printer.name, id: printer.id});
+        try {
+             const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
+             // Try to connect and print
+             await printViaWebBluetooth(bytes, printer.id);
+             
+             if (shouldReset) {
+                doReset();
+             }
+        } catch (e: any) {
+             if (e.name !== 'NotFoundError' && !e.message?.includes('cancelled')) {
+                 alert("Printing failed: " + e.message);
+             }
+        } finally {
+            setIsConnecting(false);
         }
         return;
     }
@@ -1238,6 +1287,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           systemConfig={systemConfig}
           onUpdateConfig={handleUpdateConfig}
           onSelectPrinter={handlePrinterSelection}
+      />
+
+      <ConnectingModal 
+        isOpen={isConnecting} 
+        printerName={connectingPrinterInfo.name} 
+        printerId={connectingPrinterInfo.id} 
       />
 
     </div>
