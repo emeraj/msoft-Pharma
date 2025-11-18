@@ -26,7 +26,7 @@ import {
   where,
   arrayUnion
 } from 'firebase/firestore';
-import type { Unsubscribe } from 'firebase/firestore';
+import type { Unsubscribe, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import SuppliersLedger from './components/SuppliersLedger';
 import SalesReport from './components/SalesReport';
 import CompanyWiseSale from './components/CompanyWiseSale';
@@ -144,8 +144,8 @@ const App: React.FC = () => {
 
     const createListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
       const collRef = collection(db, `users/${uid}/${collectionName}`);
-      return onSnapshot(collRef, (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      return onSnapshot(collRef, (snapshot: QuerySnapshot<DocumentData>) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
         setter(list);
       }, (error) => {
         console.error(`Error fetching ${collectionName}:`, error);
@@ -194,7 +194,7 @@ const App: React.FC = () => {
     const unsubConfig = onSnapshot(configRef, (doc) => {
         if (doc.exists()) {
             // Merge with defaults to avoid errors if new fields are added later
-            setSystemConfig(prev => ({...prev, ...doc.data()}));
+            setSystemConfig(prev => ({...prev, ...(doc.data() as Partial<SystemConfig>)}));
         }
     });
     unsubscribers.push(unsubConfig);
@@ -456,7 +456,7 @@ const App: React.FC = () => {
     const allBillsSnapshot = await getDocs(billsCollectionRef);
     let maxBillNum = 0;
     allBillsSnapshot.forEach(doc => {
-      const bill = doc.data();
+      const bill = doc.data() as any;
       if (bill.billNumber && typeof bill.billNumber === 'string') {
         const num = parseInt(bill.billNumber.replace(/\D/g, ''), 10);
         if (!isNaN(num) && num > maxBillNum) {

@@ -56,6 +56,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     const ESC = 27;
     const GS = 29;
     const LF = 10;
+    
+    // Standard 80mm paper typically supports 48 columns with Font A (12x24 dots)
+    const PRINTER_WIDTH = 48; 
 
     const addBytes = (bytes: number[]) => {
         commands.push(...bytes);
@@ -70,10 +73,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         }
     };
     
-    // Helper to create a line with left and right aligned text for 48 columns (80mm)
+    // Helper to create a line with left and right aligned text
     const addRow = (left: string, right: string) => {
-        const width = 48; // Changed from 32 to 48 for 80mm paper
-        const space = width - left.length - right.length;
+        const space = PRINTER_WIDTH - left.length - right.length;
         if (space < 1) {
             // If text is too long, just print it with one space or wrap (simple approach)
             addText(left + " " + right + "\n");
@@ -100,44 +102,100 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText(profile.address + '\n');
     if (profile.phone) addText('Ph: ' + profile.phone + '\n');
     if (profile.gstin) addText('GSTIN: ' + profile.gstin + '\n');
-    addText('-'.repeat(48) + '\n');
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     // --- Bill Details ---
     addBytes([ESC, 97, 0]); // Left Align
-    addRow('Bill No: ' + bill.billNumber, '');
-    addRow('Date: ' + new Date(bill.date).toLocaleDateString(), new Date(bill.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
-    addText('Name: ' + bill.customerName + '\n');
-    addText('-'.repeat(48) + '\n');
+    addText("TAX INVOICE\n");
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
+    
+    // Wide format allows putting date on same line potentially, but let's keep it structured
+    addRow('Bill No: ' + bill.billNumber, 'Date: ' + new Date(bill.date).toLocaleDateString());
+    addText('Customer: ' + bill.customerName + '\n');
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     // --- Items ---
-    // Format: 
-    // Product Name
-    // Qty x Rate                    Total
-    
-    bill.items.forEach((item) => {
-        addBytes([ESC, 69, 1]); // Bold On for Product Name
-        addText(item.productName + '\n');
-        addBytes([ESC, 69, 0]); // Bold Off
+    // Header for Items
+    // Item                  Qty   Rate    Amount
+    // ------------------------------------------------
+    // Column Layout for 48 chars:
+    // Item Name (22) | Qty (4) | Rate (10) | Amount (12)
+    const col1W = 22;
+    const col2W = 4;
+    const col3W = 10;
+    const col4W = 12;
 
-        const qtyRate = `${item.quantity} x ${item.total / item.quantity > 0 ? (item.total / item.quantity).toFixed(2) : '0.00'}`;
-        const total = item.total.toFixed(2);
+    addBytes([ESC, 69, 1]); // Bold
+    const headerLine = "Item".padEnd(col1W) + "Qty".padStart(col2W) + "Rate".padStart(col3W) + "Amount".padStart(col4W) + "\n";
+    addText(headerLine);
+    addBytes([ESC, 69, 0]); // Bold Off
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
+    
+    bill.items.forEach((item, index) => {
+        // Item Row
+        // 1. Name
+        addBytes([ESC, 69, 1]); // Bold On for Product Name
+        addText(`${index + 1}. ${item.productName}\n`);
+        addBytes([ESC, 69, 0]); // Bold Off
         
-        addRow(qtyRate, total);
+        // 2. Details Row
+        const qty = item.quantity.toString();
+        const rate = (item.total / item.quantity > 0 ? (item.total / item.quantity).toFixed(2) : '0.00');
+        const amount = item.total.toFixed(2);
+        
+        // Align columns for data
+        // We print empty space for name column, then align numbers
+        // "                      2     55.00      110.00"
+        
+        const spacer = " ".repeat(col1W);
+        const qtyStr = qty.padStart(col2W);
+        const rateStr = rate.padStart(col3W);
+        const amountStr = amount.padStart(col4W);
+        
+        addText(spacer + qtyStr + rateStr + amountStr + "\n");
     });
-    addText('-'.repeat(48) + '\n');
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     // --- Totals ---
     addRow('Subtotal:', bill.subTotal.toFixed(2));
-    addRow('GST:', bill.totalGst.toFixed(2));
+    addRow('Total GST:', bill.totalGst.toFixed(2));
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     addBytes([ESC, 69, 1]); // Bold On
-    // addBytes([GS, 33, 17]); // Double Height (optional)
-    addRow('Grand Total:', bill.grandTotal.toFixed(2));
-    // addBytes([ESC, 33, 0]); // Reset size
+    addBytes([GS, 33, 17]); // Double Height & Width (optional, strictly ESC ! 16 or GS ! 17)
+    // Using simple bold + normal size usually safer across printers
+    addText(`GRAND TOTAL:    Rs.${bill.grandTotal.toFixed(2)}\n`);
+    addBytes([GS, 33, 0]); // Reset size
     addBytes([ESC, 69, 0]); // Bold Off
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
+    // --- GST Summary ---
+    addCenter("GST Summary");
+    // Rate(6) Taxable(12) CGST(12) SGST(12) = 42 (Fits in 48)
+    // Let's space it out nicely
+    // Rate: 8, Taxable: 12, CGST: 12, SGST: 12 = 44
+    const gstHeader = "Rate".padEnd(8) + "Taxable".padStart(12) + "CGST".padStart(12) + "SGST".padStart(12) + "\n";
+    addText(gstHeader);
+    
+    const gstMap = new Map<number, {taxable: number, tax: number}>();
+    bill.items.forEach(item => {
+        const taxable = item.total / (1 + item.gst/100);
+        const tax = item.total - taxable;
+        const existing = gstMap.get(item.gst) || {taxable: 0, tax: 0};
+        gstMap.set(item.gst, {taxable: existing.taxable + taxable, tax: existing.tax + tax});
+    });
+    
+    Array.from(gstMap.entries()).sort((a,b) => a[0] - b[0]).forEach(([rate, data]) => {
+         const rStr = `${rate}%`.padEnd(8);
+         const tStr = data.taxable.toFixed(2).padStart(12);
+         const cStr = (data.tax/2).toFixed(2).padStart(12);
+         const sStr = (data.tax/2).toFixed(2).padStart(12);
+         addText(rStr + tStr + cStr + sStr + "\n");
+    });
+
+    addText('-'.repeat(PRINTER_WIDTH) + '\n');
+
     // --- Footer ---
-    addText('-'.repeat(48) + '\n');
     addBytes([ESC, 97, 1]); // Center Align
     if(config.remarkLine1) addText(config.remarkLine1 + '\n');
     if(config.remarkLine2) addText(config.remarkLine2 + '\n');
@@ -151,12 +209,12 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         const pH = Math.floor(len / 256);
         
         addText('\n');
-        addText('Scan to Pay\n');
+        addText('Scan to Pay using UPI\n');
         
-        // Function 167: Set module size (size 4-6 is usually good)
-        addBytes([GS, 40, 107, 3, 0, 49, 67, 5]); 
+        // Function 167: Set module size (size 6)
+        addBytes([GS, 40, 107, 3, 0, 49, 67, 6]); 
         // Function 169: Set error correction level (L=48, M=49, Q=50, H=51)
-        addBytes([GS, 40, 107, 3, 0, 49, 69, 48]); 
+        addBytes([GS, 40, 107, 3, 0, 49, 69, 49]); 
         // Function 180: Store data in symbol storage area
         addBytes([GS, 40, 107, pL, pH, 49, 80, 48]);
         for (let i = 0; i < upiStr.length; i++) {
@@ -167,11 +225,14 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         addText('\n');
     }
 
-    addText('. . . .\n');
+    addText('Thank you for your visit!\n');
+    addText('Get Well Soon.\n');
     
     // --- Feed Lines ---
     addBytes([LF, LF, LF, LF]); 
-    
+    // Cut Paper (optional, some printers support GS V)
+    addBytes([GS, 86, 66, 0]);
+
     return commands;
 };
 
@@ -188,48 +249,79 @@ const printViaWebBluetooth = async (data: Uint8Array, printerId?: string) => {
 
     let device = null;
 
-    // 1. Try to get already permitted devices (Auto-connect)
+    // 1. Try to get already permitted devices (Auto-connect) using getDevices()
+    // This prevents the picker from showing up if the user has already paired/permitted the site.
     if (printerId && nav.bluetooth.getDevices) {
         try {
             const devices = await nav.bluetooth.getDevices();
             if (devices && devices.length > 0) {
-                // Find the device by ID
-                device = devices.find((d: any) => d.id === printerId);
+                // Try to find by ID first, if provided
+                const matchedDevice = devices.find((d: any) => d.id === printerId);
+                if (matchedDevice) {
+                    device = matchedDevice;
+                }
             }
         } catch (e) {
             console.warn("Could not retrieve allowed devices:", e);
         }
     }
 
-    // 2. If no device found or no ID, request user to select (Shows Picker)
+    // 2. If no device found automatically, request user to select (Shows Picker)
     if (!device) {
-        device = await nav.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] 
-        });
+        // Note: If printerId is provided, we can't filter by ID in requestDevice unfortunately, 
+        // we can only filter by NamePrefix or Services. 
+        // We use acceptAllDevices + optionalServices to be broad.
+        try {
+            device = await nav.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] 
+            });
+        } catch (e) {
+            // User cancelled or error
+            throw new Error("Device selection cancelled or failed.");
+        }
     }
 
     if (!device) throw new Error("No device selected.");
 
     // 3. Connect to GATT Server
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-    const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+    // Note: device.gatt.connect() might throw if the device is out of range or off.
+    // In React, the Calling component should handle the UI state (Spinner).
+    let server;
+    try {
+        server = await device.gatt.connect();
+    } catch(e) {
+        throw new Error("Could not connect to printer. Is it on and in range?");
+    }
+
+    if (!server) throw new Error("GATT Server not found.");
+
+    let characteristic;
+    try {
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+    } catch (e) {
+         // Fallback for some generic printers that might use a different UUID mapping or standard serial
+         // But usually 18f0 is standard for ESC/POS over BLE.
+         throw new Error("Printer service not found. Ensure it supports standard BLE printing.");
+    }
 
     // 4. Write Data
-    // Write in chunks of 50 bytes to be safe with BLE MTU
-    const CHUNK_SIZE = 50;
+    // Write in chunks of 100 bytes to be safe with BLE MTU (typically 20-512 bytes)
+    const CHUNK_SIZE = 100;
     for (let i = 0; i < data.length; i += CHUNK_SIZE) {
         const chunk = data.slice(i, i + CHUNK_SIZE);
         await characteristic.writeValue(chunk);
     }
 
     // Allow a brief moment for buffer to clear before disconnecting
+    // Re-using the connection for subsequent prints is better, but complex to manage in simple app.
+    // Disconnecting ensures we don't hog the connection.
     setTimeout(() => {
             if (device.gatt.connected) {
             device.gatt.disconnect();
         }
-    }, 1000);
+    }, 2000);
 };
 
 const ConnectingModal: React.FC<{ isOpen: boolean; printerName: string; printerId?: string }> = ({ isOpen, printerName, printerId }) => {
@@ -595,7 +687,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         // Helper to print row
         const printRow = async (left: string, right: string) => {
             // Construct a string with padding if direct column support isn't perfect
-            const width = 32; // standard thermal width in chars
+            // Adjust for 80mm paper - usually 48 chars
+            const width = 48; 
             let space = width - left.length - right.length;
             if (space < 1) space = 1;
             await printerAPI.printText(left + " ".repeat(space) + right + "\n", {});
@@ -606,13 +699,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         await printCentered(companyProfile.address + "\n");
         if(companyProfile.phone) await printCentered("Ph: " + companyProfile.phone + "\n");
         if(companyProfile.gstin) await printCentered("GSTIN: " + companyProfile.gstin + "\n");
-        await printerAPI.printText("--------------------------------\n", {});
+        await printerAPI.printText("-".repeat(48) + "\n", {});
         
         // Bill Details
         await printerAPI.printText(`Bill No: ${bill.billNumber}\n`, {});
         await printerAPI.printText(`Date: ${new Date(bill.date).toLocaleDateString()} ${new Date(bill.date).toLocaleTimeString()}\n`, {});
         await printerAPI.printText(`Name: ${bill.customerName}\n`, {});
-        await printerAPI.printText("--------------------------------\n", {});
+        await printerAPI.printText("-".repeat(48) + "\n", {});
 
         // Items
         for(const item of bill.items) {
@@ -625,7 +718,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              await printRow(qtyRate, total);
         }
         
-        await printerAPI.printText("--------------------------------\n", {});
+        await printerAPI.printText("-".repeat(48) + "\n", {});
         
         // Totals
         await printRow("Subtotal:", bill.subTotal.toFixed(2));
@@ -635,7 +728,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         // Grand Total (Bold)
         await printerAPI.printText(`Grand Total:       ${bill.grandTotal.toFixed(2)}\n`, { fonttype: 1, widthtimes: 1, heigthtimes: 1 });
         
-        await printerAPI.printText("--------------------------------\n", {});
+        await printerAPI.printText("-".repeat(48) + "\n", {});
         
         // Footer
         if (systemConfig.remarkLine1) await printCentered(systemConfig.remarkLine1 + "\n");
@@ -648,7 +741,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              // Standard call for react-native-bluetooth-escpos-printer
              // content, width (pixels/dots), correction level (1=L, 2=M, 3=Q, 4=H)
              try {
-                await printerAPI.printQRCode(upiStr, 200, 1);
+                await printerAPI.printQRCode(upiStr, 300, 1); // Increased width for 80mm
              } catch(e) { console.error("QR Print Error", e); }
              await printerAPI.printText("\n", {});
         }
