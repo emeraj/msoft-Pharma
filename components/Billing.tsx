@@ -57,8 +57,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     const GS = 29;
     const LF = 10;
     
-    // Standard 80mm paper typically supports 48 columns with Font A (12x24 dots)
-    const PRINTER_WIDTH = 48; 
+    // Standard 80mm paper typically supports 48 columns with Font A (12x24 dots).
+    // We use 46 to be safe against margins and prevent wrapping.
+    const PRINTER_WIDTH = 46; 
 
     const addBytes = (bytes: number[]) => {
         commands.push(...bytes);
@@ -118,9 +119,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     // Header for Items
     // Item                  Qty   Rate    Amount
     // ------------------------------------------------
-    // Column Layout for 48 chars:
-    // Item Name (22) | Qty (4) | Rate (10) | Amount (12)
-    const col1W = 22;
+    // Column Layout for 46 chars (80mm safe width):
+    // Item Name (20) | Qty (4) | Rate (10) | Amount (12)
+    const col1W = 20;
     const col2W = 4;
     const col3W = 10;
     const col4W = 12;
@@ -133,9 +134,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     
     bill.items.forEach((item, index) => {
         // Item Row
-        // 1. Name
+        // 1. Name (Truncate to avoid wrapping issues if name is extremely long)
         addBytes([ESC, 69, 1]); // Bold On for Product Name
-        addText(`${index + 1}. ${item.productName}\n`);
+        addText(`${index + 1}. ${item.productName.substring(0, 42)}\n`);
         addBytes([ESC, 69, 0]); // Bold Off
         
         // 2. Details Row
@@ -145,7 +146,7 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         
         // Align columns for data
         // We print empty space for name column, then align numbers
-        // "                      2     55.00      110.00"
+        // "                    2     55.00      110.00"
         
         const spacer = " ".repeat(col1W);
         const qtyStr = qty.padStart(col2W);
@@ -162,18 +163,15 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     addBytes([ESC, 69, 1]); // Bold On
-    addBytes([GS, 33, 17]); // Double Height & Width (optional, strictly ESC ! 16 or GS ! 17)
-    // Using simple bold + normal size usually safer across printers
+    // addBytes([GS, 33, 17]); // Double Height & Width (Optional, removed for compatibility)
     addText(`GRAND TOTAL:    Rs.${bill.grandTotal.toFixed(2)}\n`);
-    addBytes([GS, 33, 0]); // Reset size
+    // addBytes([GS, 33, 0]); 
     addBytes([ESC, 69, 0]); // Bold Off
     addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     // --- GST Summary ---
     addCenter("GST Summary");
-    // Rate(6) Taxable(12) CGST(12) SGST(12) = 42 (Fits in 48)
-    // Let's space it out nicely
-    // Rate: 8, Taxable: 12, CGST: 12, SGST: 12 = 44
+    // Rate(8) Taxable(12) CGST(12) SGST(12) = 44 (Fits in 46)
     const gstHeader = "Rate".padEnd(8) + "Taxable".padStart(12) + "CGST".padStart(12) + "SGST".padStart(12) + "\n";
     addText(gstHeader);
     
@@ -211,17 +209,15 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
         addText('\n');
         addText('Scan to Pay using UPI\n');
         
-        // Function 167: Set module size (size 6)
-        addBytes([GS, 40, 107, 3, 0, 49, 67, 6]); 
-        // Function 169: Set error correction level (L=48, M=49, Q=50, H=51)
-        addBytes([GS, 40, 107, 3, 0, 49, 69, 49]); 
-        // Function 180: Store data in symbol storage area
-        addBytes([GS, 40, 107, pL, pH, 49, 80, 48]);
+        // Standard ESC/POS QR Code Commands (Model 2)
+        addBytes([GS, 40, 107, 4, 0, 49, 65, 50, 0]); // Select model
+        addBytes([GS, 40, 107, 3, 0, 49, 67, 6]); // Set module size (6)
+        addBytes([GS, 40, 107, 3, 0, 49, 69, 48]); // Set error correction (L)
+        addBytes([GS, 40, 107, pL, pH, 49, 80, 48]); // Store data
         for (let i = 0; i < upiStr.length; i++) {
             commands.push(upiStr.charCodeAt(i));
         }
-        // Function 181: Print symbol data in symbol storage area
-        addBytes([GS, 40, 107, 3, 0, 49, 81, 48]);
+        addBytes([GS, 40, 107, 3, 0, 49, 81, 48]); // Print symbol
         addText('\n');
     }
 
@@ -229,8 +225,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText('Get Well Soon.\n');
     
     // --- Feed Lines ---
+    // Feed 4 lines to ensure cut does not damage content
     addBytes([LF, LF, LF, LF]); 
-    // Cut Paper (optional, some printers support GS V)
+    // Cut Paper (GS V m)
     addBytes([GS, 86, 66, 0]);
 
     return commands;
@@ -687,8 +684,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         // Helper to print row
         const printRow = async (left: string, right: string) => {
             // Construct a string with padding if direct column support isn't perfect
-            // Adjust for 80mm paper - usually 48 chars
-            const width = 48; 
+            // Adjust for 80mm paper - usually 48 chars, but safe 46
+            const width = 46; 
             let space = width - left.length - right.length;
             if (space < 1) space = 1;
             await printerAPI.printText(left + " ".repeat(space) + right + "\n", {});
@@ -699,13 +696,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         await printCentered(companyProfile.address + "\n");
         if(companyProfile.phone) await printCentered("Ph: " + companyProfile.phone + "\n");
         if(companyProfile.gstin) await printCentered("GSTIN: " + companyProfile.gstin + "\n");
-        await printerAPI.printText("-".repeat(48) + "\n", {});
+        await printerAPI.printText("-".repeat(46) + "\n", {});
         
         // Bill Details
         await printerAPI.printText(`Bill No: ${bill.billNumber}\n`, {});
         await printerAPI.printText(`Date: ${new Date(bill.date).toLocaleDateString()} ${new Date(bill.date).toLocaleTimeString()}\n`, {});
         await printerAPI.printText(`Name: ${bill.customerName}\n`, {});
-        await printerAPI.printText("-".repeat(48) + "\n", {});
+        await printerAPI.printText("-".repeat(46) + "\n", {});
 
         // Items
         for(const item of bill.items) {
@@ -718,7 +715,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              await printRow(qtyRate, total);
         }
         
-        await printerAPI.printText("-".repeat(48) + "\n", {});
+        await printerAPI.printText("-".repeat(46) + "\n", {});
         
         // Totals
         await printRow("Subtotal:", bill.subTotal.toFixed(2));
@@ -728,7 +725,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         // Grand Total (Bold)
         await printerAPI.printText(`Grand Total:       ${bill.grandTotal.toFixed(2)}\n`, { fonttype: 1, widthtimes: 1, heigthtimes: 1 });
         
-        await printerAPI.printText("-".repeat(48) + "\n", {});
+        await printerAPI.printText("-".repeat(46) + "\n", {});
         
         // Footer
         if (systemConfig.remarkLine1) await printCentered(systemConfig.remarkLine1 + "\n");
