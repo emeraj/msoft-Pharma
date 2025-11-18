@@ -57,8 +57,8 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     const GS = 29;
     const LF = 10;
     
-    // Safe printable width for 80mm paper (approx 42-48 columns depending on printer margins).
-    // Using 42 is safest to avoid wrapping.
+    // Safe printable width for 80mm paper.
+    // 42 chars allows for safe margins and ensures columns align perfectly.
     const PRINTER_WIDTH = 42; 
 
     const addBytes = (bytes: number[]) => {
@@ -116,8 +116,6 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     
     // --- Items ---
     // Column Layout for 42 chars:
-    // Item Name (Printed on line above if needed, or first col)
-    // Format:
     // Item (18)   Qty(4)  Rate(9)  Amt(11)
     const col1W = 18;
     const col2W = 4;
@@ -162,10 +160,11 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     // --- GST Summary ---
-    // We manually format the header to avoid centering issues on some printers
-    const gstTitle = "------- GST Summary -------";
+    // Use a simpler clean header
+    const gstTitle = "GST SUMMARY";
     const padTitle = Math.max(0, Math.floor((PRINTER_WIDTH - gstTitle.length) / 2));
     addText(" ".repeat(padTitle) + gstTitle + "\n");
+    addText(" ".repeat(padTitle) + "-".repeat(gstTitle.length) + "\n");
 
     // Rate(6) Taxable(12) CGST(12) SGST(12) = 42 chars
     const gstHeader = "Rate".padEnd(6) + "Taxable".padStart(12) + "CGST".padStart(12) + "SGST".padStart(12) + "\n";
@@ -286,12 +285,13 @@ const printViaWebBluetooth = async (data: Uint8Array, printerId?: string) => {
     }
 
     // Write Data in chunks with DELAY to prevent buffer overflow
-    const CHUNK_SIZE = 50; // Smaller chunk size for safety
+    // Reduced chunk size and increased delay for higher reliability on mobile
+    const CHUNK_SIZE = 40; 
     for (let i = 0; i < data.length; i += CHUNK_SIZE) {
         const chunk = data.slice(i, i + CHUNK_SIZE);
         await characteristic.writeValue(chunk);
-        // Small delay to allow printer to process buffer
-        await new Promise(resolve => setTimeout(resolve, 15)); 
+        // Increase delay to allow printer to process buffer
+        await new Promise(resolve => setTimeout(resolve, 40)); 
     }
 
     setTimeout(() => {
