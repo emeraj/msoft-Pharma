@@ -194,28 +194,25 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     if(config.remarkLine2) addText(config.remarkLine2 + '\n');
     
     // --- QR Code for UPI ---
-    const upiId = profile.upiId ? profile.upiId.trim() : '';
-    if (upiId && bill.grandTotal > 0) {
-        const upiStr = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(profile.name.substring(0, 20))}&am=${bill.grandTotal.toFixed(2)}&cu=INR`;
+    if (profile.upiId && bill.grandTotal > 0) {
+        const upiStr = `upi://pay?pa=${profile.upiId}&pn=${encodeURIComponent(profile.name.substring(0, 20))}&am=${bill.grandTotal.toFixed(2)}&cu=INR`;
         const len = upiStr.length + 3;
         const pL = len % 256;
         const pH = Math.floor(len / 256);
         
-        addBytes([ESC, 97, 1]); // Center Align for QR
         addText('\n');
         addText('Scan to Pay using UPI\n');
         
         // Standard ESC/POS QR Code Commands
-        addBytes([GS, 40, 107, 4, 0, 49, 65, 50, 0]); // Select Model 2
-        addBytes([GS, 40, 107, 3, 0, 49, 67, 6]); // Module Size 6
-        addBytes([GS, 40, 107, 3, 0, 49, 69, 49]); // Error Correction Level M (49)
-        addBytes([GS, 40, 107, pL, pH, 49, 80, 48]); // Store Data
+        addBytes([GS, 40, 107, 4, 0, 49, 65, 50, 0]);
+        addBytes([GS, 40, 107, 3, 0, 49, 67, 6]); 
+        addBytes([GS, 40, 107, 3, 0, 49, 69, 48]);
+        addBytes([GS, 40, 107, pL, pH, 49, 80, 48]);
         for (let i = 0; i < upiStr.length; i++) {
             commands.push(upiStr.charCodeAt(i));
         }
-        addBytes([GS, 40, 107, 3, 0, 49, 81, 48]); // Print Symbol
+        addBytes([GS, 40, 107, 3, 0, 49, 81, 48]);
         addText('\n');
-        addBytes([ESC, 97, 0]); // Reset Left Align
     }
 
     addText('Thank you for your visit!\n');
