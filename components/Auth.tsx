@@ -37,7 +37,7 @@ const Auth: React.FC = () => {
 
   const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
-  // Initialize Recaptcha - Single Instance Pattern
+  // Initialize Recaptcha - Single Instance Pattern (Preserved but inactive if phone is hidden)
   useEffect(() => {
     if (authMethod === 'phone' && !recaptchaLoaded.current) {
       const container = document.getElementById('recaptcha-container');
@@ -198,21 +198,6 @@ const Auth: React.FC = () => {
         </div>
         
         <Card>
-            <div className="flex border-b dark:border-slate-700 mb-6">
-                <button 
-                    className={`flex-1 pb-2 text-sm font-medium text-center transition-colors duration-200 ${authMethod === 'email' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                    onClick={() => { setAuthMethod('email'); setError(''); setSuccessMessage(''); }}
-                >
-                    <UserCircleIcon className="h-5 w-5 inline-block mr-1" /> Email
-                </button>
-                <button 
-                    className={`flex-1 pb-2 text-sm font-medium text-center transition-colors duration-200 ${authMethod === 'phone' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                    onClick={() => { setAuthMethod('phone'); setError(''); setSuccessMessage(''); }}
-                >
-                     <DeviceMobileIcon className="h-5 w-5 inline-block mr-1" /> Phone (OTP)
-                </button>
-            </div>
-
             {/* Container for reCAPTCHA - Hidden when authMethod is email */}
             <div id="recaptcha-container" className={`flex justify-center mb-4 min-h-[10px] ${authMethod === 'email' ? 'hidden' : ''}`}></div>
 
@@ -334,7 +319,7 @@ const Auth: React.FC = () => {
                 )
             ) : (
                 <div className="space-y-4">
-                    {/* Phone Auth UI */}
+                    {/* Phone Auth UI (Currently unused but code preserved) */}
                     <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200">
                         {otpSent ? 'Enter Verification Code' : 'Phone Login'}
                     </h2>
