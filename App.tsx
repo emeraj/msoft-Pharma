@@ -145,8 +145,20 @@ const App: React.FC = () => {
     const createListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
       const collRef = collection(db, `users/${uid}/${collectionName}`);
       return onSnapshot(collRef, (snapshot: QuerySnapshot<DocumentData>) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) as any[];
-        setter(list);
+        const list = snapshot.docs.map(doc => {
+          const data = doc.data() || {};
+          
+          // Defensive initialization for required array fields to prevent runtime errors
+          if (collectionName === 'products' && !Array.isArray(data.batches)) {
+            data.batches = [];
+          }
+          if ((collectionName === 'bills' || collectionName === 'purchases') && !Array.isArray(data.items)) {
+            data.items = [];
+          }
+
+          return { ...data, id: doc.id };
+        });
+        setter(list as any[]);
       }, (error) => {
         console.error(`Error fetching ${collectionName}:`, error);
         if (error.code === 'permission-denied') {
@@ -169,21 +181,11 @@ const App: React.FC = () => {
     const profileRef = doc(db, `users/${uid}/companyProfile`, 'profile');
     const unsubProfile = onSnapshot(profileRef, (doc) => {
         if (doc.exists()) {
-            const dbProfile = doc.data() as CompanyProfile;
-            
-            // Create a new object from dbProfile, excluding any keys with `undefined` values.
-            // This prevents an undefined `upiId` from the database from overwriting the default empty string.
-            const cleanDbProfile: Partial<CompanyProfile> = {};
-            for (const key in dbProfile) {
-                if (Object.prototype.hasOwnProperty.call(dbProfile, key)) {
-                    const value = (dbProfile as any)[key];
-                    if (value !== undefined) {
-                        (cleanDbProfile as any)[key] = value;
-                    }
-                }
+            const dbProfile = doc.data();
+            // GUARD against malformed data (e.g., non-object) before spreading.
+            if (dbProfile && typeof dbProfile === 'object' && !Array.isArray(dbProfile)) {
+                setCompanyProfile({ ...initialCompanyProfile, ...dbProfile });
             }
-
-            setCompanyProfile({ ...initialCompanyProfile, ...cleanDbProfile });
         } else {
             setCompanyProfile(initialCompanyProfile);
         }
@@ -193,8 +195,11 @@ const App: React.FC = () => {
     const configRef = doc(db, `users/${uid}/systemConfig`, 'config');
     const unsubConfig = onSnapshot(configRef, (doc) => {
         if (doc.exists()) {
-            // Merge with defaults to avoid errors if new fields are added later
-            setSystemConfig(prev => ({...prev, ...(doc.data() as Partial<SystemConfig>)}));
+            const configData = doc.data();
+            // GUARD against malformed data (e.g., non-object) before spreading.
+            if (configData && typeof configData === 'object' && !Array.isArray(configData)) {
+                setSystemConfig(prev => ({...prev, ...(configData as Partial<SystemConfig>)}));
+            }
         }
     });
     unsubscribers.push(unsubConfig);
