@@ -1,7 +1,7 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Modal from './common/Modal';
-import { XIcon } from './icons/Icons';
+import { XIcon, ExpandIcon, CompressIcon } from './icons/Icons';
 
 // Access Html5Qrcode from global window object as it is loaded via script tag in index.html
 const { Html5Qrcode, Html5QrcodeSupportedFormats } = (window as any);
@@ -17,6 +17,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
   const scannerRef = useRef<any>(null);
   const isRunningRef = useRef(false);
   const lastScanRef = useRef<{text: string, time: number}>({text: '', time: 0});
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   useEffect(() => {
     let html5QrCode: any = null;
@@ -134,7 +135,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
   }, [onScanSuccess, readerId]);
 
   return (
-    <div className="relative w-full h-64 rounded-xl overflow-hidden bg-black border border-slate-700 shadow-sm group mb-4">
+    <div className={`relative ${isFullScreen ? 'fixed inset-0 z-[100] w-screen h-screen bg-black' : 'w-full h-64 rounded-xl mb-4'} overflow-hidden bg-black border border-slate-700 shadow-sm group transition-all duration-300`}>
         <div id={readerId} className="w-full h-full"></div>
         
         {/* CSS Override for Video Object Fit to Ensure Cover */}
@@ -143,7 +144,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
                 object-fit: cover !important;
                 width: 100% !important;
                 height: 100% !important;
-                border-radius: 0.75rem;
+                border-radius: ${isFullScreen ? '0' : '0.75rem'};
             }
             #${readerId} canvas {
                 display: none;
@@ -171,16 +172,26 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             </div>
         </div>
 
-        {/* Close Button */}
-        {onClose && (
+        {/* Controls */}
+        <div className="absolute top-4 right-4 flex gap-3 z-20">
             <button 
-                onClick={onClose} 
-                className="absolute top-2 right-2 p-1.5 bg-black/40 hover:bg-black/60 text-white rounded-full backdrop-blur-sm z-20 transition-colors"
-                title="Close Camera"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsFullScreen(!isFullScreen); }} 
+                className="p-2 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-colors shadow-lg"
+                title={isFullScreen ? "Exit Full Screen" : "Full Screen"}
             >
-                <XIcon className="h-4 w-4" />
+                {isFullScreen ? <CompressIcon className="h-5 w-5" /> : <ExpandIcon className="h-5 w-5" />}
             </button>
-        )}
+            
+            {onClose && (
+                <button 
+                    onClick={onClose} 
+                    className="p-2 bg-black/50 hover:bg-black/70 text-white rounded-full backdrop-blur-md transition-colors shadow-lg"
+                    title="Close Camera"
+                >
+                    <XIcon className="h-5 w-5" />
+                </button>
+            )}
+        </div>
 
         <style>{`
             @keyframes scan-laser {
