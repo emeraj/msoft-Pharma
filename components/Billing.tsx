@@ -765,15 +765,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                 characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
                 value: hexString
             });
-
-            if (shouldReset) {
-                doReset();
-            }
-            return;
         } catch (err: any) {
              console.error("Capacitor BLE print failed", err);
              alert("Bluetooth LE print failed: " + err.message);
+        } finally {
+            if (shouldReset) {
+                doReset();
+            }
         }
+        return;
     }
 
     // 3. Native Bluetooth Thermal Printer (Capacitor Legacy Serial)
@@ -823,16 +823,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
              // Try to connect and print
              await printViaWebBluetooth(bytes, printer.id);
-             
-             if (shouldReset) {
-                doReset();
-             }
         } catch (e: any) {
              if (e.name !== 'NotFoundError' && !e.message?.includes('cancelled')) {
-                 alert("Printing failed: " + e.message);
+                 alert("Printing failed: " + e.message + ". Bill saved successfully.");
              }
         } finally {
             setIsConnecting(false);
+            if (shouldReset) {
+                doReset();
+            }
         }
         return;
     }
