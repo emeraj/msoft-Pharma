@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth, firebase } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import Card from './common/Card';
@@ -30,73 +30,44 @@ const Auth: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   
-  // Refs
-  const recaptchaContainerRef = useRef<HTMLDivElement>(null);
+  // Initialization Guard
+  const recaptchaLoaded = useRef(false);
 
   const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
-  const clearRecaptcha = () => {
-    if (window.recaptchaVerifier) {
-      try {
-        window.recaptchaVerifier.clear();
-      } catch (e) {
-        console.debug("Recaptcha cleanup warning:", e);
-      }
-      window.recaptchaVerifier = null;
-    }
-  };
-
-  const initRecaptcha = useCallback(async () => {
-      // Ensure the ref is attached to a DOM node
-      if (!recaptchaContainerRef.current) {
-          console.debug("Recaptcha container not found yet.");
-          return;
-      }
-
-      try {
-          // Aggressively clear previous instances
-          clearRecaptcha();
-          
-          // Pass the actual DOM element instead of ID string
-          window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier(recaptchaContainerRef.current, {
-              'size': 'invisible',
-              'callback': () => {
-                  // reCAPTCHA solved
-                  setError('');
-              },
-              'expired-callback': () => {
-                  setError('Security check expired. Please try again.');
-                  setLoading(false);
-                  // Auto-clear to allow re-render
-                  clearRecaptcha();
-              }
-          });
-          
-          await window.recaptchaVerifier.render();
-      } catch (error: any) {
-          console.error("Recaptcha Init Error:", error);
-          if (error.code === 'auth/internal-error') {
-               setError(`Configuration Error: Domain "${window.location.hostname}" is not authorized. Go to Firebase Console -> Authentication -> Settings -> Authorized Domains and add this domain.`);
-          } else {
-               setError(`Security check failed: ${error.message}. Please refresh the page.`);
-          }
-      }
-  }, []);
-
-  // Initialize Recaptcha when switching to phone view
+  // Initialize Recaptcha for Phone Auth - Run once when authMethod is 'phone'
   useEffect(() => {
-    let timer: number;
     if (authMethod === 'phone') {
-        // Wait for React to paint the DOM and ref to be populated
-        timer = window.setTimeout(initRecaptcha, 500);
-    } else {
-        clearRecaptcha();
+      // Only initialize if not already loaded in this session
+      if (!recaptchaLoaded.current) {
+        try {
+            // Ensure container exists
+            const container = document.getElementById('recaptcha-container');
+            if (container) {
+                // Clear any possible leftover debris manually
+                container.innerHTML = ''; 
+
+                window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+                  'size': 'invisible',
+                  'callback': () => {
+                    setError('');
+                  },
+                  'expired-callback': () => {
+                    setError('Security check expired. Please refresh.');
+                  }
+                });
+                
+                // Mark as loaded so we don't re-init
+                recaptchaLoaded.current = true;
+            }
+        } catch (e) {
+            console.error("Recaptcha setup error:", e);
+        }
+      }
     }
-    return () => {
-        clearTimeout(timer);
-        clearRecaptcha();
-    };
-  }, [authMethod, initRecaptcha]);
+    // We intentionally do NOT clear the verifier in the cleanup return.
+    // Persisting it prevents "Internal Auth Error" caused by accessing a cleared instance.
+  }, [authMethod]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,17 +105,20 @@ const Auth: React.FC = () => {
     }
 
     try {
-      // JIT Initialization: If somehow verifier is missing (e.g. race condition), try to init now
+      // Safety Check: Re-init if missing for some reason (rare)
       if (!window.recaptchaVerifier) {
-          await initRecaptcha();
-          // Give it a split second to render
-          await new Promise(r => setTimeout(r, 100));
-          
-          if (!window.recaptchaVerifier) {
-             throw new Error("Security check could not be initialized. Please refresh.");
-          }
+           const container = document.getElementById('recaptcha-container');
+           if(container) {
+               window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+                  'size': 'invisible',
+                  'callback': () => setError('')
+               });
+               recaptchaLoaded.current = true;
+           } else {
+               throw new Error("System Error: Recaptcha container missing.");
+           }
       }
-      
+
       const appVerifier = window.recaptchaVerifier;
       const confirmationResult = await auth.signInWithPhoneNumber(formattedNumber, appVerifier);
       window.confirmationResult = confirmationResult;
@@ -164,9 +138,13 @@ const Auth: React.FC = () => {
       }
       
       setError(msg);
-      // Reset to allow retry
-      clearRecaptcha();
-      setTimeout(initRecaptcha, 500); 
+      
+      // On critical error, reset logic to allow retry
+      if (window.recaptchaVerifier) {
+          try { window.recaptchaVerifier.clear(); } catch(e) {}
+          window.recaptchaVerifier = null;
+          recaptchaLoaded.current = false;
+      }
     } finally {
       setLoading(false);
     }
@@ -179,6 +157,7 @@ const Auth: React.FC = () => {
 
     try {
       await window.confirmationResult.confirm(otp);
+      // User is signed in automatically by Firebase
     } catch (error: any) {
       console.error("OTP Verify Error:", error);
       setError("Invalid OTP. Please try again.");
@@ -234,8 +213,8 @@ const Auth: React.FC = () => {
                 </button>
             </div>
 
-            {/* Always render container in DOM flow, attached to ref */}
-            <div ref={recaptchaContainerRef} id="recaptcha-container" className="flex justify-center mb-4 min-h-[10px]"></div>
+            {/* Always render container in DOM flow */}
+            <div id="recaptcha-container" className="flex justify-center mb-4 min-h-[10px]"></div>
 
             {authMethod === 'email' ? (
                 <form onSubmit={handleEmailAuth} className="space-y-4">
