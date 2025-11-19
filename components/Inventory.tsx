@@ -243,10 +243,16 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     const [companyFilter, setCompanyFilter] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+    const [isScanning, setIsScanning] = useState(false);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
     const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
     
+    const handleScanSuccess = (decodedText: string) => {
+        onSearchTermChange(decodedText);
+        setIsScanning(false);
+    };
+
     const reportData = useMemo(() => {
         const startDate = fromDate ? new Date(fromDate) : null;
         if (startDate) startDate.setHours(0, 0, 0, 0);
@@ -384,7 +390,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     return (
         <Card title="All Item Stock Report">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                <div className="flex items-center">
+                <div className="flex items-center gap-2">
                     <input
                         type="text"
                         placeholder={`Search by product name ${isPharmaMode ? '' : 'or barcode'}...`}
@@ -392,6 +398,15 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                         onChange={e => onSearchTermChange(e.target.value)}
                         className={inputStyle}
                     />
+                    {!isPharmaMode && (
+                         <button
+                            onClick={() => setIsScanning(true)}
+                            className="p-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-300 flex-shrink-0"
+                            title="Scan Barcode"
+                        >
+                            <CameraIcon className="h-5 w-5" />
+                        </button>
+                    )}
                 </div>
                 <select
                     value={companyFilter}
@@ -477,6 +492,11 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     <div className="text-center py-10 text-slate-600 dark:text-slate-400"><p>No products found.</p></div>
                 )}
             </div>
+             <BarcodeScannerModal 
+                isOpen={isScanning} 
+                onClose={() => setIsScanning(false)} 
+                onScanSuccess={handleScanSuccess} 
+            />
         </Card>
     );
 };
