@@ -657,7 +657,7 @@ const App: React.FC = () => {
   if (!user) return <Auth />;
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200 font-sans">
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200 font-sans flex flex-col">
       <Header 
         activeView={activeView} 
         setActiveView={setActiveView} 
@@ -667,7 +667,7 @@ const App: React.FC = () => {
         systemConfig={systemConfig}
       />
       
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 flex-grow w-full">
         {activeView === 'dashboard' && <SalesDashboard bills={bills} products={products} />}
         
         {activeView === 'inventory' && (
@@ -755,6 +755,10 @@ const App: React.FC = () => {
         {activeView === 'companyWiseBillWiseProfit' && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
 
       </main>
+
+      <footer className="py-4 text-center text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 border-t dark:border-slate-700 mt-auto">
+          <p>Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="https://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">webs.msoftindia.com</a></p>
+      </footer>
 
       <SettingsModal 
         isOpen={isSettingsOpen}
