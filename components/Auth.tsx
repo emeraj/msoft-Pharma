@@ -52,7 +52,7 @@ const Auth: React.FC = () => {
   const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
   return (
-    <div className="flex-grow flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
