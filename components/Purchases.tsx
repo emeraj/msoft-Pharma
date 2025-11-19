@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
@@ -12,8 +13,8 @@ interface PurchasesProps {
     suppliers: Supplier[];
     systemConfig: SystemConfig;
     gstRates: GstRate[];
-    onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
-    onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
+    onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => Promise<boolean>;
+    onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => Promise<boolean>;
     onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
 }
@@ -265,6 +266,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             return;
         }
 
+        // Construct object without undefined fields
         const item: PurchaseLineItem = {
             isNewProduct,
             productName: isNewProduct ? productName : selectedProduct!.name,
@@ -273,11 +275,15 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             gst: parseFloat(gst),
             batchNumber: isPharmaMode ? batchNumber : 'DEFAULT',
             expiryDate: isPharmaMode ? expiryDate : '9999-12',
-            quantity: parseInt(quantity, 10),
-            mrp: parseFloat(mrp),
-            purchasePrice: parseFloat(purchasePrice),
-            barcode: isNewProduct && !isPharmaMode ? barcode : undefined,
+            quantity: parseInt(quantity, 10) || 0,
+            mrp: parseFloat(mrp) || 0,
+            purchasePrice: parseFloat(purchasePrice) || 0,
         };
+        
+        // Only add optional fields if they have values to avoid 'undefined' errors in Firestore
+        if (isNewProduct && !isPharmaMode && barcode) {
+            item.barcode = barcode;
+        }
 
         if (isPharmaMode && isNewProduct) {
             item.isScheduleH = isScheduleH === 'Yes';
@@ -288,7 +294,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             if (!isNaN(units) && units > 1) {
                 item.unitsPerStrip = units;
             }
-        } else {
+        } else if (!isPharmaMode) {
             item.isScheduleH = false;
             item.unitsPerStrip = 1;
         }
@@ -521,7 +527,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         setFormState(initialFormState);
     };
 
-    const handleSavePurchase = () => {
+    const handleSavePurchase = async () => {
         if (!formState.supplierName || !formState.invoiceDate || formState.currentItems.length === 0) {
             alert('Please select a supplier, set the date, and add at least one item.');
             return;
@@ -539,12 +545,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             totalAmount
         };
 
-        if (editingPurchase && editingPurchase.id) {
-             onUpdatePurchase(editingPurchase.id, purchaseData, editingPurchase);
-        } else {
-            onAddPurchase(purchaseData);
+        try {
+            if (editingPurchase && editingPurchase.id) {
+                const success = await onUpdatePurchase(editingPurchase.id, purchaseData, editingPurchase);
+                if (success) resetForm();
+            } else {
+                const success = await onAddPurchase(purchaseData);
+                if (success) resetForm();
+            }
+        } catch(e) {
+            console.error(e);
+            // Alert already handled in parent component
         }
-        resetForm();
     };
 
     const filteredPurchases = useMemo(() => {

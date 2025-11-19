@@ -11,7 +11,6 @@ import PrintableBill from './PrintableBill'; // For A4
 import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
 
 interface BillingProps {
   products: Product[];
@@ -893,8 +892,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   // Update Config Helper
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
-         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
-         updateDoc(configRef, newConfig as any);
+         // Firestore v8 syntax
+         db.doc(`users/${auth.currentUser.uid}/systemConfig/config`).update(newConfig as any);
      }
   };
 

@@ -59,48 +59,59 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
                 ]
             };
 
-            await html5QrCode.start(
-                { facingMode: "environment" },
-                config,
-                (decodedText: string) => {
-                    if (isCancelled) return;
+            try {
+                await html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText: string) => {
+                        if (isCancelled) return;
 
-                    const now = Date.now();
-                    // Debounce: ignore duplicate scans within 2.5 seconds
-                    if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 2500) {
-                        return;
-                    }
-                    lastScanRef.current = { text: decodedText, time: now };
-                    
-                    // Feedback: Beep sound
-                    try {
-                        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                        const oscillator = audioCtx.createOscillator();
-                        const gainNode = audioCtx.createGain();
-                        oscillator.connect(gainNode);
-                        gainNode.connect(audioCtx.destination);
-                        oscillator.type = "sine";
-                        oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
-                        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-                        oscillator.start();
-                        oscillator.stop(audioCtx.currentTime + 0.15);
-                    } catch (e) {
-                        // Ignore audio errors
-                    }
+                        const now = Date.now();
+                        // Debounce: ignore duplicate scans within 2.5 seconds
+                        if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 2500) {
+                            return;
+                        }
+                        lastScanRef.current = { text: decodedText, time: now };
+                        
+                        // Feedback: Beep sound
+                        try {
+                            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                            const oscillator = audioCtx.createOscillator();
+                            const gainNode = audioCtx.createGain();
+                            oscillator.connect(gainNode);
+                            gainNode.connect(audioCtx.destination);
+                            oscillator.type = "sine";
+                            oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
+                            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                            oscillator.start();
+                            oscillator.stop(audioCtx.currentTime + 0.15);
+                        } catch (e) {
+                            // Ignore audio errors
+                        }
 
-                    onScanSuccess(decodedText);
-                },
-                () => {} // Ignore errors/failures per frame
-            );
-            
-            if (!isCancelled) {
-                isRunningRef.current = true;
-            } else {
-                if (html5QrCode) html5QrCode.stop().catch(() => {});
+                        onScanSuccess(decodedText);
+                    },
+                    () => {} // Ignore errors/failures per frame
+                );
+                
+                if (!isCancelled) {
+                    isRunningRef.current = true;
+                } else {
+                    // If cancelled during start, ensure we stop
+                    if (html5QrCode) html5QrCode.stop().catch(() => {});
+                }
+            } catch (startErr: any) {
+                if (isCancelled) return;
+                // Swallow specific "interrupted" error caused by quick unmounting
+                if (startErr?.message?.includes('The play() request was interrupted') || startErr?.name === 'AbortError') {
+                    console.debug('Scanner playback interrupted (harmless)');
+                } else {
+                    console.warn("Scanner start error", startErr);
+                }
             }
 
         } catch (err) {
-            console.error("Scanner start error", err);
+            console.error("Scanner setup error", err);
         }
     };
 
@@ -110,7 +121,9 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
         isCancelled = true;
         if (scannerRef.current) {
             if (isRunningRef.current) {
-                scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+                scannerRef.current.stop().then(() => {
+                     try { scannerRef.current.clear(); } catch(e) {}
+                }).catch(() => {});
             } else {
                 try { scannerRef.current.clear(); } catch(e) {}
             }

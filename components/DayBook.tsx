@@ -10,7 +10,6 @@ import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableBill from './PrintableBill';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
 
 // --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
@@ -94,8 +93,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
   
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
-         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
-         updateDoc(configRef, newConfig as any);
+         db.doc(`users/${auth.currentUser.uid}/systemConfig/config`).update(newConfig as any);
      }
   };
 
