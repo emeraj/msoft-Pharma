@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { auth, firebase } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
 import Card from './common/Card';
 import { CloudIcon, DeviceMobileIcon, UserCircleIcon } from './icons/Icons';
 
@@ -20,6 +20,7 @@ const Auth: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   
   // Phone State
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -28,6 +29,7 @@ const Auth: React.FC = () => {
 
   // Common State
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   
   // Refs
@@ -67,6 +69,7 @@ const Auth: React.FC = () => {
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
     setLoading(true);
 
     try {
@@ -81,6 +84,27 @@ const Auth: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  const handlePasswordReset = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!email) {
+          setError("Please enter your email address.");
+          return;
+      }
+      setError('');
+      setSuccessMessage('');
+      setLoading(true);
+      
+      try {
+          await sendPasswordResetEmail(auth, email);
+          setSuccessMessage("Password reset link sent! Check your email inbox.");
+          // Optional: switch back to login after a delay or let user click back
+      } catch (err: any) {
+          handleAuthError(err);
+      } finally {
+          setLoading(false);
+      }
   };
 
   const handleSendOtp = async (e: React.FormEvent) => {
@@ -154,6 +178,9 @@ const Auth: React.FC = () => {
         case 'auth/invalid-email':
             setError('Please enter a valid email address.');
             break;
+        case 'auth/user-not-found':
+            setError('No account found with this email.');
+            break;
         default:
           setError(err.message || 'Failed to authenticate. Please try again.');
       }
@@ -171,92 +198,128 @@ const Auth: React.FC = () => {
         </div>
         
         <Card>
-            {/* Auth Method Toggle - HIDDEN as requested */}
-            {/* 
-            <div className="flex border-b dark:border-slate-700 mb-6">
-                <button 
-                    className={`flex-1 pb-2 text-sm font-medium text-center transition-colors duration-200 ${authMethod === 'email' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                    onClick={() => { setAuthMethod('email'); setError(''); }}
-                >
-                    <UserCircleIcon className="h-5 w-5 inline-block mr-1" /> Email
-                </button>
-                <button 
-                    className={`flex-1 pb-2 text-sm font-medium text-center transition-colors duration-200 ${authMethod === 'phone' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
-                    onClick={() => { setAuthMethod('phone'); setError(''); }}
-                >
-                     <DeviceMobileIcon className="h-5 w-5 inline-block mr-1" /> Phone (OTP)
-                </button>
-            </div>
-            */}
-
             {/* Container for reCAPTCHA - Hidden when authMethod is email */}
             <div id="recaptcha-container" className={`flex justify-center mb-4 min-h-[10px] ${authMethod === 'email' ? 'hidden' : ''}`}></div>
 
             {authMethod === 'email' ? (
-                <form onSubmit={handleEmailAuth} className="space-y-4">
-                    <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200 mb-4">
-                    {isLogin ? 'Email Login' : 'Create Account'}
-                    </h2>
-                    
-                    {!isLogin && (
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                isResettingPassword ? (
+                    <form onSubmit={handlePasswordReset} className="space-y-4">
+                        <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200 mb-4">
+                            Reset Password
+                        </h2>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 text-center mb-4">
+                            Enter your email address and we'll send you a link to reset your password.
+                        </p>
+                        
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                className={formInputStyle}
+                                required
+                                placeholder="name@example.com"
+                            />
+                        </div>
+                        
+                        {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
+                        {successMessage && <p className="text-green-600 text-sm text-center bg-green-50 dark:bg-green-900/20 p-2 rounded">{successMessage}</p>}
+                        
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-colors"
+                        >
+                            {loading ? 'Sending...' : 'Send Reset Link'}
+                        </button>
+                        
+                        <button
+                            type="button"
+                            onClick={() => { setIsResettingPassword(false); setError(''); setSuccessMessage(''); }}
+                            className="w-full text-sm text-center text-slate-600 dark:text-slate-400 hover:text-indigo-600 mt-2"
+                        >
+                            Back to Login
+                        </button>
+                    </form>
+                ) : (
+                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200 mb-4">
+                        {isLogin ? 'Email Login' : 'Create Account'}
+                        </h2>
+                        
+                        {!isLogin && (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                            <input
+                            type="text"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            className={formInputStyle}
+                            required
+                            placeholder="Your Name"
+                            />
+                        </div>
+                        )}
+                        <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
                         <input
-                        type="text"
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        className={formInputStyle}
-                        required
-                        placeholder="Your Name"
-                        />
-                    </div>
-                    )}
-                    <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-                    <input
-                        type="email"
-                        value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        className={formInputStyle}
-                        required
-                        placeholder="name@example.com"
-                        />
-                    </div>
-                    <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
-                    <input
-                        type="password"
-                        value={password}
-                        onChange={e => setPassword(e.target.value)}
-                        className={formInputStyle}
-                        required
-                        placeholder="••••••••"
-                        />
-                    </div>
-                    
-                    {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
-                    
-                    <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-colors"
-                    >
-                    {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
-                    </button>
-                    
-                    <p className="text-sm text-center text-slate-600 dark:text-slate-400">
-                    {isLogin ? "Don't have an account?" : "Already have an account?"}
-                    <button
-                        type="button"
-                        onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                        className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
-                    >
-                        {isLogin ? 'Sign Up' : 'Login'}
-                    </button>
-                    </p>
-                </form>
+                            type="email"
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            className={formInputStyle}
+                            required
+                            placeholder="name@example.com"
+                            />
+                        </div>
+                        <div>
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+                                {isLogin && (
+                                    <button 
+                                        type="button"
+                                        onClick={() => { setIsResettingPassword(true); setError(''); }}
+                                        className="text-xs text-indigo-600 hover:text-indigo-500"
+                                    >
+                                        Forgot Password?
+                                    </button>
+                                )}
+                            </div>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                className={formInputStyle}
+                                required
+                                placeholder="••••••••"
+                                />
+                        </div>
+                        
+                        {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
+                        
+                        <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-colors"
+                        >
+                        {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
+                        </button>
+                        
+                        <p className="text-sm text-center text-slate-600 dark:text-slate-400">
+                        {isLogin ? "Don't have an account?" : "Already have an account?"}
+                        <button
+                            type="button"
+                            onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                            className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
+                        >
+                            {isLogin ? 'Sign Up' : 'Login'}
+                        </button>
+                        </p>
+                    </form>
+                )
             ) : (
                 <div className="space-y-4">
+                    {/* Phone Auth UI (Currently unused but code preserved) */}
                     <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200">
                         {otpSent ? 'Enter Verification Code' : 'Phone Login'}
                     </h2>
