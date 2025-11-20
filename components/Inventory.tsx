@@ -998,7 +998,23 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
           productDetails.unitsPerStrip = units;
         }
     } else {
-        productDetails.barcode = barcode;
+        if (barcode && barcode.trim() !== '') {
+            productDetails.barcode = barcode;
+        } else {
+             // Auto-generate unique barcode if field is empty
+             let maxBarcodeNum = 0;
+             products.forEach(p => {
+                // Check if barcode exists and is purely numeric
+                if (p.barcode && /^\d+$/.test(p.barcode)) {
+                    const barcodeNum = parseInt(p.barcode, 10);
+                    if (barcodeNum > maxBarcodeNum) {
+                        maxBarcodeNum = barcodeNum;
+                    }
+                }
+             });
+             const newBarcodeNum = maxBarcodeNum + 1;
+             productDetails.barcode = String(newBarcodeNum).padStart(6, '0');
+        }
     }
 
     onAddProduct(
