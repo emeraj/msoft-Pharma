@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, Company, Bill, Purchase, SystemConfig, CompanyProfile, GstRate } from '../types';
@@ -999,12 +998,12 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         }
     } else {
         if (barcode && barcode.trim() !== '') {
-            productDetails.barcode = barcode;
+            productDetails.barcode = barcode.trim();
         } else {
              // Auto-generate unique barcode if field is empty
              let maxBarcodeNum = 0;
              products.forEach(p => {
-                // Check if barcode exists and is purely numeric
+                // Strictly numeric check to ensure sequential 000001, 000002 generation
                 if (p.barcode && /^\d+$/.test(p.barcode)) {
                     const barcodeNum = parseInt(p.barcode, 10);
                     if (barcodeNum > maxBarcodeNum) {
