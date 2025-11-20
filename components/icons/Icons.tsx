@@ -145,7 +145,7 @@ export const CameraIcon: React.FC<{ className?: string }> = ({ className }) => (
 export const BluetoothIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 10.5L13.5 7.5L10.5 4.5V19.5L13.5 16.5L10.5 13.5M10.5 13.5L6.75 16.5M10.5 10.5L6.75 7.5" />
-    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 7.5L10.5 10.5L13.5 13.5L10.5 16.5" style={{display: 'none'}}/>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 7.5L10.5 10.5L13.5 13.5L10.5 16.5" style={{display: 'none'}}/> {/* Simplify */}
   </svg>
 );
 
@@ -171,17 +171,5 @@ export const DeviceMobileIcon: React.FC<{ className?: string }> = ({ className }
 export const UsbIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h8v5a2 2 0 01-2 2h-4a2 2 0 01-2-2V7zm0 0V5a2 2 0 012-2h4a2 2 0 012 2v2m-2 12v2m-4-2v2m2-5v3" />
-    </svg>
-);
-
-export const ExpandIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M20 8V4m0 0h-4M4 16v4m0 0h4M20 16v4m0 0h-4" />
-    </svg>
-);
-
-export const CompressIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v5H4M15 3v5h5M9 21v-5H4M15 21v-5h5" />
     </svg>
 );
