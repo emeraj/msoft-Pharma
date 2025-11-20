@@ -1,75 +1,21 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { auth, firebase } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail } from 'firebase/auth';
+import React, { useState } from 'react';
+import { auth } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import Card from './common/Card';
-import { CloudIcon, DeviceMobileIcon, UserCircleIcon } from './icons/Icons';
-
-declare global {
-  interface Window {
-    recaptchaVerifier: any;
-    confirmationResult: any;
-  }
-}
+import { CloudIcon } from './icons/Icons';
 
 const Auth: React.FC = () => {
-  const [authMethod, setAuthMethod] = useState<'email' | 'phone'>('email');
-  
-  // Email State
   const [isLogin, setIsLogin] = useState(true);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
-  
-  // Phone State
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-
-  // Common State
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  // Refs
-  const recaptchaLoaded = useRef(false);
 
-  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
-
-  // Initialize Recaptcha - Single Instance Pattern (Preserved but inactive if phone is hidden)
-  useEffect(() => {
-    if (authMethod === 'phone' && !recaptchaLoaded.current) {
-      const container = document.getElementById('recaptcha-container');
-      if (container) {
-        try {
-            if (window.recaptchaVerifier) {
-                try { window.recaptchaVerifier.clear(); } catch (e) {}
-            }
-            
-            window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-                'size': 'invisible',
-                'callback': () => {
-                    // reCAPTCHA solved
-                },
-                'expired-callback': () => {
-                    // Response expired
-                }
-            });
-            
-            window.recaptchaVerifier.render();
-            recaptchaLoaded.current = true;
-        } catch (e) {
-            console.error("Recaptcha init error:", e);
-        }
-      }
-    }
-  }, [authMethod]);
-
-  const handleEmailAuth = async (e: React.FormEvent) => {
+  const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setSuccessMessage('');
     setLoading(true);
 
     try {
@@ -80,94 +26,10 @@ const Auth: React.FC = () => {
         await updateProfile(userCredential.user, { displayName: name });
       }
     } catch (err: any) {
-      handleAuthError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const handlePasswordReset = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!email) {
-          setError("Please enter your email address.");
-          return;
-      }
-      setError('');
-      setSuccessMessage('');
-      setLoading(true);
-      
-      try {
-          await sendPasswordResetEmail(auth, email);
-          setSuccessMessage("Password reset link sent! Check your email inbox.");
-          // Optional: switch back to login after a delay or let user click back
-      } catch (err: any) {
-          handleAuthError(err);
-      } finally {
-          setLoading(false);
-      }
-  };
-
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    if (phoneNumber.length < 10) {
-        setError("Please enter a valid phone number (e.g., +919999999999)");
-        setLoading(false);
-        return;
-    }
-
-    let formattedNumber = phoneNumber;
-    if (!formattedNumber.startsWith('+')) {
-         formattedNumber = '+91' + formattedNumber; 
-    }
-
-    try {
-      if (!window.recaptchaVerifier) {
-          throw new Error("Security check not ready. Please refresh the page.");
-      }
-
-      const appVerifier = window.recaptchaVerifier;
-      const confirmationResult = await auth.signInWithPhoneNumber(formattedNumber, appVerifier);
-      window.confirmationResult = confirmationResult;
-      setOtpSent(true);
-    } catch (error: any) {
-      console.error("SMS Error:", error);
-      let msg = "Failed to send OTP.";
-      if (error.code === 'auth/argument-error') {
-           msg = "System Error: Security check failed. Please refresh the page.";
-      } else if (error.code === 'auth/invalid-phone-number') {
-          msg = "Invalid Phone Number format.";
-      } else if (error.message) {
-          msg += " " + error.message;
-      }
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      await window.confirmationResult.confirm(otp);
-    } catch (error: any) {
-      console.error("OTP Verify Error:", error);
-      setError("Invalid OTP. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAuthError = (err: any) => {
       const code = err.code;
       switch (code) {
         case 'auth/invalid-credential':
-          setError('Incorrect credentials. Please try again.');
+          setError('Incorrect email or password. Please try again.');
           break;
         case 'auth/email-already-in-use':
           setError('This email is already registered. Please login.');
@@ -178,218 +40,85 @@ const Auth: React.FC = () => {
         case 'auth/invalid-email':
             setError('Please enter a valid email address.');
             break;
-        case 'auth/user-not-found':
-            setError('No account found with this email.');
-            break;
         default:
-          setError(err.message || 'Failed to authenticate. Please try again.');
+          setError('Failed to authenticate. Please try again.');
+          console.error(err);
       }
+    } finally {
+      setLoading(false);
+    }
   };
 
+  const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
+    <div className="flex-grow flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
             <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
                 <CloudIcon className="h-8 w-8 text-indigo-500" />
                 <span>Cloud - Retail</span>
             </h1>
-            <p className="text-slate-600 dark:text-slate-400">Secure Login</p>
+            <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
         </div>
-        
         <Card>
-            {/* Container for reCAPTCHA - Hidden when authMethod is email */}
-            <div id="recaptcha-container" className={`flex justify-center mb-4 min-h-[10px] ${authMethod === 'email' ? 'hidden' : ''}`}></div>
-
-            {authMethod === 'email' ? (
-                isResettingPassword ? (
-                    <form onSubmit={handlePasswordReset} className="space-y-4">
-                        <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200 mb-4">
-                            Reset Password
-                        </h2>
-                        <p className="text-sm text-slate-600 dark:text-slate-400 text-center mb-4">
-                            Enter your email address and we'll send you a link to reset your password.
-                        </p>
-                        
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-                            <input
-                                type="email"
-                                value={email}
-                                onChange={e => setEmail(e.target.value)}
-                                className={formInputStyle}
-                                required
-                                placeholder="name@example.com"
-                            />
-                        </div>
-                        
-                        {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
-                        {successMessage && <p className="text-green-600 text-sm text-center bg-green-50 dark:bg-green-900/20 p-2 rounded">{successMessage}</p>}
-                        
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-colors"
-                        >
-                            {loading ? 'Sending...' : 'Send Reset Link'}
-                        </button>
-                        
-                        <button
-                            type="button"
-                            onClick={() => { setIsResettingPassword(false); setError(''); setSuccessMessage(''); }}
-                            className="w-full text-sm text-center text-slate-600 dark:text-slate-400 hover:text-indigo-600 mt-2"
-                        >
-                            Back to Login
-                        </button>
-                    </form>
-                ) : (
-                    <form onSubmit={handleEmailAuth} className="space-y-4">
-                        <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200 mb-4">
-                        {isLogin ? 'Email Login' : 'Create Account'}
-                        </h2>
-                        
-                        {!isLogin && (
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
-                            <input
-                            type="text"
-                            value={name}
-                            onChange={e => setName(e.target.value)}
-                            className={formInputStyle}
-                            required
-                            placeholder="Your Name"
-                            />
-                        </div>
-                        )}
-                        <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={e => setEmail(e.target.value)}
-                            className={formInputStyle}
-                            required
-                            placeholder="name@example.com"
-                            />
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-center mb-1">
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
-                                {isLogin && (
-                                    <button 
-                                        type="button"
-                                        onClick={() => { setIsResettingPassword(true); setError(''); }}
-                                        className="text-xs text-indigo-600 hover:text-indigo-500"
-                                    >
-                                        Forgot Password?
-                                    </button>
-                                )}
-                            </div>
-                            <input
-                                type="password"
-                                value={password}
-                                onChange={e => setPassword(e.target.value)}
-                                className={formInputStyle}
-                                required
-                                placeholder="••••••••"
-                                />
-                        </div>
-                        
-                        {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
-                        
-                        <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-colors"
-                        >
-                        {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
-                        </button>
-                        
-                        <p className="text-sm text-center text-slate-600 dark:text-slate-400">
-                        {isLogin ? "Don't have an account?" : "Already have an account?"}
-                        <button
-                            type="button"
-                            onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                            className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
-                        >
-                            {isLogin ? 'Sign Up' : 'Login'}
-                        </button>
-                        </p>
-                    </form>
-                )
-            ) : (
-                <div className="space-y-4">
-                    {/* Phone Auth UI (Currently unused but code preserved) */}
-                    <h2 className="text-xl font-semibold text-center text-slate-800 dark:text-slate-200">
-                        {otpSent ? 'Enter Verification Code' : 'Phone Login'}
-                    </h2>
-                    
-                    {!otpSent ? (
-                        <form onSubmit={handleSendOtp} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone Number</label>
-                                <input
-                                    type="tel"
-                                    value={phoneNumber}
-                                    onChange={e => setPhoneNumber(e.target.value)}
-                                    className={formInputStyle}
-                                    placeholder="+91 9876543210"
-                                    required
-                                />
-                                <p className="text-xs text-slate-500 mt-1">Format: +[CountryCode][Number] (e.g., +91...)</p>
-                            </div>
-                            
-                            {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
-                            
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-colors"
-                            >
-                                {loading ? 'Sending OTP...' : 'Send OTP'}
-                            </button>
-                        </form>
-                    ) : (
-                        <form onSubmit={handleVerifyOtp} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">OTP Code</label>
-                                <input
-                                    type="text"
-                                    value={otp}
-                                    onChange={e => setOtp(e.target.value)}
-                                    className={`${formInputStyle} text-center text-lg tracking-widest`}
-                                    placeholder="123456"
-                                    maxLength={6}
-                                    required
-                                />
-                            </div>
-                            
-                            {error && <p className="text-red-500 text-sm text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>}
-                            
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full py-2 px-4 bg-green-600 text-white font-semibold rounded-md shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-green-400 transition-colors"
-                            >
-                                {loading ? 'Verifying...' : 'Verify & Login'}
-                            </button>
-                            
-                            <button
-                                type="button"
-                                onClick={() => { setOtpSent(false); setOtp(''); setError(''); }}
-                                className="w-full text-sm text-indigo-600 hover:text-indigo-500"
-                            >
-                                Change Phone Number
-                            </button>
-                        </form>
-                    )}
-                </div>
+          <form onSubmit={handleAuthAction} className="space-y-4">
+            <h2 className="text-2xl font-semibold text-center text-slate-800 dark:text-slate-200">
+              {isLogin ? 'Login' : 'Sign Up'}
+            </h2>
+            
+            {!isLogin && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  className={formInputStyle}
+                  required
+                />
+              </div>
             )}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className={formInputStyle}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className={formInputStyle}
+                required
+              />
+            </div>
+            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
+            >
+              {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
+            </button>
+            <p className="text-sm text-center text-slate-600 dark:text-slate-400">
+              {isLogin ? "Don't have an account?" : "Already have an account?"}
+              <button
+                type="button"
+                onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
+              >
+                {isLogin ? 'Sign Up' : 'Login'}
+              </button>
+            </p>
+          </form>
         </Card>
-
-        <div className="mt-8 text-center text-xs text-slate-500 dark:text-slate-400">
-            <p>Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="https://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-500 hover:underline">webs.msoftindia.com</a></p>
-        </div>
       </div>
     </div>
   );

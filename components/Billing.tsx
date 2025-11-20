@@ -11,6 +11,7 @@ import PrintableBill from './PrintableBill'; // For A4
 import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
 import PrinterSelectionModal from './PrinterSelectionModal';
 import { db, auth } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface BillingProps {
   products: Product[];
@@ -765,15 +766,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                 characteristic: "00002af1-0000-1000-8000-00805f9b34fb",
                 value: hexString
             });
-        } catch (err: any) {
-             console.error("Capacitor BLE print failed", err);
-             alert("Bluetooth LE print failed: " + err.message);
-        } finally {
+
             if (shouldReset) {
                 doReset();
             }
+            return;
+        } catch (err: any) {
+             console.error("Capacitor BLE print failed", err);
+             alert("Bluetooth LE print failed: " + err.message);
         }
-        return;
     }
 
     // 3. Native Bluetooth Thermal Printer (Capacitor Legacy Serial)
@@ -823,15 +824,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
              const bytes = new Uint8Array(generateEscPosBill(bill, companyProfile, systemConfig));
              // Try to connect and print
              await printViaWebBluetooth(bytes, printer.id);
+             
+             if (shouldReset) {
+                doReset();
+             }
         } catch (e: any) {
              if (e.name !== 'NotFoundError' && !e.message?.includes('cancelled')) {
-                 alert("Printing failed: " + e.message + ". Bill saved successfully.");
+                 alert("Printing failed: " + e.message);
              }
         } finally {
             setIsConnecting(false);
-            if (shouldReset) {
-                doReset();
-            }
         }
         return;
     }
@@ -891,8 +893,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   // Update Config Helper
   const handleUpdateConfig = (newConfig: SystemConfig) => {
      if (auth.currentUser) {
-         // Firestore v8 syntax
-         db.doc(`users/${auth.currentUser.uid}/systemConfig/config`).update(newConfig as any);
+         const configRef = doc(db, `users/${auth.currentUser.uid}/systemConfig`, 'config');
+         updateDoc(configRef, newConfig as any);
      }
   };
 
