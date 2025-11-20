@@ -636,8 +636,6 @@ const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[]
         });
     }, [products, purchases, bills, companyFilter, fromDate, toDate, isPharmaMode]);
     
-    // FIX: Ensure `processedReportData` always returns items with `showProductInfo` to resolve TypeScript error.
-    // When not in pharma mode, `showProductInfo` is not used in the JSX, but adding it makes the type consistent.
     const processedReportData = useMemo(() => {
         if (!isPharmaMode) {
             return reportData.map(item => ({...item, showProductInfo: true}));
@@ -966,7 +964,7 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
     e.preventDefault();
     const { name, company, hsnCode, gst, barcode, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, stock, mrp, purchasePrice } = formState;
     
-    // Duplicate Barcode Check for Retail Mode
+    // Duplicate Barcode Check
     if (!isPharmaMode && barcode && barcode.trim() !== '') {
         const exists = products.some(p => p.barcode === barcode.trim());
         if (exists) {
