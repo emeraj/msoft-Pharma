@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile } from '../types';
 import Modal from './common/Modal';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 
 interface SettingsModalProps {
@@ -19,15 +19,30 @@ interface SettingsModalProps {
   onDeleteGstRate: (id: string, rateValue: number) => void;
 }
 
-type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers';
+type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language';
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
+const languages = [
+    { code: 'en', label: 'English' },
+    { code: 'hi', label: 'Hindi (हिंदी)' },
+    { code: 'mr', label: 'Marathi (मराठी)' },
+    { code: 'gu', label: 'Gujarati (ગુજરાતી)' },
+    { code: 'bn', label: 'Bengali (বাংলা)' },
+    { code: 'ta', label: 'Tamil (தமிழ்)' },
+    { code: 'te', label: 'Telugu (తెలుగు)' },
+    { code: 'kn', label: 'Kannada (ಕನ್ನಡ)' },
+    { code: 'ml', label: 'Malayalam (മലയാളം)' },
+    { code: 'pa', label: 'Punjabi (ਪੰਜਾਬੀ)' },
+    { code: 'or', label: 'Odia (ଓଡ଼ିଆ)' },
+    { code: 'ur', label: 'Urdu (اردو)' },
+];
+
 const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; icon: React.ReactNode; }> = ({ label, isActive, onClick, icon }) => (
     <button
         onClick={onClick}
-        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
+        className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap ${
             isActive
                 ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-slate-700'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/50'
@@ -64,12 +79,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     if (isOpen) {
         setProfile(companyProfile);
         setConfig(systemConfig);
-        setActiveTab('profile'); // Reset to default tab on open
+        if (activeTab !== 'language' && activeTab !== 'printers') {
+             setActiveTab('profile');
+        }
     }
   }, [companyProfile, systemConfig, isOpen]);
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setProfile({ ...profile, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setProfile(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 500 * 1024) { // 500KB limit
+        alert("File size exceeds 500KB. Please choose a smaller image.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfile(prev => ({ ...prev, logo: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removeLogo = () => {
+      // Set to empty string instead of undefined to avoid Firestore errors
+      setProfile(prev => ({ ...prev, logo: '' }));
   };
 
   const handleSaveProfile = () => {
@@ -79,12 +117,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   
   const handleConfigChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setConfig(prev => ({ ...prev, [name]: value }));
+    
+    setConfig(prev => {
+        const newConfig = { ...prev, [name]: value };
+        
+        if (name === 'softwareMode') {
+            if (value === 'Retail') {
+                // Automatically remove 'Get Well Soon.' if it matches default Pharma remark
+                if (newConfig.remarkLine2 === 'Get Well Soon.') {
+                    newConfig.remarkLine2 = '';
+                }
+                // Also handle if it was in remarkLine1 by mistake
+                if (newConfig.remarkLine1 === 'Get Well Soon.') {
+                    newConfig.remarkLine1 = 'Thank you for your visit!';
+                }
+            } else if (value === 'Pharma') {
+                // Restore default if empty
+                if (!newConfig.remarkLine2) {
+                    newConfig.remarkLine2 = 'Get Well Soon.';
+                }
+            }
+        }
+        return newConfig;
+    });
   };
 
   const handleSaveConfig = () => {
     onSystemConfigChange(config);
     onClose();
+  };
+
+  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const newLang = e.target.value;
+      const newConfig = { ...config, language: newLang };
+      setConfig(newConfig);
+      onSystemConfigChange(newConfig); // Auto-save on change
   };
 
   const handleAddPrinter = () => {
@@ -130,6 +197,47 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         case 'profile':
             return (
                 <div className="space-y-4 animate-fade-in">
+                    {/* Shop Logo Upload Section */}
+                    <div className="flex items-center gap-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-dashed border-slate-300 dark:border-slate-600">
+                        <div className="flex-shrink-0">
+                            {profile.logo ? (
+                                <div className="relative group w-24 h-24 bg-white rounded-lg overflow-hidden border dark:border-slate-600 shadow-sm flex items-center justify-center">
+                                    <img src={profile.logo} alt="Logo" className="w-full h-full object-contain" />
+                                    <button
+                                        onClick={removeLogo}
+                                        className="absolute inset-0 bg-black/60 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Remove Logo"
+                                        type="button"
+                                    >
+                                        <TrashIcon className="h-6 w-6" />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 flex flex-col items-center justify-center text-slate-400">
+                                    <UploadIcon className="h-8 w-8 mb-1" />
+                                    <span className="text-xs font-medium">No Logo</span>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex-grow">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Shop Logo</label>
+                            <div className="flex items-center gap-3">
+                                <label className="cursor-pointer px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
+                                    Upload New
+                                    <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
+                                </label>
+                                {profile.logo && (
+                                    <button onClick={removeLogo} type="button" className="px-4 py-2 bg-white dark:bg-slate-700 text-red-600 dark:text-red-400 border border-slate-200 dark:border-slate-600 text-sm font-medium rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                        Remove
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                Recommended size: 500KB max. PNG or JPG format.
+                            </p>
+                        </div>
+                    </div>
+
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Shop Name</label>
                         <input type="text" name="name" value={profile.name || ''} onChange={handleProfileChange} className={formInputStyle} />
@@ -157,7 +265,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <input type="text" name="upiId" value={profile.upiId || ''} onChange={handleProfileChange} className={formInputStyle} placeholder="e.g., yourname@oksbi" />
                     </div>
                      <div className="flex justify-end pt-4">
-                        <button onClick={handleSaveProfile} className="flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all">
+                        <button 
+                            type="button"
+                            onClick={handleSaveProfile} 
+                            className="flex items-center justify-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold rounded-lg shadow-md hover:from-blue-600 hover:to-indigo-700 transition-all"
+                        >
                             <CheckCircleIcon className="h-5 w-5" />
                             Update Profile
                         </button>
@@ -268,6 +380,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                 </div>
             );
+        case 'language':
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <div>
+                        <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Language Selection</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                            Select your preferred language from the dropdown below. The application will update automatically.
+                        </p>
+                        
+                        <div className="max-w-md">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Interface Language</label>
+                            <div className="relative">
+                                <select
+                                    name="language"
+                                    value={config.language || 'en'}
+                                    onChange={handleLanguageChange}
+                                    className={formSelectStyle}
+                                >
+                                    {languages.map(lang => (
+                                        <option key={lang.code} value={lang.code}>{lang.label}</option>
+                                    ))}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700 dark:text-slate-300">
+                                    <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
       case 'gstMaster':
         return (
             <div className="animate-fade-in -m-6 p-0">
@@ -360,8 +502,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings">
       <div>
-        <div className="flex border-b dark:border-slate-700 mb-4 overflow-x-auto">
+        <div className="flex border-b dark:border-slate-700 mb-4 overflow-x-auto pb-1">
             <TabButton label="Shop Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
             <TabButton label="Printers" isActive={activeTab === 'printers'} onClick={() => setActiveTab('printers')} icon={<PrinterIcon className="h-5 w-5" />} />
             <TabButton label="Backup/Restore" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<DownloadIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />

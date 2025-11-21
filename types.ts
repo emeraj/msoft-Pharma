@@ -127,6 +127,7 @@ export interface CompanyProfile {
   email?: string;
   gstin: string;
   upiId?: string;
+  logo?: string;
 }
 
 export interface PrinterProfile {
@@ -144,6 +145,7 @@ export interface SystemConfig {
   remarkLine1?: string;
   remarkLine2?: string;
   printers?: PrinterProfile[];
+  language?: string;
 }
 declare global {
   interface Window {

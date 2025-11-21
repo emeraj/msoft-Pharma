@@ -66,6 +66,7 @@ const App: React.FC = () => {
     invoicePrintingFormat: 'A5',
     remarkLine1: 'Thank you for your visit!',
     remarkLine2: 'Get Well Soon.',
+    language: 'en',
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -132,6 +133,7 @@ const App: React.FC = () => {
         invoicePrintingFormat: 'A5',
         remarkLine1: 'Thank you for your visit!',
         remarkLine2: 'Get Well Soon.',
+        language: 'en',
       });
       setDataLoading(true); // Reset loading state for next login
       setPermissionError(null); // Clear any existing errors
@@ -304,7 +306,8 @@ const App: React.FC = () => {
     if (systemConfig.softwareMode === 'Retail' && (!newProductData.barcode || newProductData.barcode.trim() === '')) {
       let maxBarcodeNum = 0;
       products.forEach(p => {
-        if (p.barcode && !isNaN(parseInt(p.barcode, 10))) {
+        // Only consider numeric barcodes with length < 8 (likely internal) to avoid sequence jumps from commercial barcodes
+        if (p.barcode && /^\d+$/.test(p.barcode) && p.barcode.length < 8) {
           const barcodeNum = parseInt(p.barcode, 10);
           if (barcodeNum > maxBarcodeNum) {
             maxBarcodeNum = barcodeNum;
@@ -427,664 +430,440 @@ const App: React.FC = () => {
             continue;
         }
 
-        const newProductRef = doc(collection(db, `users/${uid}/products`));
-        // Bulk imported products don't have an initial batch. Batches are added via Purchases.
-        batch.set(newProductRef, { ...productData, batches: [] });
-        existingProductKeys.add(key); // prevent duplicates within the same file
-
+        // Add new company if needed
         const companyName = productData.company.trim();
-        // Check against current companies and newly added ones
-        const allCompanyNames = new Set([...companies.map(c => c.name.toLowerCase()), ...Array.from(newCompanyNames).map(n => n.toLowerCase())]);
+        const companyExists = companies.some(c => c.name.toLowerCase() === companyName.toLowerCase());
         
-        if (companyName && !allCompanyNames.has(companyName.toLowerCase())) {
-            newCompanyNames.add(companyName);
+        if (companyName && !companyExists && !newCompanyNames.has(companyName.toLowerCase())) {
+            const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+            batch.set(newCompanyRef, { name: companyName });
+            newCompanyNames.add(companyName.toLowerCase());
         }
+
+        const newProductRef = doc(collection(db, `users/${uid}/products`));
+        
+        batch.set(newProductRef, {
+            ...productData,
+            batches: [] 
+        });
+        existingProductKeys.add(key);
         successCount++;
     }
 
-    newCompanyNames.forEach(name => {
-        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
-        batch.set(newCompanyRef, { name });
-    });
-
-    await batch.commit();
+    if (successCount > 0) {
+        await batch.commit();
+    }
+    
     return { success: successCount, skipped: skippedCount };
   };
 
-  const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>): Promise<Bill | null> => {
-    if (!currentUser) return null;
-    const uid = currentUser.uid;
+  if (authLoading) {
+    return <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-400">Loading...</div>;
+  }
 
-    const billsCollectionRef = collection(db, `users/${uid}/bills`);
+  if (!currentUser) {
+    return <Auth />;
+  }
 
-    // Fetch all bills directly from Firestore to find the max number, avoiding stale state.
-    const allBillsSnapshot = await getDocs(billsCollectionRef);
-    let maxBillNum = 0;
-    allBillsSnapshot.forEach(doc => {
-      const bill = doc.data() as any;
-      if (bill.billNumber && typeof bill.billNumber === 'string') {
-        const num = parseInt(bill.billNumber.replace(/\D/g, ''), 10);
-        if (!isNaN(num) && num > maxBillNum) {
-          maxBillNum = num;
-        }
-      }
-    });
-    const newBillNumber = `B${(maxBillNum + 1).toString().padStart(4, '0')}`;
-
-    const batch = writeBatch(db);
-
-    const newBillRef = doc(billsCollectionRef);
-    const newBill: Omit<Bill, 'id'> = { ...billData, billNumber: newBillNumber };
-    batch.set(newBillRef, newBill);
-
-    for (const item of billData.items) {
-      const product = products.find(p => p.id === item.productId);
-      if (product) {
-        const newBatches = product.batches.map(b =>
-          b.id === item.batchId ? { ...b, stock: b.stock - item.quantity } : b
-        );
-        const productRef = doc(db, `users/${uid}/products`, product.id);
-        batch.update(productRef, { batches: newBatches });
-      }
-    }
-
-    try {
-      await batch.commit();
-      return { ...newBill, id: newBillRef.id };
-    } catch (error) {
-      console.error("Failed to generate bill: ", error);
-      return null;
-    }
-  };
-
-  const handleUpdateBill = async (billId: string, updatedBillData: Omit<Bill, 'id'>, originalBill: Bill): Promise<Bill | null> => {
-    if (!currentUser) return null;
-    const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
-
-    const stockChanges = new Map<string, { productId: string, change: number }>();
-
-    const addChange = (item: CartItem, sign: 1 | -1) => {
-        const existing = stockChanges.get(item.batchId) || { productId: item.productId, change: 0 };
-        existing.change += item.quantity * sign;
-        stockChanges.set(item.batchId, existing);
-    };
-
-    originalBill.items.forEach(item => addChange(item, 1));
-    updatedBillData.items.forEach(item => addChange(item, -1));
-
-    for (const [batchId, { productId, change }] of stockChanges.entries()) {
-        if (change === 0) continue;
-
-        const product = products.find(p => p.id === productId);
-        if (!product) {
-            console.error(`Product ${productId} not found during bill update.`);
-            alert(`Error: Product with ID ${productId} not found. Could not update bill.`);
-            return null;
-        }
-
-        const newBatches = product.batches.map(b => 
-            b.id === batchId ? { ...b, stock: b.stock + change } : b
-        );
-        
-        if (newBatches.some(b => b.stock < 0)) {
-            alert("Error: Updating this bill would result in negative stock. Please check quantities.");
-            return null;
-        }
-        
-        const productRef = doc(db, `users/${uid}/products`, productId);
-        fbBatch.update(productRef, { batches: newBatches });
-    }
-
-    const billRef = doc(db, `users/${uid}/bills`, billId);
-    fbBatch.update(billRef, updatedBillData);
-
-    try {
-        await fbBatch.commit();
-        alert(`Bill ${originalBill.billNumber} has been updated successfully!`);
-        return { ...updatedBillData, id: billId };
-    } catch (error) {
-        console.error("Failed to update bill:", error);
-        alert("An error occurred while updating the bill.");
-        return null;
-    }
-  };
-  
-  const handleUpdateBillDetails = async (billId: string, updates: Partial<Pick<Bill, 'customerName' | 'doctorName'>>) => {
-    if (!currentUser) return;
-    const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
-    try {
-        await updateDoc(billRef, updates);
-        alert('Bill details updated successfully.');
-    } catch (error) {
-        console.error("Error updating bill details:", error);
-        alert("Failed to update bill details.");
-    }
-  };
-
-  const handleDeleteBill = async (bill: Bill) => {
-    if (!currentUser) return;
-
-    const confirm1 = window.confirm(`Are you sure you want to delete Bill #${bill.billNumber}? This action cannot be undone and will add the sold items back to your inventory.`);
-    if (!confirm1) return;
-    
-    const confirm2 = window.confirm(`FINAL CONFIRMATION: Permanently delete Bill #${bill.billNumber}?`);
-    if (!confirm2) return;
-
-    const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
-
-    for (const item of bill.items) {
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-            const newBatches = product.batches.map(b =>
-                b.id === item.batchId ? { ...b, stock: b.stock + item.quantity } : b
-            );
-            const productRef = doc(db, `users/${uid}/products`, product.id);
-            fbBatch.update(productRef, { batches: newBatches });
-        } else {
-            console.warn(`Product ${item.productId} not found while deleting bill. Stock not reverted for this item.`);
-        }
-    }
-
-    const billRef = doc(db, `users/${uid}/bills`, bill.id);
-    fbBatch.delete(billRef);
-
-    try {
-        await fbBatch.commit();
-        alert(`Bill ${bill.billNumber} deleted successfully and stock has been reverted.`);
-    } catch (error) {
-        console.error("Failed to delete bill:", error);
-        alert("An error occurred while deleting the bill.");
-    }
-  };
-
-  const handleEditBill = (bill: Bill) => {
-    setEditingBill(bill);
-    navigateTo('billing');
-  };
-
-  const handleCancelEdit = () => {
-    setEditingBill(null);
-    navigateTo('daybook');
-  };
-
-  const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>): Promise<Supplier | null> => {
-    if (!currentUser) return null;
-    const uid = currentUser.uid;
-    const suppliersCollectionRef = collection(db, `users/${uid}/suppliers`);
-    const docRef = await addDoc(suppliersCollectionRef, supplierData);
-    return { ...supplierData, id: docRef.id };
-  };
-
-  const handleUpdateSupplier = async (supplierId: string, supplierData: Omit<Supplier, 'id'>) => {
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    const supplierRef = doc(db, `users/${uid}/suppliers`, supplierId);
-    try {
-        await updateDoc(supplierRef, supplierData);
-        alert('Supplier updated successfully.');
-    } catch (error) {
-        console.error("Error updating supplier:", error);
-        alert('Failed to update supplier.');
-    }
-  };
-
-  const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount' | 'items'> & { items: PurchaseLineItem[] }) => {
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
-    const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
-    const newCompanies = new Set<string>();
-    purchaseData.items.forEach(item => {
-        if (item.isNewProduct) {
-            const companyName = item.company.trim();
-            if (companyName && !companies.some(c => c.name.toLowerCase() === companyName.toLowerCase())) {
-                newCompanies.add(companyName);
-            }
-        }
-    });
-
-    for (const companyName of newCompanies) {
-        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
-        fbBatch.set(newCompanyRef, { name: companyName });
-    }
-
-    const itemsWithIds: PurchaseLineItem[] = [];
-
-    for (const item of purchaseData.items) {
-        let finalItem = { ...item };
-        const unitsPerStrip = item.unitsPerStrip || 1;
-        const totalUnitsToAdd = item.quantity * unitsPerStrip;
-
-        if (item.isNewProduct) {
-            const newBatchId = `batch_${uniqueIdSuffix()}`;
-            const newBatchData = {
-                id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
-            };
-
-            // Barcode logic: Auto-generate if empty in Retail mode
-            let barcode = item.barcode;
-            if (systemConfig.softwareMode === 'Retail' && (!barcode || barcode.trim() === '')) {
-                 let maxBarcodeNum = 0;
-                 products.forEach(p => {
-                    if (p.barcode && !isNaN(parseInt(p.barcode, 10))) {
-                      const barcodeNum = parseInt(p.barcode, 10);
-                      if (barcodeNum > maxBarcodeNum) maxBarcodeNum = barcodeNum;
-                    }
-                  });
-                  barcode = String(maxBarcodeNum + 1).padStart(6, '0');
-            }
-
-            const newProductRef = doc(collection(db, `users/${uid}/products`));
-            fbBatch.set(newProductRef, {
-                name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
-                composition: item.composition, unitsPerStrip: item.unitsPerStrip,
-                isScheduleH: item.isScheduleH,
-                batches: [newBatchData],
-                barcode: barcode || null
-            });
-            finalItem.productId = newProductRef.id;
-            finalItem.batchId = newBatchId;
-            finalItem.isNewProduct = false;
-        } else if (item.productId) {
-            const product = products.find(p => p.id === item.productId);
-            if (!product) {
-                console.error("Product not found for purchase item", item);
-                continue;
-            }
-
-            const existingBatch = product.batches.find(b => b.batchNumber === item.batchNumber);
-            const productRef = doc(db, `users/${uid}/products`, item.productId);
-
-            if (existingBatch) {
-                // Batch found! Update stock and other details.
-                const updatedBatches = product.batches.map(b => 
-                    b.id === existingBatch.id 
-                    ? { 
-                        ...b, 
-                        stock: b.stock + totalUnitsToAdd,
-                        mrp: item.mrp,
-                        purchasePrice: item.purchasePrice,
-                        expiryDate: item.expiryDate
-                      } 
-                    : b
-                );
-                fbBatch.update(productRef, { batches: updatedBatches });
-                finalItem.batchId = existingBatch.id; // Link purchase to the existing batch
-            } else {
-                // Batch not found. Create a new one for this product.
-                const newBatchId = `batch_${uniqueIdSuffix()}`;
-                const newBatchData = {
-                    id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                    stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
-                };
-                fbBatch.update(productRef, { batches: arrayUnion(newBatchData) });
-                finalItem.batchId = newBatchId; // Link purchase to the new batch
-            }
-        }
-        itemsWithIds.push(finalItem);
-    }
-    
-    const totalAmount = purchaseData.items.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
-    const newPurchaseRef = doc(collection(db, `users/${uid}/purchases`));
-    fbBatch.set(newPurchaseRef, { ...purchaseData, totalAmount, items: itemsWithIds });
-    await fbBatch.commit();
-  };
-
-  const handleUpdatePurchase = async (
-    purchaseId: string,
-    updatedPurchaseData: Omit<Purchase, 'id'>,
-    originalPurchase: Purchase
-  ) => {
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
-    const uniqueIdSuffix = () => `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-    // Use a map to hold the next state of products being modified.
-    const productsToUpdate = new Map<string, Product>();
-
-    const getMutableProduct = (productId: string): Product | null => {
-        if (productsToUpdate.has(productId)) {
-            return productsToUpdate.get(productId)!;
-        }
-        const p = products.find(prod => prod.id === productId);
-        if (p) {
-            const pCopy = JSON.parse(JSON.stringify(p)); // Deep copy to avoid mutating state
-            productsToUpdate.set(productId, pCopy);
-            return pCopy;
-        }
-        return null;
-    };
-
-    // 1. REVERT STAGE: Simulate subtracting quantities from original purchase.
-    for (const item of originalPurchase.items) {
-        if (!item.productId || !item.batchId) continue;
-        const product = getMutableProduct(item.productId);
-        if (!product) continue;
-        
-        const batchIndex = product.batches.findIndex(b => b.id === item.batchId);
-        if (batchIndex > -1) {
-            const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
-            const totalUnitsToRevert = item.quantity * unitsPerStrip;
-            product.batches[batchIndex].stock -= totalUnitsToRevert;
-        }
-    }
-
-    // 2. APPLY STAGE: Simulate adding/updating quantities from new purchase data.
-    const updatedItemsWithIds: PurchaseLineItem[] = [];
-    for (const item of updatedPurchaseData.items) {
-        let finalItem = { ...item };
-        
-        if (item.isNewProduct) {
-            const newBatchId = `batch_${uniqueIdSuffix()}`;
-            const totalUnitsToAdd = item.quantity * (item.unitsPerStrip || 1);
-
-             // Barcode logic: Auto-generate if empty in Retail mode
-            let barcode = item.barcode;
-            if (systemConfig.softwareMode === 'Retail' && (!barcode || barcode.trim() === '')) {
-                 let maxBarcodeNum = 0;
-                 products.forEach(p => {
-                    if (p.barcode && !isNaN(parseInt(p.barcode, 10))) {
-                      const barcodeNum = parseInt(p.barcode, 10);
-                      if (barcodeNum > maxBarcodeNum) maxBarcodeNum = barcodeNum;
-                    }
-                  });
-                  barcode = String(maxBarcodeNum + 1).padStart(6, '0');
-            }
-
-            const newProductRef = doc(collection(db, `users/${uid}/products`));
-            fbBatch.set(newProductRef, {
-                name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst,
-                composition: item.composition, unitsPerStrip: item.unitsPerStrip,
-                isScheduleH: item.isScheduleH,
-                batches: [{
-                    id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                    stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
-                }],
-                barcode: barcode || null
-            });
-            finalItem.productId = newProductRef.id;
-            finalItem.batchId = newBatchId;
-            finalItem.isNewProduct = false;
-        } else if (item.productId) {
-            const product = getMutableProduct(item.productId);
-            if (!product) continue;
-            
-            const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
-            const totalUnitsToAdd = item.quantity * unitsPerStrip;
-
-            const batchIndex = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
-
-            if (batchIndex > -1) { // Batch found, update it.
-                product.batches[batchIndex].stock += totalUnitsToAdd;
-                product.batches[batchIndex].mrp = item.mrp;
-                product.batches[batchIndex].purchasePrice = item.purchasePrice;
-                product.batches[batchIndex].expiryDate = item.expiryDate;
-                finalItem.batchId = product.batches[batchIndex].id;
-            } else { // Batch not found, create it.
-                const newBatchId = `batch_${uniqueIdSuffix()}`;
-                product.batches.push({
-                    id: newBatchId, batchNumber: item.batchNumber, expiryDate: item.expiryDate,
-                    stock: totalUnitsToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice,
-                });
-                finalItem.batchId = newBatchId;
-            }
-        }
-        updatedItemsWithIds.push(finalItem);
-    }
-    
-    // 3. COMMIT STAGE: Write all calculated changes to the batch.
-    for (const [productId, product] of productsToUpdate.entries()) {
-        const productRef = doc(db, `users/${uid}/products`, productId);
-        // Prevent negative stock, just in case.
-        product.batches.forEach(b => { if (b.stock < 0) b.stock = 0; });
-        fbBatch.update(productRef, { batches: product.batches });
-    }
-    
-    const purchaseRef = doc(db, `users/${uid}/purchases`, purchaseId);
-    fbBatch.update(purchaseRef, {...updatedPurchaseData, items: updatedItemsWithIds});
-    
-    try {
-      await fbBatch.commit();
-      alert("Purchase updated successfully and stock adjusted.");
-    } catch(error) {
-      console.error("Error updating purchase:", error);
-      alert("Failed to update purchase. Check console for details.");
-    }
-  };
-
-  const handleDeletePurchase = async (purchase: Purchase) => {
-    if (!currentUser || !purchase.id) return;
-
-    const confirm1 = window.confirm(`Are you sure you want to delete Invoice #${purchase.invoiceNumber}? This action cannot be undone and will subtract the purchased items from your inventory.`);
-    if (!confirm1) return;
-
-    const confirm2 = window.confirm(`FINAL CONFIRMATION: Permanently delete Invoice #${purchase.invoiceNumber}?`);
-    if (!confirm2) return;
-
-    const uid = currentUser.uid;
-    const fbBatch = writeBatch(db);
-
-    for (const item of purchase.items) {
-        if (!item.productId || !item.batchId) {
-            console.warn("Cannot revert stock for purchase item without productId or batchId", item);
-            continue;
-        }
-
-        const product = products.find(p => p.id === item.productId);
-        if (!product) {
-            console.warn(`Product with ID ${item.productId} not found while deleting purchase.`);
-            continue;
-        }
-        
-        const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
-        const totalUnitsToRevert = item.quantity * unitsPerStrip;
-
-        // Find the batch and subtract the quantity
-        const updatedBatches = product.batches.map(b => {
-            if (b.id === item.batchId) {
-                const newStock = b.stock - totalUnitsToRevert;
-                return { ...b, stock: newStock < 0 ? 0 : newStock }; // Prevent negative stock
-            }
-            return b;
-        });
-
-        const productRef = doc(db, `users/${uid}/products`, product.id);
-        fbBatch.update(productRef, { batches: updatedBatches });
-    }
-    
-    const purchaseRef = doc(db, `users/${uid}/purchases`, purchase.id);
-    fbBatch.delete(purchaseRef);
-
-    try {
-      await fbBatch.commit();
-      alert("Purchase deleted successfully and stock adjusted.");
-    } catch(error) {
-      console.error("Error deleting purchase:", error);
-      alert("Failed to delete purchase. Check console for details.");
-    }
-  };
-
-  const handleAddPayment = async (paymentData: Omit<Payment, 'id' | 'voucherNumber'>): Promise<Payment | null> => {
-    if (!currentUser) return null;
-    const uid = currentUser.uid;
-    const paymentsCollectionRef = collection(db, `users/${uid}/payments`);
-    
-    const count = payments.length;
-    const voucherPrefix = 'PV-';
-    const newVoucherNumber = `${voucherPrefix}${(count + 1).toString().padStart(4, '0')}`;
-    
-    const newPaymentData = { ...paymentData, voucherNumber: newVoucherNumber };
-    const docRef = await addDoc(paymentsCollectionRef, newPaymentData);
-    return { ...newPaymentData, id: docRef.id };
-  };
-
-  const handleUpdatePayment = async (paymentId: string, paymentData: Omit<Payment, 'id'>) => {
-    if (!currentUser) return;
-    const uid = currentUser.uid;
-    const paymentRef = doc(db, `users/${uid}/payments`, paymentId);
-    try {
-        await updateDoc(paymentRef, paymentData);
-    } catch(err) {
-        console.error("Failed to update payment", err);
-        alert("Error: Could not update the payment record.");
-    }
-  };
-
-  const handleDeletePayment = async (paymentId: string) => {
-    if (!currentUser || !paymentId) return;
-    if (window.confirm('Are you sure you want to delete this payment record? This action cannot be undone.')) {
-        try {
-            const uid = currentUser.uid;
-            const paymentRef = doc(db, `users/${uid}/payments`, paymentId);
-            await deleteDoc(paymentRef);
-        } catch(err) {
-            console.error("Failed to delete payment", err);
-            alert("Error: Could not delete the payment record.");
-        }
-    }
-  };
-
-  const handleAddGstRate = async (rate: number) => {
-    if (!currentUser) return;
-    if (gstRates.some(r => r.rate === rate)) {
-      alert(`GST rate ${rate}% already exists.`);
-      return;
-    }
-    const ratesCollectionRef = collection(db, `users/${currentUser.uid}/gstRates`);
-    await addDoc(ratesCollectionRef, { rate });
-  };
-
-  const handleUpdateGstRate = async (rateId: string, newRate: number) => {
-    if (!currentUser) return;
-    if (gstRates.some(r => r.id !== rateId && r.rate === newRate)) {
-      alert(`GST rate ${newRate}% already exists.`);
-      return;
-    }
-    const rateRef = doc(db, `users/${currentUser.uid}/gstRates`, rateId);
-    await updateDoc(rateRef, { rate: newRate });
-  };
-
-  const handleDeleteGstRate = async (rateId: string, rateValue: number) => {
-    if (!currentUser) return;
-    const isGstRateInUse = products.some(p => p.gst === rateValue);
-    if (isGstRateInUse) {
-      alert(`Cannot delete GST rate ${rateValue}%. It is currently assigned to one or more products. Please update those products first.`);
-      return;
-    }
-    if (window.confirm(`Are you sure you want to delete the GST rate ${rateValue}%? This action cannot be undone.`)) {
-      const rateRef = doc(db, `users/${currentUser.uid}/gstRates`, rateId);
-      await deleteDoc(rateRef);
-    }
-  };
-
-  const handleBackupData = () => {
-    if (!currentUser) {
-      alert("You must be logged in to back up data.");
-      return;
-    }
-
-    const backupData = {
-      schemaVersion: '1.0',
-      exportDate: new Date().toISOString(),
-      user: {
-        uid: currentUser.uid,
-        email: currentUser.email,
-        displayName: currentUser.displayName,
-      },
-      data: {
-        companyProfile,
-        products,
-        bills,
-        purchases,
-        companies,
-        suppliers,
-        payments,
-      }
-    };
-
-    const jsonString = JSON.stringify(backupData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    const date = new Date().toISOString().split('T')[0];
-    link.download = `pharma_retail_backup_${date}.json`;
-    
-    document.body.appendChild(link);
-    link.click();
-    
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    alert('Backup download has started!');
-  };
-
-  const renderView = () => {
-    if (authLoading || (currentUser && dataLoading)) {
-      return <div className="flex-grow flex justify-center items-center h-full text-xl text-slate-600 dark:text-slate-400">Loading...</div>;
-    }
-    if (!currentUser) {
-        return <Auth />;
-    }
-    if (permissionError) {
-        return <PermissionErrorComponent />;
-    }
-    switch (activeView) {
-      case 'dashboard': return <SalesDashboard bills={bills} products={products} />;
-      case 'billing': return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig} editingBill={editingBill} onUpdateBill={handleUpdateBill} onCancelEdit={handleCancelEdit}/>;
-      case 'purchases': return <Purchases products={products} purchases={purchases} onAddPurchase={handleAddPurchase} onUpdatePurchase={handleUpdatePurchase} onDeletePurchase={handleDeletePurchase} companies={companies} suppliers={suppliers} onAddSupplier={handleAddSupplier} systemConfig={systemConfig} gstRates={gstRates} />;
-      case 'paymentEntry': return <PaymentEntry suppliers={suppliers} payments={payments} onAddPayment={handleAddPayment} onUpdatePayment={handleUpdatePayment} onDeletePayment={handleDeletePayment} companyProfile={companyProfile} />;
-      case 'inventory': return <Inventory products={products} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onAddBatch={handleAddBatch} onDeleteBatch={handleDeleteBatch} onDeleteProduct={handleDeleteProduct} companies={companies} purchases={purchases} bills={bills} onBulkAddProducts={handleBulkAddProducts} systemConfig={systemConfig} companyProfile={companyProfile} gstRates={gstRates} />;
-      case 'daybook': return <DayBook bills={bills} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} companyProfile={companyProfile} onUpdateBillDetails={handleUpdateBillDetails} systemConfig={systemConfig} />;
-      case 'suppliersLedger': return <SuppliersLedger suppliers={suppliers} purchases={purchases} payments={payments} companyProfile={companyProfile} onUpdateSupplier={handleUpdateSupplier} />;
-      case 'salesReport': return <SalesReport bills={bills} />;
-      case 'companyWiseSale': return <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />;
-      case 'companyWiseBillWiseProfit': return <CompanyWiseBillWiseProfit bills={bills} products={products} />;
-      default: return <Billing products={products} bills={bills} onGenerateBill={handleGenerateBill} companyProfile={companyProfile} systemConfig={systemConfig}/>;
-    }
-  };
+  if (permissionError) {
+    return <PermissionErrorComponent />;
+  }
 
   return (
-    <div className={`flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900`}>
-      {currentUser && (
-        <Header 
-          user={currentUser}
-          onLogout={handleLogout}
-          activeView={activeView} 
-          setActiveView={navigateTo} 
-          onOpenSettings={() => setSettingsModalOpen(true)} 
-          systemConfig={systemConfig}
-        />
-      )}
-      <main className="flex-grow flex flex-col">
-        {renderView()}
+    <div className={`min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200 font-sans flex flex-col`}>
+      <Header 
+        activeView={activeView} 
+        setActiveView={navigateTo} 
+        onOpenSettings={() => setSettingsModalOpen(true)} 
+        user={currentUser}
+        onLogout={handleLogout}
+        systemConfig={systemConfig}
+      />
+      
+      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 flex-grow w-full">
+        {dataLoading ? (
+           <div className="flex justify-center py-20">
+               <div className="animate-spin rounded-full h-12 w-12 border-b-4 border-indigo-600"></div>
+           </div>
+        ) : (
+          <>
+            {activeView === 'dashboard' && <SalesDashboard bills={bills} products={products} systemConfig={systemConfig} />}
+            
+            {activeView === 'billing' && (
+              <Billing 
+                products={products} 
+                bills={bills}
+                companyProfile={companyProfile}
+                systemConfig={systemConfig}
+                onGenerateBill={async (billData) => {
+                    if (!currentUser) return null;
+                    try {
+                        const billRef = doc(collection(db, `users/${currentUser.uid}/bills`));
+                        let maxBillNum = 0;
+                        bills.forEach(b => {
+                            const num = parseInt(b.billNumber.replace(/\D/g, ''));
+                            if (!isNaN(num) && num > maxBillNum) maxBillNum = num;
+                        });
+                        const nextBillNum = maxBillNum + 1;
+                        const billNumber = `B${String(nextBillNum).padStart(4, '0')}`;
+
+                        const newBill = { ...billData, billNumber, id: billRef.id };
+                        
+                        const batch = writeBatch(db);
+                        batch.set(billRef, newBill);
+
+                        for (const item of billData.items) {
+                            const productRef = doc(db, `users/${currentUser.uid}/products`, item.productId);
+                            const product = products.find(p => p.id === item.productId);
+                            if (product) {
+                                const updatedBatches = product.batches.map(b => {
+                                    if (b.id === item.batchId) {
+                                        return { ...b, stock: b.stock - item.quantity };
+                                    }
+                                    return b;
+                                });
+                                batch.update(productRef, { batches: updatedBatches });
+                            }
+                        }
+                        
+                        await batch.commit();
+                        return newBill as Bill;
+                    } catch (e) {
+                        console.error("Error saving bill", e);
+                        return null;
+                    }
+                }}
+                editingBill={editingBill}
+                onUpdateBill={async (billId, billData, originalBill) => {
+                    if (!currentUser) return null;
+                    try {
+                        const batch = writeBatch(db);
+                        const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
+                        
+                        const stockChanges = new Map<string, number>();
+                        
+                        originalBill.items.forEach(item => {
+                            const current = stockChanges.get(item.batchId) || 0;
+                            stockChanges.set(item.batchId, current + item.quantity);
+                        });
+                        
+                        billData.items.forEach(item => {
+                            const current = stockChanges.get(item.batchId) || 0;
+                            stockChanges.set(item.batchId, current - item.quantity);
+                        });
+                        
+                        const productChanges = new Map<string, Map<string, number>>();
+                        stockChanges.forEach((change, batchId) => {
+                            if (change === 0) return;
+                            const product = products.find(p => p.batches.some(b => b.id === batchId));
+                            if (product) {
+                                if (!productChanges.has(product.id)) {
+                                    productChanges.set(product.id, new Map());
+                                }
+                                productChanges.get(product.id)!.set(batchId, change);
+                            }
+                        });
+                        
+                        productChanges.forEach((batchMap, productId) => {
+                            const product = products.find(p => p.id === productId);
+                            if (product) {
+                                const updatedBatches = product.batches.map(b => {
+                                    const change = batchMap.get(b.id);
+                                    if (change !== undefined) {
+                                        return { ...b, stock: b.stock + change };
+                                    }
+                                    return b;
+                                });
+                                const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+                                batch.update(productRef, { batches: updatedBatches });
+                            }
+                        });
+
+                        batch.update(billRef, billData);
+                        await batch.commit();
+                        return { ...billData, id: billId } as Bill;
+                    } catch (e) {
+                        console.error("Error updating bill", e);
+                        return null;
+                    }
+                }}
+                onCancelEdit={() => {
+                    setEditingBill(null);
+                    navigateTo('daybook');
+                }}
+              />
+            )}
+            
+            {activeView === 'inventory' && (
+              <Inventory 
+                products={products}
+                companies={companies}
+                bills={bills}
+                purchases={purchases}
+                systemConfig={systemConfig}
+                companyProfile={companyProfile}
+                gstRates={gstRates}
+                onAddProduct={handleAddProduct}
+                onUpdateProduct={handleUpdateProduct}
+                onAddBatch={handleAddBatch}
+                onDeleteBatch={handleDeleteBatch}
+                onDeleteProduct={handleDeleteProduct}
+                onBulkAddProducts={handleBulkAddProducts}
+              />
+            )}
+            
+            {activeView === 'purchases' && (
+              <Purchases 
+                products={products}
+                purchases={purchases}
+                companies={companies}
+                suppliers={suppliers}
+                systemConfig={systemConfig}
+                gstRates={gstRates}
+                onAddPurchase={async (purchaseData) => {
+                    if (!currentUser) return;
+                    const batch = writeBatch(db);
+                    const purchaseRef = doc(collection(db, `users/${currentUser.uid}/purchases`));
+                    
+                    batch.set(purchaseRef, purchaseData);
+                    
+                    for (const item of purchaseData.items) {
+                        if (item.isNewProduct) {
+                            let productId = item.productId;
+                            
+                            if (!productId) {
+                                const newProductRef = doc(collection(db, `users/${currentUser.uid}/products`));
+                                productId = newProductRef.id;
+                                const newProduct: any = {
+                                    name: item.productName,
+                                    company: item.company,
+                                    hsnCode: item.hsnCode,
+                                    gst: item.gst,
+                                    batches: []
+                                };
+                                if(item.barcode) newProduct.barcode = item.barcode;
+                                if(item.composition) newProduct.composition = item.composition;
+                                if(item.unitsPerStrip) newProduct.unitsPerStrip = item.unitsPerStrip;
+                                if(item.isScheduleH) newProduct.isScheduleH = item.isScheduleH;
+                                
+                                batch.set(newProductRef, newProduct);
+                                
+                                const companyExists = companies.some(c => c.name.toLowerCase() === item.company.toLowerCase());
+                                if (!companyExists) {
+                                     const newCompanyRef = doc(collection(db, `users/${currentUser.uid}/companies`));
+                                     batch.set(newCompanyRef, { name: item.company });
+                                }
+                            }
+                            
+                            const newBatch: Batch = {
+                                id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                batchNumber: item.batchNumber,
+                                expiryDate: item.expiryDate,
+                                stock: item.quantity * (item.unitsPerStrip || 1),
+                                mrp: item.mrp,
+                                purchasePrice: item.purchasePrice
+                            };
+                            
+                            const productRef = doc(db, `users/${currentUser.uid}/products`, productId!);
+                            if (item.productId) {
+                                batch.update(productRef, { batches: arrayUnion(newBatch) });
+                            }
+                        } else {
+                             if (item.productId) {
+                                const newBatch: Batch = {
+                                    id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                                    batchNumber: item.batchNumber,
+                                    expiryDate: item.expiryDate,
+                                    stock: item.quantity * (item.unitsPerStrip || (products.find(p=>p.id===item.productId)?.unitsPerStrip) || 1),
+                                    mrp: item.mrp,
+                                    purchasePrice: item.purchasePrice
+                                };
+                                const productRef = doc(db, `users/${currentUser.uid}/products`, item.productId);
+                                batch.update(productRef, { batches: arrayUnion(newBatch) });
+                             }
+                        }
+                    }
+                    
+                    await batch.commit();
+                }}
+                onUpdatePurchase={async (id, data, originalPurchase) => {
+                    if (!currentUser) return;
+                    const purchaseRef = doc(db, `users/${currentUser.uid}/purchases`, id);
+                    await updateDoc(purchaseRef, data);
+                }}
+                onDeletePurchase={async (purchase) => {
+                    if (!currentUser) return;
+                    if (!window.confirm("Delete this purchase record? Stock will NOT be automatically reverted.")) return;
+                    const purchaseRef = doc(db, `users/${currentUser.uid}/purchases`, purchase.id);
+                    await deleteDoc(purchaseRef);
+                }}
+                onAddSupplier={async (supplierData) => {
+                    if (!currentUser) return null;
+                    try {
+                        const docRef = await addDoc(collection(db, `users/${currentUser.uid}/suppliers`), supplierData);
+                        return { id: docRef.id, ...supplierData } as Supplier;
+                    } catch (e) {
+                        console.error("Error adding supplier", e);
+                        return null;
+                    }
+                }}
+              />
+            )}
+            
+            {activeView === 'paymentEntry' && (
+              <PaymentEntry 
+                suppliers={suppliers}
+                payments={payments}
+                companyProfile={companyProfile}
+                onAddPayment={async (paymentData) => {
+                    if (!currentUser) return null;
+                    try {
+                        const voucherNumber = `PV-${Date.now().toString().slice(-6)}`;
+                        const newPayment = { ...paymentData, voucherNumber };
+                        const docRef = await addDoc(collection(db, `users/${currentUser.uid}/payments`), newPayment);
+                        return { id: docRef.id, ...newPayment } as Payment;
+                    } catch (e) {
+                        console.error("Error adding payment", e);
+                        return null;
+                    }
+                }}
+                onUpdatePayment={async (id, data) => {
+                    if (!currentUser) return;
+                    const ref = doc(db, `users/${currentUser.uid}/payments`, id);
+                    await updateDoc(ref, data);
+                }}
+                onDeletePayment={async (id) => {
+                    if (!currentUser) return;
+                    if (!window.confirm("Delete this payment record?")) return;
+                    const ref = doc(db, `users/${currentUser.uid}/payments`, id);
+                    await deleteDoc(ref);
+                }}
+              />
+            )}
+
+            {activeView === 'daybook' && (
+              <DayBook 
+                bills={bills} 
+                companyProfile={companyProfile}
+                systemConfig={systemConfig}
+                onDeleteBill={async (bill) => {
+                    if (!currentUser) return;
+                    if (!window.confirm(`Delete Bill ${bill.billNumber}? Stock will be restored.`)) return;
+                    
+                    const batch = writeBatch(db);
+                    const billRef = doc(db, `users/${currentUser.uid}/bills`, bill.id);
+                    batch.delete(billRef);
+                    
+                    for (const item of bill.items) {
+                        const product = products.find(p => p.id === item.productId);
+                        if (product) {
+                            const productRef = doc(db, `users/${currentUser.uid}/products`, product.id);
+                            const updatedBatches = product.batches.map(b => {
+                                if (b.id === item.batchId) {
+                                    return { ...b, stock: b.stock + item.quantity };
+                                }
+                                return b;
+                            });
+                            batch.update(productRef, { batches: updatedBatches });
+                        }
+                    }
+                    
+                    await batch.commit();
+                }}
+                onEditBill={(bill) => {
+                    setEditingBill(bill);
+                    navigateTo('billing');
+                }}
+                onUpdateBillDetails={async (billId, updates) => {
+                    if (!currentUser) return;
+                    const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
+                    await updateDoc(billRef, updates);
+                }}
+              />
+            )}
+
+            {activeView === 'suppliersLedger' && (
+              <SuppliersLedger 
+                suppliers={suppliers}
+                purchases={purchases}
+                payments={payments}
+                companyProfile={companyProfile}
+                onUpdateSupplier={async (id, data) => {
+                    if (!currentUser) return;
+                    const ref = doc(db, `users/${currentUser.uid}/suppliers`, id);
+                    await updateDoc(ref, data);
+                }}
+              />
+            )}
+
+            {activeView === 'salesReport' && <SalesReport bills={bills} />}
+            
+            {activeView === 'companyWiseSale' && <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />}
+            
+            {activeView === 'companyWiseBillWiseProfit' && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
+
+          </>
+        )}
       </main>
-      {currentUser && (
-        <footer className="bg-white dark:bg-slate-800 text-center p-4 text-sm text-slate-600 dark:text-slate-400 border-t dark:border-slate-700">
-          Developed by: M. Soft India | Contact: 9890072651 | Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline">webs.msoftindia.com</a>
-        </footer>
-      )}
-      {currentUser && (
-        <SettingsModal
-          isOpen={isSettingsModalOpen}
-          onClose={() => setSettingsModalOpen(false)}
-          companyProfile={companyProfile}
-          onProfileChange={handleProfileChange}
-          systemConfig={systemConfig}
-          onSystemConfigChange={handleSystemConfigChange}
-          onBackupData={handleBackupData}
-          gstRates={gstRates}
-          onAddGstRate={handleAddGstRate}
-          onUpdateGstRate={handleUpdateGstRate}
-          onDeleteGstRate={handleDeleteGstRate}
-        />
-      )}
+
+      <footer className="bg-white dark:bg-slate-800 border-t dark:border-slate-700 py-4 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-600 dark:text-slate-400">
+          <p>
+            Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span>
+            <span className="mx-2">|</span>
+            Contact: <a href="tel:9890072651" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">9890072651</a>
+            <span className="mx-2">|</span>
+            Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">webs.msoftindia.com</a>
+          </p>
+        </div>
+      </footer>
+
+      <SettingsModal 
+        isOpen={isSettingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
+        companyProfile={companyProfile}
+        onProfileChange={handleProfileChange}
+        systemConfig={systemConfig}
+        onSystemConfigChange={handleSystemConfigChange}
+        onBackupData={() => {
+            const data = {
+                products,
+                bills,
+                purchases,
+                companies,
+                suppliers,
+                payments,
+                companyProfile,
+                systemConfig
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }}
+        gstRates={gstRates}
+        onAddGstRate={async (rate) => {
+            if (!currentUser) return;
+            await addDoc(collection(db, `users/${currentUser.uid}/gstRates`), { rate });
+        }}
+        onUpdateGstRate={async (id, newRate) => {
+            if (!currentUser) return;
+            await updateDoc(doc(db, `users/${currentUser.uid}/gstRates`, id), { rate: newRate });
+        }}
+        onDeleteGstRate={async (id, rateValue) => {
+            if (!currentUser) return;
+            const usedInProducts = products.some(p => p.gst === rateValue);
+            if (usedInProducts) {
+                alert(`Cannot delete GST Rate ${rateValue}% as it is used in some products.`);
+                return;
+            }
+            await deleteDoc(doc(db, `users/${currentUser.uid}/gstRates`, id));
+        }}
+      />
     </div>
   );
 };

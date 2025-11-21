@@ -126,7 +126,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
             } else if (printer.format === 'A5') {
                 root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
             } else {
-                root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} />);
+                root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
             }
 
             setTimeout(() => {

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Payment, CompanyProfile } from '../types';
 
@@ -85,6 +86,9 @@ const PrintablePaymentVoucher: React.FC<PrintableVoucherProps> = ({ payment, com
       borderBottom: '2px solid black',
       paddingBottom: '10px',
       marginBottom: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center'
     },
     companyName: {
       fontSize: '24pt',
@@ -139,6 +143,13 @@ const PrintablePaymentVoucher: React.FC<PrintableVoucherProps> = ({ payment, com
   return (
     <div style={styles.page}>
       <div style={styles.header}>
+        {companyProfile.logo && (
+            <img 
+                src={companyProfile.logo} 
+                alt="Logo" 
+                style={{ height: '20mm', marginBottom: '5px', objectFit: 'contain' }} 
+            />
+        )}
         <h1 style={styles.companyName}>{companyProfile.name}</h1>
         <p style={styles.companyAddress}>{companyProfile.address}</p>
         <h2 style={styles.voucherTitle}>PAYMENT VOUCHER</h2>

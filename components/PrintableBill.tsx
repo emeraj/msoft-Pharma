@@ -1,12 +1,14 @@
+
 import React from 'react';
-import type { Bill, CompanyProfile } from '../types';
+import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
 interface PrintableBillProps {
   bill: Bill;
   companyProfile: CompanyProfile;
+  systemConfig: SystemConfig;
 }
 
-const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) => {
+const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile, systemConfig }) => {
   const items = bill?.items || [];
 
   return (
@@ -29,14 +31,23 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) =
           borderBottom: '1.5pt solid #333',
           paddingBottom: '2mm',
         }}>
-          <div style={{ width: '65%' }}>
-            <h1 style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '14pt', margin: 0, color: '#1a202c' }}>
-              {companyProfile.name}
-            </h1>
-            <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
-            <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>
-              <strong style={{ fontWeight: 'bold' }}>GSTIN:</strong> {companyProfile.gstin}
-            </p>
+          <div style={{ width: '65%', display: 'flex', alignItems: 'center' }}>
+            {companyProfile.logo && (
+                <img 
+                    src={companyProfile.logo} 
+                    alt="Logo" 
+                    style={{ height: '20mm', marginRight: '5mm', objectFit: 'contain' }} 
+                />
+            )}
+            <div>
+                <h1 style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '14pt', margin: 0, color: '#1a202c' }}>
+                {companyProfile.name}
+                </h1>
+                <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
+                <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>
+                <strong style={{ fontWeight: 'bold' }}>GSTIN:</strong> {companyProfile.gstin}
+                </p>
+            </div>
           </div>
           <div style={{ width: '35%', textAlign: 'right' }}>
             <h2 style={{ fontWeight: 'bold', fontSize: '12pt', margin: 0, color: '#1a202c' }}>TAX INVOICE</h2>
@@ -96,8 +107,8 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile }) =
         <footer style={{ marginTop: 'auto', borderTop: '1.5pt solid #333', paddingTop: '2mm' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div style={{ width: '50%' }}>
-              <p style={{ fontWeight: 600, margin: 0 }}>Thank you for your visit!</p>
-              <p style={{ margin: '1mm 0 0 0' }}>Get Well Soon.</p>
+                {systemConfig.remarkLine1 && <p style={{ fontWeight: 600, margin: 0 }}>{systemConfig.remarkLine1}</p>}
+                {systemConfig.remarkLine2 && <p style={{ margin: '1mm 0 0 0' }}>{systemConfig.remarkLine2}</p>}
             </div>
             <div style={{ width: '50%', textAlign: 'right' }}>
               <div style={{ display: 'inline-block', minWidth: '80mm' }}>

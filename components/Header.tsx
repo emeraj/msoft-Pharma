@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig } from '../types';
 import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
+import { getTranslation } from '../utils/translationHelper';
 
 interface HeaderProps {
   activeView: AppView;
@@ -39,7 +40,8 @@ const NavButton: React.FC<{
 const ReportsDropdown: React.FC<{
   activeView: AppView;
   setActiveView: (view: AppView) => void;
-}> = ({ activeView, setActiveView }) => {
+  t: any;
+}> = ({ activeView, setActiveView, t }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -59,12 +61,12 @@ const ReportsDropdown: React.FC<{
   }, []);
   
   const reportLabels: Record<ReportView, string> = {
-    dashboard: 'Sales Dashboard',
-    daybook: 'Day book',
-    suppliersLedger: 'Suppliers Ledger',
-    salesReport: 'Sales Report',
-    companyWiseSale: 'Company Wise Sale',
-    companyWiseBillWiseProfit: 'Company Wise-Bill Wise Profit',
+    dashboard: t.reports.dashboard,
+    daybook: t.reports.daybook,
+    suppliersLedger: t.reports.suppliersLedger,
+    salesReport: t.reports.salesReport,
+    companyWiseSale: t.reports.companyWiseSale,
+    companyWiseBillWiseProfit: t.reports.companyWiseBillWiseProfit,
   };
 
   return (
@@ -78,7 +80,7 @@ const ReportsDropdown: React.FC<{
         }`}
       >
         <ChartBarIcon className="h-5 w-5" />
-        <span className="hidden sm:inline">Reports</span>
+        <span className="hidden sm:inline">{t.nav.reports}</span>
       </button>
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
@@ -108,6 +110,8 @@ const ReportsDropdown: React.FC<{
 
 
 const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout, systemConfig }) => {
+  const t = getTranslation(systemConfig.language);
+
   return (
     <header className="bg-white dark:bg-slate-800 shadow-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -129,19 +133,20 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
             <span className="hidden md:inline text-sm text-slate-600 dark:text-slate-400">
-              Welcome, {user.displayName || user.email}
+              {user.displayName || user.email}
             </span>
              <nav className="hidden sm:flex space-x-2">
-              <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
-              <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
-              <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
-              <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
-              <ReportsDropdown activeView={activeView} setActiveView={setActiveView} />
+              <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
+              <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
+              <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
+              <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
+              <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />
             </nav>
              <button
               onClick={onOpenSettings}
               className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
               aria-label="Open Settings"
+              title={t.nav.settings}
             >
               <SettingsIcon className="h-6 w-6" />
             </button>
@@ -149,16 +154,16 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
               onClick={onLogout}
               className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
             >
-             Logout
+             {t.nav.logout}
             </button>
           </div>
         </div>
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
-            <NavButton label="Billing" view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
-            <NavButton label="Purchases" view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
-            <NavButton label="Inventory" view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
-            <NavButton label="Payments" view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
-            <ReportsDropdown activeView={activeView} setActiveView={setActiveView} />
+            <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
+            <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
+            <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
+            <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
+            <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />
         </nav>
       </div>
     </header>

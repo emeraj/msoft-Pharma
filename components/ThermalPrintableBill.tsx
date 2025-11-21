@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
@@ -48,7 +49,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             padding: '3mm',
             boxSizing: 'border-box',
         },
-        textCenter: { textAlign: 'center' },
+        textCenter: { textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' },
         header: {
             fontWeight: 'bold',
             fontSize: '14px',
@@ -58,10 +59,12 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
         subHeader: {
             fontSize: '11px',
             margin: '2px 0',
+            width: '100%'
         },
         line: {
             margin: '4px 0',
             fontSize: '11px',
+            width: '100%'
         },
         flex: { display: 'flex' },
         fontBold: { fontWeight: 'bold' },
@@ -81,6 +84,13 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
     return (
         <pre style={styles.container}>
             <div style={styles.textCenter}>
+                {companyProfile.logo && (
+                    <img 
+                        src={companyProfile.logo} 
+                        alt="Logo" 
+                        style={{ maxWidth: '40mm', maxHeight: '20mm', marginBottom: '2mm', objectFit: 'contain' }} 
+                    />
+                )}
                 <h1 style={styles.header}>{companyProfile.name}</h1>
                 <p style={styles.subHeader}>{companyProfile.address}</p>
                 <p style={styles.subHeader}>GSTIN: {companyProfile.gstin}</p>
@@ -148,6 +158,7 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             <div style={styles.line}>{line}</div>
 
             {/* GST Summary */}
+         
             <div style={{...styles.subHeader, ...styles.textCenter, ...styles.fontBold}}>GST Summary</div>
              <div style={{ ...styles.flex, ...styles.fontBold, ...styles.subHeader }}>
                 <div style={{width: '25%', textAlign: 'center'}}>Rate</div>

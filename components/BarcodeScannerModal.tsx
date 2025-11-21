@@ -102,6 +102,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
 
                 // --- Auto Zoom Logic ---
                 setTimeout(async () => {
+                    if (isCancelled) return;
                     try {
                         const videoElement = document.querySelector(`#${readerId} video`) as HTMLVideoElement;
                         if (videoElement && videoElement.srcObject) {
@@ -134,7 +135,11 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
                 if (html5QrCode) html5QrCode.stop().catch(() => {});
             }
 
-        } catch (err) {
+        } catch (err: any) {
+            // Fix: Ignore "play() request was interrupted" error which happens when component unmounts during loading
+            if (err?.name === 'AbortError' || err?.message?.includes('interrupted') || err?.message?.includes('removed')) {
+                return;
+            }
             console.error("Scanner start error", err);
         }
     };
@@ -144,10 +149,18 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
     return () => {
         isCancelled = true;
         if (scannerRef.current) {
+            const scanner = scannerRef.current;
             if (isRunningRef.current) {
-                scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+                scanner.stop()
+                    .then(() => {
+                        try { scanner.clear(); } catch(e) {}
+                    })
+                    .catch((err: any) => {
+                        // Ignore errors during stop
+                        // console.warn("Stop failed", err); 
+                    });
             } else {
-                try { scannerRef.current.clear(); } catch(e) {}
+                try { scanner.clear(); } catch(e) {}
             }
             scannerRef.current = null;
             isRunningRef.current = false;

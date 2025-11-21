@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
@@ -162,10 +163,19 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
     return (
         <div style={styles.page}>
             <header style={styles.header}>
-                <div>
-                    <h1 style={{ fontWeight: 'bold', fontSize: '18pt', margin: 0 }}>{companyProfile.name}</h1>
-                    <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
-                    <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}><strong>GSTIN:</strong> {companyProfile.gstin}</p>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                    {companyProfile.logo && (
+                        <img 
+                            src={companyProfile.logo} 
+                            alt="Logo" 
+                            style={{ height: '18mm', marginRight: '4mm', objectFit: 'contain' }} 
+                        />
+                    )}
+                    <div>
+                        <h1 style={{ fontWeight: 'bold', fontSize: '18pt', margin: 0 }}>{companyProfile.name}</h1>
+                        <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
+                        <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}><strong>GSTIN:</strong> {companyProfile.gstin}</p>
+                    </div>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: '5mm' }}>
                     <h2 style={{ fontSize: '14pt', fontWeight: 'bold', margin: 0 }}>TAX INVOICE</h2>

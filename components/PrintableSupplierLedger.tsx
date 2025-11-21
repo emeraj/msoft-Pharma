@@ -1,3 +1,4 @@
+
 import React from 'react';
 import type { Supplier, CompanyProfile } from '../types';
 
@@ -78,12 +79,21 @@ const PrintableSupplierLedger: React.FC<PrintableSupplierLedgerProps> = ({ suppl
     return (
         <div style={styles.page}>
             <header style={styles.header}>
-                <div style={{ width: '60%' }}>
-                    <h1 style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '16pt', margin: 0 }}>
-                        {companyProfile.name}
-                    </h1>
-                    <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
-                    <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}><strong>GSTIN:</strong> {companyProfile.gstin}</p>
+                <div style={{ width: '60%', display: 'flex', alignItems: 'center' }}>
+                    {companyProfile.logo && (
+                        <img 
+                            src={companyProfile.logo} 
+                            alt="Logo" 
+                            style={{ height: '18mm', marginRight: '4mm', objectFit: 'contain' }} 
+                        />
+                    )}
+                    <div>
+                        <h1 style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '16pt', margin: 0 }}>
+                            {companyProfile.name}
+                        </h1>
+                        <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
+                        <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}><strong>GSTIN:</strong> {companyProfile.gstin}</p>
+                    </div>
                 </div>
                 <div style={{ width: '40%', textAlign: 'right' }}>
                     <h2 style={{ fontWeight: 'bold', fontSize: '14pt', margin: 0 }}>Statement of Account</h2>

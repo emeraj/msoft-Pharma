@@ -1,11 +1,14 @@
+
 import React, { useMemo } from 'react';
-import type { Bill, Product } from '../types';
+import type { Bill, Product, SystemConfig } from '../types';
 import Card from './common/Card';
 import { ArchiveIcon, CashIcon, CubeIcon, ReceiptIcon, ChartBarIcon } from './icons/Icons';
+import { getTranslation } from '../utils/translationHelper';
 
 interface SalesDashboardProps {
   bills: Bill[];
   products: Product[];
+  systemConfig: SystemConfig; // Added prop
 }
 
 const StatCard: React.FC<{
@@ -25,7 +28,8 @@ const StatCard: React.FC<{
     </Card>
 );
 
-const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products }) => {
+const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products, systemConfig }) => {
+    const t = getTranslation(systemConfig.language);
     
     const stats = useMemo(() => {
         const totalRevenue = bills.reduce((sum, bill) => sum + bill.grandTotal, 0);
@@ -102,17 +106,17 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products }) => {
 
   return (
     <div className="p-4 sm:p-6 space-y-6 animate-fade-in">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Sales Dashboard</h1>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{t.dashboard.title}</h1>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard title="Total Revenue" value={formatCurrency(stats.totalRevenue)} icon={<CashIcon className="h-6 w-6 text-green-800 dark:text-green-200" />} color="bg-green-100 dark:bg-green-900/50" />
-            <StatCard title="Total Bills" value={stats.totalBills.toLocaleString('en-IN')} icon={<ReceiptIcon className="h-6 w-6 text-blue-800 dark:text-blue-200" />} color="bg-blue-100 dark:bg-blue-900/50" />
-            <StatCard title="Average Bill Value" value={formatCurrency(stats.avgBillValue)} icon={<ChartBarIcon className="h-6 w-6 text-indigo-800 dark:text-indigo-200" />} color="bg-indigo-100 dark:bg-indigo-900/50" />
-            <StatCard title="Total Items Sold" value={stats.totalItemsSold.toLocaleString('en-IN')} icon={<CubeIcon className="h-6 w-6 text-yellow-800 dark:text-yellow-200" />} color="bg-yellow-100 dark:bg-yellow-900/50" />
+            <StatCard title={t.dashboard.totalRevenue} value={formatCurrency(stats.totalRevenue)} icon={<CashIcon className="h-6 w-6 text-green-800 dark:text-green-200" />} color="bg-green-100 dark:bg-green-900/50" />
+            <StatCard title={t.dashboard.totalBills} value={stats.totalBills.toLocaleString('en-IN')} icon={<ReceiptIcon className="h-6 w-6 text-blue-800 dark:text-blue-200" />} color="bg-blue-100 dark:bg-blue-900/50" />
+            <StatCard title={t.dashboard.avgBillValue} value={formatCurrency(stats.avgBillValue)} icon={<ChartBarIcon className="h-6 w-6 text-indigo-800 dark:text-indigo-200" />} color="bg-indigo-100 dark:bg-indigo-900/50" />
+            <StatCard title={t.dashboard.totalItemsSold} value={stats.totalItemsSold.toLocaleString('en-IN')} icon={<CubeIcon className="h-6 w-6 text-yellow-800 dark:text-yellow-200" />} color="bg-yellow-100 dark:bg-yellow-900/50" />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <Card title="Monthly Sales (Last 12 Months)" className="lg:col-span-2">
+            <Card title={t.dashboard.monthlySales} className="lg:col-span-2">
                 <div className="h-72 w-full p-4 flex justify-around items-end gap-2 sm:gap-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                     {monthlySalesData.map((data, index) => (
                         <div key={index} className="flex-1 flex flex-col items-center h-full justify-end group">
@@ -131,7 +135,7 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products }) => {
                 </div>
             </Card>
             
-            <Card title="Top 5 Selling Products">
+            <Card title={t.dashboard.topProducts}>
                 {topSellingProducts.length > 0 ? (
                     <ul className="space-y-4">
                         {topSellingProducts.map((product, index) => (

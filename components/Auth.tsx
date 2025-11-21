@@ -52,74 +52,87 @@ const Auth: React.FC = () => {
   const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
   return (
-    <div className="flex-grow flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-900">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-6">
-            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
-                <CloudIcon className="h-8 w-8 text-indigo-500" />
-                <span>Cloud - Retail</span>
-            </h1>
-            <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
-        </div>
-        <Card>
-          <form onSubmit={handleAuthAction} className="space-y-4">
-            <h2 className="text-2xl font-semibold text-center text-slate-800 dark:text-slate-200">
-              {isLogin ? 'Login' : 'Sign Up'}
-            </h2>
-            
-            {!isLogin && (
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex flex-col font-sans transition-colors duration-200">
+      <div className="flex-grow flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-6">
+              <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
+                  <CloudIcon className="h-8 w-8 text-indigo-500" />
+                  <span>Cloud - Retail</span>
+              </h1>
+              <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
+          </div>
+          <Card>
+            <form onSubmit={handleAuthAction} className="space-y-4">
+              <h2 className="text-2xl font-semibold text-center text-slate-800 dark:text-slate-200">
+                {isLogin ? 'Login' : 'Sign Up'}
+              </h2>
+              
+              {!isLogin && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className={formInputStyle}
+                    required
+                  />
+                </div>
+              )}
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
                 <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                   className={formInputStyle}
                   required
                 />
               </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className={formInputStyle}
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className={formInputStyle}
-                required
-              />
-            </div>
-            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
-            >
-              {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
-            </button>
-            <p className="text-sm text-center text-slate-600 dark:text-slate-400">
-              {isLogin ? "Don't have an account?" : "Already have an account?"}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className={formInputStyle}
+                  required
+                />
+              </div>
+              {error && <p className="text-red-500 text-sm text-center">{error}</p>}
               <button
-                type="button"
-                onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
+                type="submit"
+                disabled={loading}
+                className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
               >
-                {isLogin ? 'Sign Up' : 'Login'}
+                {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
               </button>
-            </p>
-          </form>
-        </Card>
+              <p className="text-sm text-center text-slate-600 dark:text-slate-400">
+                {isLogin ? "Don't have an account?" : "Already have an account?"}
+                <button
+                  type="button"
+                  onClick={() => { setIsLogin(!isLogin); setError(''); }}
+                  className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
+                >
+                  {isLogin ? 'Sign Up' : 'Login'}
+                </button>
+              </p>
+            </form>
+          </Card>
+        </div>
       </div>
+      <footer className="bg-white dark:bg-slate-800 border-t dark:border-slate-700 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-600 dark:text-slate-400">
+          <p>
+            Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span>
+            <span className="mx-2">|</span>
+            Contact: <a href="tel:9890072651" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">9890072651</a>
+            <span className="mx-2">|</span>
+            Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">webs.msoftindia.com</a>
+          </p>
+        </div>
+      </footer>
     </div>
   );
 };
