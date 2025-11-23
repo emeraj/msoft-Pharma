@@ -60,7 +60,6 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 Units';
 };
 
-// ... (InventoryProps and types kept same) ...
 interface InventoryProps {
   products: Product[];
   companies: Company[];
@@ -70,7 +69,7 @@ interface InventoryProps {
   companyProfile: CompanyProfile;
   gstRates: GstRate[];
   onAddProduct: (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => void;
-  onUpdateProduct: (productId: string, productData: Partial<Omit<Product, 'id' | 'batches' | 'mrp' | 'purchasePrice'>>) => void;
+  onUpdateProduct: (productId: string, productData: any) => void;
   onAddBatch: (productId: string, batch: Omit<Batch, 'id'>) => void;
   onDeleteBatch: (productId: string, batchId: string) => void;
   onDeleteProduct: (productId: string, productName: string) => void;
@@ -91,7 +90,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
   const t = getTranslation(systemConfig.language);
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
-  // ... (Handlers kept same) ...
   const handleOpenBatchModal = (product: Product) => { setSelectedProduct(product); setBatchModalOpen(true); };
   const handleOpenEditModal = (product: Product) => { setSelectedProduct(product); setEditModalOpen(true); };
   const handleOpenPrintLabelModal = (product: Product) => { setSelectedProduct(product); setPrintLabelModalOpen(true); };
@@ -924,7 +922,7 @@ const EditProductModal: React.FC<{
     gstRates: GstRate[];
 }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
   const [formState, setFormState] = useState({
-    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No', mrp: '', purchasePrice: ''
+    name: '', company: '', hsnCode: '', gst: '12', barcode: '', composition: '', unitsPerStrip: '', isScheduleH: 'No', mrp: '', purchasePrice: '', stock: ''
   });
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
@@ -933,20 +931,69 @@ const EditProductModal: React.FC<{
   useEffect(() => {
     if (product) {
         const batch = product.batches[0];
+        let stockVal = batch.stock;
+        
+        // If pharma mode and we have units per strip, convert total units back to strips for display
+        // This assumes the stock was entered as strips originally or user thinks in strips.
+        if (isPharmaMode && product.unitsPerStrip && product.unitsPerStrip > 1) {
+             stockVal = stockVal / product.unitsPerStrip;
+        }
+
         setFormState({
-            name: product.name, company: product.company, hsnCode: product.hsnCode, gst: String(product.gst), barcode: product.barcode || '', composition: product.composition || '', unitsPerStrip: String(product.unitsPerStrip || ''), isScheduleH: product.isScheduleH ? 'Yes' : 'No', mrp: showPriceFields ? String(batch.mrp) : '', purchasePrice: showPriceFields ? String(batch.purchasePrice) : '',
+            name: product.name, 
+            company: product.company, 
+            hsnCode: product.hsnCode, 
+            gst: String(product.gst), 
+            barcode: product.barcode || '', 
+            composition: product.composition || '', 
+            unitsPerStrip: String(product.unitsPerStrip || ''), 
+            isScheduleH: product.isScheduleH ? 'Yes' : 'No', 
+            mrp: showPriceFields ? String(batch.mrp) : '', 
+            purchasePrice: showPriceFields ? String(batch.purchasePrice) : '',
+            stock: showPriceFields ? String(stockVal) : ''
         });
     }
-  }, [product, isOpen, showPriceFields]);
+  }, [product, isOpen, showPriceFields, isPharmaMode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => { setFormState({ ...formState, [e.target.name]: e.target.value }); };
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formState.name || !formState.company) return;
-    const productUpdate: Partial<Omit<Product, 'id' | 'batches'> & {mrp?: number; purchasePrice?: number}> = { name: formState.name, company: formState.company, hsnCode: formState.hsnCode, gst: parseFloat(formState.gst), };
-    if (isPharmaMode) { productUpdate.isScheduleH = formState.isScheduleH === 'Yes'; if (formState.composition) { productUpdate.composition = formState.composition; } const units = parseInt(formState.unitsPerStrip); if (!isNaN(units) && units > 1) { productUpdate.unitsPerStrip = units; } } else { productUpdate.barcode = formState.barcode; }
-    if (showPriceFields) { const mrp = parseFloat(formState.mrp); const pp = parseFloat(formState.purchasePrice); if (!isNaN(mrp)) productUpdate.mrp = mrp; if (!isNaN(pp)) productUpdate.purchasePrice = pp; }
+    
+    const productUpdate: any = { 
+        name: formState.name, 
+        company: formState.company, 
+        hsnCode: formState.hsnCode, 
+        gst: parseFloat(formState.gst), 
+    };
+    
+    if (isPharmaMode) { 
+        productUpdate.isScheduleH = formState.isScheduleH === 'Yes'; 
+        if (formState.composition) { productUpdate.composition = formState.composition; } 
+        const units = parseInt(formState.unitsPerStrip); 
+        if (!isNaN(units) && units > 1) { productUpdate.unitsPerStrip = units; } 
+    } else { 
+        productUpdate.barcode = formState.barcode; 
+    }
+    
+    if (showPriceFields) { 
+        const mrp = parseFloat(formState.mrp); 
+        const pp = parseFloat(formState.purchasePrice); 
+        let stock = parseFloat(formState.stock);
+
+        if (!isNaN(mrp)) productUpdate.mrp = mrp; 
+        if (!isNaN(pp)) productUpdate.purchasePrice = pp;
+        
+        if (!isNaN(stock)) {
+            // If pharma mode, convert strips input back to total units for storage
+            if (isPharmaMode && product.unitsPerStrip && product.unitsPerStrip > 1) {
+                stock = stock * product.unitsPerStrip;
+            }
+            productUpdate.stock = stock;
+        }
+    }
+    
     onUpdateProduct(product.id, productUpdate);
     onClose();
   };
@@ -1005,10 +1052,14 @@ const EditProductModal: React.FC<{
            {showPriceFields && (
             <>
                 <div>
+                    <label className="labelStyle">Stock Qty {isPharmaMode && product.unitsPerStrip && product.unitsPerStrip > 1 ? '(Strips)' : '(Units)'}</label>
+                    <input name="stock" value={formState.stock} onChange={handleChange} type="number" placeholder="Stock" className={formInputStyle} min="0" step="any" />
+                </div>
+                <div>
                     <label className="labelStyle">MRP</label>
                     <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder="MRP" className={formInputStyle} min="0" step="0.01" />
                 </div>
-                <div>
+                <div className="sm:col-span-2">
                     <label className="labelStyle">Purchase Price</label>
                     <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder="Purchase Price" className={formInputStyle} min="0" step="0.01" />
                 </div>

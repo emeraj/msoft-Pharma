@@ -325,11 +325,34 @@ const App: React.FC = () => {
     await batch.commit();
   };
   
-  const handleUpdateProduct = async (productId: string, productData: Partial<Omit<Product, 'id' | 'batches'>>) => {
+  const handleUpdateProduct = async (productId: string, productData: any) => {
     if (!currentUser) return;
+    
+    const product = products.find(p => p.id === productId);
+    const updates: any = { ...productData };
+    
+    // Handle batch updates for single-batch products (e.g., from Edit Product modal)
+    const batchFields = ['mrp', 'purchasePrice', 'stock'];
+    const hasBatchUpdates = batchFields.some(f => f in updates);
+
+    if (hasBatchUpdates && product && product.batches.length === 1) {
+        const updatedBatch = { ...product.batches[0] };
+        if ('mrp' in updates) updatedBatch.mrp = updates.mrp;
+        if ('purchasePrice' in updates) updatedBatch.purchasePrice = updates.purchasePrice;
+        if ('stock' in updates) updatedBatch.stock = updates.stock;
+        
+        updates.batches = [updatedBatch];
+        
+        // Clean up root level update object
+        batchFields.forEach(f => delete updates[f]);
+    } else {
+        // Safety cleanup
+        batchFields.forEach(f => delete updates[f]);
+    }
+
     const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
     try {
-        await updateDoc(productRef, productData);
+        await updateDoc(productRef, updates);
     } catch (error) {
         console.error("Error updating product:", error);
         alert("Failed to update product details.");

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import type { Bill, Product, SystemConfig } from '../types';
 import Card from './common/Card';
@@ -67,7 +68,7 @@ const CompanySaleDetailsModal: React.FC<{
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
     const companyItems = useMemo(() => {
-        return bill.items.filter(item => productCompanyMap.get(item.productId) === companyName);
+        return bill.items.filter(item => companyName === 'All' || productCompanyMap.get(item.productId) === companyName);
     }, [bill, companyName, productCompanyMap]);
 
     const { subTotal, totalGst, grandTotal } = useMemo(() => {
@@ -94,7 +95,7 @@ const CompanySaleDetailsModal: React.FC<{
     thirtyDaysFromNow.setDate(today.getDate() + 30);
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Bill Details for ${companyName}: ${bill.billNumber}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={`Bill Details${companyName !== 'All' ? ` for ${companyName}` : ''}: ${bill.billNumber}`}>
             <div className="space-y-4 text-slate-800 dark:text-slate-300">
                 <div className="flex justify-between text-sm">
                     <div>
@@ -154,15 +155,15 @@ const CompanySaleDetailsModal: React.FC<{
                 </div>
                 <div className="border-t dark:border-slate-700 pt-3 space-y-1 text-sm">
                     <div className="flex justify-between text-slate-700 dark:text-slate-300">
-                        <span >Subtotal (for {companyName}):</span>
+                        <span >Subtotal (for {companyName === 'All' ? 'All Companies' : companyName}):</span>
                         <span className="font-medium">₹{subTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-700 dark:text-slate-300">
-                        <span>Total GST (for {companyName}):</span>
+                        <span>Total GST (for {companyName === 'All' ? 'All Companies' : companyName}):</span>
                         <span className="font-medium">₹{totalGst.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-lg font-bold text-slate-800 dark:text-slate-100 mt-1">
-                        <span>Grand Total (for {companyName}):</span>
+                        <span>Grand Total (for {companyName === 'All' ? 'All Companies' : companyName}):</span>
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
@@ -215,7 +216,7 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products, syst
     });
 
     dateFilteredBills.forEach(bill => {
-        const companyItems = bill.items.filter(item => productCompanyMap.get(item.productId) === companyFilter);
+        const companyItems = bill.items.filter(item => companyFilter === 'All' || productCompanyMap.get(item.productId) === companyFilter);
 
         if (companyItems.length > 0) {
             let basicAmount = 0;
@@ -265,7 +266,7 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products, syst
       'GST Amount': sale.gstAmount.toFixed(2),
       'Total Value': sale.totalValue.toFixed(2),
     }));
-    const filename = `sales_report_${companyFilter.replace(/ /g, '_')}_${fromDate || 'all'}_to_${toDate}`;
+    const filename = `sales_report_${companyFilter === 'All' ? 'all_companies' : companyFilter.replace(/ /g, '_')}_${fromDate || 'all'}_to_${toDate}`;
     exportToCsv(filename, exportData);
   };
   
@@ -287,6 +288,7 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products, syst
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Company</label>
               <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={formSelectStyle} required>
                   <option value="">-- Select a Company --</option>
+                  <option value="All">All Companies</option>
                   {companies.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -355,13 +357,13 @@ const CompanyWiseSale: React.FC<CompanyWiseSaleProps> = ({ bills, products, syst
               </table>
               {filteredSalesData.length === 0 && (
                 <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                  <p>No sales records found for this company in the selected date range.</p>
+                  <p>No sales records found for {companyFilter === 'All' ? 'any company' : 'this company'} in the selected date range.</p>
                 </div>
               )}
             </div>
         ) : (
              <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-              <p className="text-lg">Please select a company to view the sales report.</p>
+              <p className="text-lg">Please select a company (or All) to view the sales report.</p>
             </div>
         )}
       </Card>

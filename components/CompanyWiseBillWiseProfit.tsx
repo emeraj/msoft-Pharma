@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import type { Bill, Product } from '../types';
 import Card from './common/Card';
@@ -93,6 +94,7 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
 
     dateFilteredBills.forEach(bill => {
         const companyItems = bill.items.filter(item => {
+            if (companyFilter === 'All') return true;
             const product = productMap.get(item.productId);
             return product?.company === companyFilter;
         });
@@ -218,6 +220,7 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Company*</label>
               <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={formSelectStyle} required>
                   <option value="">-- Select a Company --</option>
+                  <option value="All">All Companies</option>
                   {companies.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -282,13 +285,13 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
               </table>
               {reportData.length === 0 && (
                 <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                  <p>No sales records found for this company in the selected date range with available cost data.</p>
+                  <p>No sales records found for the selected criteria with available cost data.</p>
                 </div>
               )}
             </div>
         ) : (
              <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-              <p className="text-lg">Please select a company to view the profit report.</p>
+              <p className="text-lg">Please select a company (or All) to view the profit report.</p>
             </div>
         )}
       </Card>
