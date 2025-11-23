@@ -71,6 +71,7 @@ export interface PurchaseLineItem {
   quantity: number; // in strips/boxes
   mrp: number; // MRP per strip/box
   purchasePrice: number; // per strip/box
+  discount?: number; // Discount percentage
 }
 
 export interface Purchase {

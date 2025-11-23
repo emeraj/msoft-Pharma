@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; // For A4
@@ -26,6 +26,7 @@ interface BillingProps {
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+const modalInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
 // --- Helper Functions ---
 const getExpiryDate = (expiryString: string): Date => {
@@ -52,8 +53,6 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
 };
 
 // Helper to generate ESC/POS commands for Bluetooth printing as Bytes
-// ... (Printer helpers kept same for brevity, no translation logic change here) ...
-// Assuming print helpers remain same as they don't use UI strings directly except hardcoded ones like "TAX INVOICE"
 const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemConfig): number[] => {
     const commands: number[] = [];
     const ESC = 27;
@@ -380,6 +379,130 @@ const SubstituteModal: React.FC<{
     );
 };
 
+interface EditBillItemModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    item: CartItem;
+    maxStock: number;
+    onUpdate: (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => void;
+    systemConfig: SystemConfig;
+}
+
+const EditBillItemModal: React.FC<EditBillItemModalProps> = ({ isOpen, onClose, item, maxStock, onUpdate, systemConfig }) => {
+    const [formState, setFormState] = useState({
+        mrp: item.mrp,
+        stripQty: item.stripQty,
+        looseQty: item.looseQty
+    });
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    const unitsPerStrip = item.unitsPerStrip || 1;
+
+    useEffect(() => {
+        setFormState({ mrp: item.mrp, stripQty: item.stripQty, looseQty: item.looseQty });
+    }, [item, isOpen]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        setFormState(prev => ({ ...prev, [name]: parseFloat(value) || 0 }));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const totalRequested = (formState.stripQty * unitsPerStrip) + formState.looseQty;
+        
+        if (totalRequested <= 0) {
+            alert("Quantity must be greater than 0");
+            return;
+        }
+        if (totalRequested > maxStock) {
+            alert(`Not enough stock. Available: ${maxStock} units`);
+            return;
+        }
+        if (formState.mrp <= 0) {
+            alert("MRP must be greater than 0");
+            return;
+        }
+
+        onUpdate(item.batchId, {
+            mrp: formState.mrp,
+            stripQty: isPharmaMode && unitsPerStrip > 1 ? formState.stripQty : 0,
+            looseQty: formState.looseQty
+        });
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Item">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <p className="font-semibold text-slate-800 dark:text-slate-200">{item.productName}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Batch: {item.batchNumber} | Exp: {item.expiryDate}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Available Stock: {formatStock(maxStock, unitsPerStrip)}</p>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">MRP</label>
+                        <input 
+                            type="number" 
+                            name="mrp" 
+                            value={formState.mrp} 
+                            onChange={handleChange} 
+                            className={modalInputStyle} 
+                            step="0.01" 
+                            min="0.01"
+                        />
+                    </div>
+                    
+                    {isPharmaMode && unitsPerStrip > 1 ? (
+                        <>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Strips</label>
+                                <input 
+                                    type="number" 
+                                    name="stripQty" 
+                                    value={formState.stripQty} 
+                                    onChange={handleChange} 
+                                    className={modalInputStyle} 
+                                    min="0"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Loose Tabs</label>
+                                <input 
+                                    type="number" 
+                                    name="looseQty" 
+                                    value={formState.looseQty} 
+                                    onChange={handleChange} 
+                                    className={modalInputStyle} 
+                                    min="0"
+                                />
+                            </div>
+                        </>
+                    ) : (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Quantity</label>
+                            <input 
+                                type="number" 
+                                name="looseQty" 
+                                value={formState.looseQty} 
+                                onChange={handleChange} 
+                                className={modalInputStyle} 
+                                min="1"
+                            />
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700 mt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-200">Cancel</button>
+                    <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700">Update</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
 
 const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
@@ -414,6 +537,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   // --- Keyboard Navigation State ---
   const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
   const activeItemRef = useRef<HTMLLIElement>(null);
+
+  // --- Edit Item State ---
+  const [itemToEdit, setItemToEdit] = useState<{item: CartItem, maxStock: number} | null>(null);
+
+  // --- Success Toast State ---
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   useEffect(() => {
     if (lastAddedBatchIdRef.current) {
@@ -471,7 +600,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     return products
       .filter(p => 
         (p.name.toLowerCase().includes(lowerSearchTerm) ||
-         (!isPharmaMode && p.barcode && p.barcode.includes(searchTerm))) &&
+         (!isPharmaMode && p.barcode && p.barcode.includes(lowerSearchTerm))) &&
         p.batches.some(b => b.stock > 0 && (isPharmaMode ? getExpiryDate(b.expiryDate) >= today : true))
       )
       .slice(0, 10);
@@ -540,6 +669,32 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
       }
       return item;
     }));
+  };
+
+  const updateCartItemDetails = (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => {
+      setCart(currentCart => currentCart.map(item => {
+          if (item.batchId === batchId) {
+              const { mrp, stripQty, looseQty } = updates;
+              const unitsPerStrip = item.unitsPerStrip || 1;
+              const totalUnits = (stripQty * unitsPerStrip) + looseQty;
+              const unitPrice = mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1);
+              const total = totalUnits * unitPrice;
+              return { ...item, mrp, stripQty, looseQty, quantity: totalUnits, total };
+          }
+          return item;
+      }));
+  };
+
+  const openEditItemModal = (item: CartItem) => {
+      const product = products.find(p => p.id === item.productId);
+      const batch = product?.batches.find(b => b.id === item.batchId);
+      if (product && batch) {
+          setItemToEdit({ item, maxStock: batch.stock });
+      } else {
+          // Fallback if product not found (rare edge case or if items deleted but kept in bill)
+          // For safety, assume max stock is current qty + some margin or just current qty if unavailable
+          setItemToEdit({ item, maxStock: item.quantity + 100 }); 
+      }
   };
 
   const handleAddToCart = (product: Product, batch: Batch) => {
@@ -660,7 +815,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
             const width = 42; 
             let space = width - left.length - right.length;
             if (space < 1) space = 1;
-            await printerAPI.printText(left + " ".repeat(space) + right + "\n", {});
+            await printerAPI.printText(left + " " + right + "\n", {});
         };
         await printCentered(companyProfile.name + "\n", true);
         await printCentered(companyProfile.address + "\n");
@@ -768,10 +923,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
          updateDoc(configRef, newConfig as any);
      }
   };
-  const handleSaveBill = useCallback(async () => {
-    if (cart.length === 0) { alert(t.billing.cartEmpty); return; } // Translated Alert
+  
+  const handleSaveBill = useCallback(async (shouldPrint: boolean) => {
+    if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
+    
     let savedBill: Bill | null = null;
     const isUpdate = isEditing && editingBill;
+    
+    // 1. Save Logic
     if (isUpdate && onUpdateBill) {
         const billData = { date: editingBill.date, customerName: customerName || t.billing.walkInCustomer, doctorName: doctorName.trim(), items: cart, subTotal, totalGst, grandTotal, billNumber: editingBill.billNumber };
         savedBill = await onUpdateBill(editingBill.id, billData, editingBill);
@@ -779,17 +938,46 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         const billData = { date: new Date().toISOString(), customerName: customerName || t.billing.walkInCustomer, doctorName: doctorName.trim(), items: cart, subTotal, totalGst, grandTotal };
         savedBill = await onGenerateBill(billData);
     }
+
+    // 2. Post-Save Actions (Print or Reset)
     if (savedBill) {
-        const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
-        if (defaultPrinter) { executePrint(savedBill, defaultPrinter, true); } else { setBillToPrint(savedBill); setShouldResetAfterPrint(true); setPrinterModalOpen(true); }
-    } else { console.error("Failed to save/update bill."); alert("There was an error saving the bill. Please try again."); }
+        if (shouldPrint) {
+            const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+            if (defaultPrinter) { 
+                executePrint(savedBill, defaultPrinter, true); 
+            } else { 
+                setBillToPrint(savedBill); 
+                setShouldResetAfterPrint(true); 
+                setPrinterModalOpen(true); 
+            }
+        } else {
+            // Save Only: Reset Form immediately for next entry
+            setCart([]);
+            setCustomerName('');
+            setDoctorName('');
+            if (onCancelEdit && isEditing) {
+                onCancelEdit();
+            }
+            
+            // Show toast success message
+            setShowSuccessToast(true);
+            setTimeout(() => setShowSuccessToast(false), 2500);
+        }
+    } else { 
+        console.error("Failed to save/update bill."); 
+        alert("There was an error saving the bill. Please try again."); 
+    }
   }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig, executePrint, t]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.altKey && event.key.toLowerCase() === 'p') {
         event.preventDefault();
-        if (cart.length > 0) handleSaveBill();
+        if (cart.length > 0) handleSaveBill(true);
+      }
+      if (event.altKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (cart.length > 0) handleSaveBill(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -844,7 +1032,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     };
 
   return (
-    <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
+      {showSuccessToast && (
+          <div className="fixed top-20 right-6 z-50 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg animate-fade-in-down flex items-center gap-2">
+              <CheckCircleIcon className="h-6 w-6" />
+              <span className="font-medium">Bill Saved Successfully!</span>
+          </div>
+      )}
       <div className="lg:col-span-2">
         <Card title={isEditing ? `${t.billing.editBill}: ${editingBill?.billNumber}` : t.billing.createBill}>
             
@@ -992,9 +1186,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                             <td className="px-2 py-3">₹{item.mrp.toFixed(2)}</td>
                             <td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td>
                             <td className="px-2 py-3">
-                                <button onClick={() => removeFromCart(item.batchId)} className="text-red-500 hover:text-red-700">
-                                    <TrashIcon className="h-5 w-5" />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => openEditItemModal(item)} className="text-blue-500 hover:text-blue-700" title="Edit Item">
+                                        <PencilIcon className="h-4 w-4" />
+                                    </button>
+                                    <button onClick={() => removeFromCart(item.batchId)} className="text-red-500 hover:text-red-700" title="Remove Item">
+                                        <TrashIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -1057,24 +1256,35 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
-                <div className="pt-2 space-y-2">
+                
+                <div className="pt-2 flex gap-2">
                     <button 
-                        onClick={handleSaveBill}
+                        onClick={() => handleSaveBill(true)}
                         disabled={cart.length === 0}
-                        className={`w-full text-white py-3 rounded-lg text-lg font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
-                        title="Quick save and print with Alt+P"
+                        className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
+                        title="Save and Print (Alt+P)"
                     >
-                       {isEditing ? t.billing.updateBill : t.billing.saveAndPrint}
+                       <PrinterIcon className="h-5 w-5" />
+                       {isEditing ? (t.billing.updateAndPrint || "Update & Print") : t.billing.saveAndPrint}
                     </button>
-                    {isEditing && (
-                        <button 
-                            onClick={onCancelEdit}
-                            className="w-full bg-slate-500 text-white py-2 rounded-lg text-md font-semibold shadow-md hover:bg-slate-600 transition-colors duration-200"
-                        >
-                            {t.billing.cancelEdit}
-                        </button>
-                    )}
+                    <button 
+                        onClick={() => handleSaveBill(false)}
+                        disabled={cart.length === 0}
+                        className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        title="Save Only (Alt+S)"
+                    >
+                        <CheckCircleIcon className="h-5 w-5" />
+                        {isEditing ? (t.billing.updateOnly || "Update Only") : (t.billing.saveOnly || "Save Only")}
+                    </button>
                 </div>
+                {isEditing && (
+                    <button 
+                        onClick={onCancelEdit}
+                        className="w-full bg-slate-500 text-white py-2 rounded-lg text-md font-semibold shadow-md hover:bg-slate-600 transition-colors duration-200 mt-2"
+                    >
+                        {t.billing.cancelEdit}
+                    </button>
+                )}
             </div>
         </Card>
       </div>
@@ -1089,6 +1299,17 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           />
       )}
       
+      {itemToEdit && (
+          <EditBillItemModal 
+            isOpen={!!itemToEdit}
+            onClose={() => setItemToEdit(null)}
+            item={itemToEdit.item}
+            maxStock={itemToEdit.maxStock}
+            onUpdate={updateCartItemDetails}
+            systemConfig={systemConfig}
+          />
+      )}
+
       <PrinterSelectionModal 
           isOpen={isPrinterModalOpen}
           onClose={() => { 
@@ -1112,7 +1333,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         printerName={connectingPrinterInfo.name} 
         printerId={connectingPrinterInfo.id} 
       />
-
+      <style>{`
+        @keyframes fade-in-down {
+            0% { opacity: 0; transform: translateY(-10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-down { animation: fade-in-down 0.3s ease-out forwards; }
+      `}</style>
     </div>
   );
 };

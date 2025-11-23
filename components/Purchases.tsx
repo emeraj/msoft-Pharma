@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
@@ -129,7 +130,7 @@ const AddSupplierModal: React.FC<{
 };
 
 
-const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], disabled?: boolean }> = ({ products, onAddItem, companies, systemConfig, gstRates, disabled = false }) => {
+const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], disabled?: boolean, itemToEdit?: PurchaseLineItem | null }> = ({ products, onAddItem, companies, systemConfig, gstRates, disabled = false, itemToEdit }) => {
     const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
     const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
     
@@ -139,7 +140,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         selectedProduct: null as Product | null,
         productName: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No',
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '',
-        barcode: ''
+        barcode: '',
+        discount: '',
+        tax: defaultGst
     });
 
     const [formState, setFormState] = useState(getInitialFormState());
@@ -148,6 +151,34 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const activeItemRef = useRef<HTMLLIElement>(null);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const [isScanning, setIsScanning] = useState(false);
+
+    // Effect to populate form when editing
+    useEffect(() => {
+        if (itemToEdit) {
+            const existingProduct = itemToEdit.productId ? products.find(p => p.id === itemToEdit.productId) : null;
+            
+            setFormState({
+                isNewProduct: itemToEdit.isNewProduct,
+                productSearch: itemToEdit.productName,
+                selectedProduct: existingProduct || null,
+                productName: itemToEdit.productName,
+                company: itemToEdit.company,
+                hsnCode: itemToEdit.hsnCode,
+                gst: String(itemToEdit.gst),
+                composition: itemToEdit.composition || '',
+                unitsPerStrip: String(itemToEdit.unitsPerStrip || ''),
+                isScheduleH: itemToEdit.isScheduleH ? 'Yes' : 'No',
+                batchNumber: itemToEdit.batchNumber,
+                expiryDate: itemToEdit.expiryDate,
+                quantity: String(itemToEdit.quantity),
+                mrp: String(itemToEdit.mrp),
+                purchasePrice: String(itemToEdit.purchasePrice),
+                barcode: itemToEdit.barcode || '',
+                discount: itemToEdit.discount ? String(itemToEdit.discount) : '',
+                tax: String(itemToEdit.gst)
+            });
+        }
+    }, [itemToEdit, products]);
 
     const companySuggestions = useMemo(() => {
         if (!formState.company) return companies.slice(0, 5);
@@ -225,6 +256,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             company: product.company,
             hsnCode: product.hsnCode,
             gst: String(product.gst),
+            tax: String(product.gst), // Sync tax field with product GST
             unitsPerStrip: String(product.unitsPerStrip || ''),
             isScheduleH: product.isScheduleH ? 'Yes' : 'No',
             isNewProduct: false,
@@ -240,6 +272,14 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                 newState.selectedProduct = null;
                 newState.isNewProduct = false;
             }
+            // If GST changes in top section, update tax field in bottom section
+            if (name === 'gst') {
+                newState.tax = value;
+            }
+            // If tax changes in bottom section, update gst in top section
+            if (name === 'tax') {
+                newState.gst = value;
+            }
             return newState;
         });
     };
@@ -254,7 +294,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, quantity, mrp, purchasePrice, barcode } = formState;
+        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, quantity, mrp, purchasePrice, barcode, discount, tax } = formState;
 
         if (isNewProduct && (!productName || !company)) {
             alert('Product Name and Company are required for a new product.');
@@ -270,13 +310,14 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             productName: isNewProduct ? productName : selectedProduct!.name,
             company: company.trim(),
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
-            gst: parseFloat(gst),
+            gst: parseFloat(tax) || parseFloat(gst) || 0, // Use tax value
             batchNumber: isPharmaMode ? batchNumber : 'DEFAULT',
             expiryDate: isPharmaMode ? expiryDate : '9999-12',
             quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
             barcode: isNewProduct && !isPharmaMode ? barcode : undefined,
+            discount: parseFloat(discount) || 0,
         };
 
         if (isPharmaMode && isNewProduct) {
@@ -414,16 +455,18 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             {(formState.selectedProduct || formState.isNewProduct) && (
                 <div className="animate-fade-in">
                      <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 pt-2 border-t dark:border-slate-600">Purchase Details</h4>
-                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                     <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                          {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />}
                          {isPharmaMode && <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />}
                          <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder={`Qty ${isPharmaMode ? '(Strips)' : ''}*`} className={formInputStyle} required min="1" />
                          <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder={`Price / ${isPharmaMode ? 'Strip' : 'Unit'}*`} className={formInputStyle} required min="0" step="0.01" />
                          <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder={`MRP / ${isPharmaMode ? 'Strip' : 'Unit'}*`} className={formInputStyle} required min="0" step="0.01" />
+                         <input name="discount" value={formState.discount} onChange={handleChange} type="number" placeholder="Disc (%)" className={formInputStyle} min="0" step="0.01" />
+                         <input name="tax" value={formState.tax} onChange={handleChange} type="number" placeholder="Tax (%)" className={formInputStyle} min="0" step="0.01" />
                      </div>
                      <div className="flex justify-end mt-4">
                         <button type="submit" className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors">
-                            <PlusIcon className="h-5 w-5" /> Add Item to Purchase
+                            <PlusIcon className="h-5 w-5" /> {itemToEdit ? 'Update Item' : 'Add Item to Purchase'}
                         </button>
                      </div>
                 </div>
@@ -457,6 +500,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
     const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
+    const [itemToEdit, setItemToEdit] = useState<PurchaseLineItem | null>(null);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
     // State for purchase history filtering
@@ -506,19 +550,41 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
     const handleAddItem = (item: PurchaseLineItem) => {
         setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}));
+        setItemToEdit(null); // Clear edit state after adding
     };
 
     const handleRemoveItem = (index: number) => {
         setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== index)}));
     };
 
+    const handleEditItem = (index: number) => {
+        const item = formState.currentItems[index];
+        setItemToEdit(item);
+        handleRemoveItem(index); // Remove from list to be re-added after edit
+        // Optionally, scroll to top/form
+        const formElement = document.querySelector('form');
+        if (formElement) {
+            formElement.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
+    // Helper function to calculate line item total
+    const calculateLineTotal = (item: PurchaseLineItem) => {
+        const amount = item.purchasePrice * item.quantity;
+        const discountAmount = amount * ((item.discount || 0) / 100);
+        const taxableAmount = amount - discountAmount;
+        const taxAmount = taxableAmount * (item.gst / 100);
+        return taxableAmount + taxAmount;
+    };
+
     const totalAmount = useMemo(() => {
-        return formState.currentItems.reduce((total, item) => total + (item.purchasePrice * item.quantity), 0);
+        return formState.currentItems.reduce((total, item) => total + calculateLineTotal(item), 0);
     }, [formState.currentItems]);
     
     const resetForm = () => {
         setEditingPurchase(null);
         setFormState(initialFormState);
+        setItemToEdit(null);
     };
 
     const handleSavePurchase = () => {
@@ -629,7 +695,14 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     </div>
                 </div>
 
-                <AddItemForm products={products} onAddItem={handleAddItem} companies={companies} systemConfig={systemConfig} gstRates={gstRates} />
+                <AddItemForm 
+                    products={products} 
+                    onAddItem={handleAddItem} 
+                    companies={companies} 
+                    systemConfig={systemConfig} 
+                    gstRates={gstRates} 
+                    itemToEdit={itemToEdit}
+                />
                 
                 {formState.currentItems.length > 0 && (
                     <div className="mt-4">
@@ -640,10 +713,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                     <tr>
                                         <th className="px-4 py-2 text-left">Product</th>
                                         {isPharmaMode && <th className="px-4 py-2 text-left">Batch</th>}
-                                        <th className="px-4 py-2">Qty</th>
-                                        <th className="px-4 py-2 text-right">Purchase Price</th>
+                                        <th className="px-4 py-2 text-center">Qty</th>
+                                        <th className="px-4 py-2 text-right">Rate</th>
+                                        <th className="px-4 py-2 text-center">Disc (%)</th>
+                                        <th className="px-4 py-2 text-center">Tax (%)</th>
                                         <th className="px-4 py-2 text-right">Total</th>
-                                        <th className="px-4 py-2"></th>
+                                        <th className="px-4 py-2 text-center">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -653,9 +728,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                             {isPharmaMode && <td className="px-4 py-2">{item.batchNumber}</td>}
                                             <td className="px-4 py-2 text-center">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
-                                            <td className="px-4 py-2 text-right font-semibold">₹{(item.purchasePrice * item.quantity).toFixed(2)}</td>
+                                            <td className="px-4 py-2 text-center">{item.discount || 0}%</td>
+                                            <td className="px-4 py-2 text-center">{item.gst}%</td>
+                                            <td className="px-4 py-2 text-right font-semibold">₹{calculateLineTotal(item).toFixed(2)}</td>
                                             <td className="px-4 py-2 text-center">
-                                                <button onClick={() => handleRemoveItem(index)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-4 w-4" /></button>
+                                                <div className="flex justify-center gap-3">
+                                                    <button onClick={() => handleEditItem(index)} className="text-blue-500 hover:text-blue-700" title="Edit Item">
+                                                        <PencilIcon className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={() => handleRemoveItem(index)} className="text-red-500 hover:text-red-700" title="Remove Item">
+                                                        <TrashIcon className="h-4 w-4" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
