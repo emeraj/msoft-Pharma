@@ -781,9 +781,11 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         if (barcode && barcode.trim() !== '') {
             productDetails.barcode = barcode.trim();
         } else {
+             // Auto-generate barcode
              let maxBarcodeNum = 0;
              products.forEach(p => {
-                // Only consider numeric barcodes with length < 8 (likely internal) to avoid sequence jumps from commercial barcodes
+                // Only consider numeric barcodes with length < 8 to identify internal sequence
+                // This ignores commercial barcodes like EAN-13 (13 digits) or UPC (12 digits)
                 if (p.barcode && /^\d+$/.test(p.barcode) && p.barcode.length < 8) {
                     const barcodeNum = parseInt(p.barcode, 10);
                     if (barcodeNum > maxBarcodeNum) {

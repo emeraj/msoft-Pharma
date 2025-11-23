@@ -302,11 +302,12 @@ const App: React.FC = () => {
         batches: [{ ...firstBatchData, id: `batch_${Date.now()}` }]
     };
     
-    // Auto-generate barcode in Retail mode if left blank
+    // Auto-generate barcode in Retail mode if left blank (Fallback logic)
     if (systemConfig.softwareMode === 'Retail' && (!newProductData.barcode || newProductData.barcode.trim() === '')) {
       let maxBarcodeNum = 0;
       products.forEach(p => {
-        // Only consider numeric barcodes with length < 8 (likely internal) to avoid sequence jumps from commercial barcodes
+        // Only consider numeric barcodes with length < 8 to identify internal sequence
+        // This ignores commercial barcodes like EAN-13 (13 digits) or UPC (12 digits)
         if (p.barcode && /^\d+$/.test(p.barcode) && p.barcode.length < 8) {
           const barcodeNum = parseInt(p.barcode, 10);
           if (barcodeNum > maxBarcodeNum) {
