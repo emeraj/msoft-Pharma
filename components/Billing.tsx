@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, HomeIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; // For A4
@@ -503,6 +503,133 @@ const EditBillItemModal: React.FC<EditBillItemModalProps> = ({ isOpen, onClose, 
     );
 };
 
+const OrderSuccessModal: React.FC<{ 
+    isOpen: boolean; 
+    onClose: () => void; 
+    bill: Bill | null; 
+    timeTaken: number;
+    onPrint: () => void;
+    onCreateNew: () => void;
+    onEditOrder: () => void;
+    companyProfile: CompanyProfile;
+}> = ({ isOpen, onClose, bill, timeTaken, onPrint, onCreateNew, onEditOrder, companyProfile }) => {
+    const [mobileNumber, setMobileNumber] = useState('');
+
+    useEffect(() => {
+        if (isOpen) {
+            setMobileNumber('');
+        }
+    }, [isOpen]);
+
+    if (!isOpen || !bill) return null;
+
+    // Generate QR code for Bill Amount using UPI ID
+    const upiId = companyProfile.upiId;
+    const amount = bill.grandTotal.toFixed(2);
+    const upiUrl = upiId 
+        ? `upi://pay?pa=${upiId}&pn=${encodeURIComponent(companyProfile.name)}&am=${amount}&cu=INR`
+        : '';
+    
+    const qrCodeUrl = upiId 
+        ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiUrl)}` 
+        : '';
+
+    const shareToWhatsApp = () => {
+        const text = `*TAX INVOICE*\n${companyProfile.name}\nBill No: ${bill.billNumber}\nDate: ${new Date(bill.date).toLocaleDateString()}\n\n*Items:*\n${bill.items.map(i => `${i.productName} x ${i.quantity} = ${i.total.toFixed(2)}`).join('\n')}\n\n*Total: ₹${bill.grandTotal.toFixed(2)}*\n\nThank you!`;
+        
+        let url = '';
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        if (mobileNumber && mobileNumber.trim()) {
+             let cleanNumber = mobileNumber.replace(/\D/g, '');
+             if (cleanNumber.length === 10) {
+                 cleanNumber = '91' + cleanNumber;
+             }
+             
+             if (isMobile) {
+                 url = `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
+             } else {
+                 url = `https://web.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
+             }
+        } else {
+             url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+        }
+        
+        window.open(url, '_blank');
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-[70] flex justify-center items-center">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-fade-in-up">
+                <div className="p-6 flex flex-col items-center text-center">
+                    
+                    {/* QR Code Section - Only show if UPI ID is present */}
+                    {upiId && (
+                        <div className="mb-4 bg-white p-2 rounded-lg border-2 border-slate-200 dark:border-slate-600">
+                             <img 
+                                src={qrCodeUrl} 
+                                alt="Payment QR" 
+                                className="w-40 h-40 object-contain"
+                            />
+                            <p className="text-xs text-slate-500 mt-1 font-medium">Scan to Pay ₹{amount}</p>
+                        </div>
+                    )}
+                    
+                    <div className="mb-2">
+                        <CheckCircleIcon className="h-16 w-16 text-green-500 mx-auto" />
+                    </div>
+                    
+                    <h2 className="text-2xl font-bold text-teal-700 dark:text-teal-400 mb-2">Order Completed !</h2>
+                    
+                    <div className="text-sm text-slate-600 dark:text-slate-400 font-medium mb-1">
+                        Time For Order Creation (in seconds): {timeTaken}
+                    </div>
+                    <div className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4">
+                        Total Bill Amount: ₹{bill.grandTotal}
+                    </div>
+
+                    <div className="w-full mb-4">
+                        <input
+                            type="tel"
+                            value={mobileNumber}
+                            onChange={(e) => setMobileNumber(e.target.value)}
+                            placeholder="Customer WhatsApp No."
+                            className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none transition-all text-center placeholder-slate-500 font-medium text-lg tracking-wide"
+                        />
+                    </div>
+                    
+                    <div className="w-full space-y-3">
+                        <div className="flex gap-3">
+                            <button onClick={shareToWhatsApp} className="flex-1 flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-semibold transition-colors">
+                                <ShareIcon className="h-5 w-5" /> 
+                                {/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'Continue to WhatsApp' : 'Continue to WhatsApp Web'}
+                            </button>
+                            <button onClick={onPrint} className="flex-1 flex items-center justify-center gap-2 bg-black hover:bg-gray-800 text-white py-3 rounded-lg font-semibold transition-colors">
+                                <PrinterIcon className="h-5 w-5" /> Print Bill
+                            </button>
+                        </div>
+                        
+                        <button onClick={onCreateNew} className="w-full bg-[#004d40] hover:bg-[#00695c] text-white py-3 rounded-lg font-semibold transition-colors">
+                            Create New Bill
+                        </button>
+                        
+                        <button onClick={onEditOrder} className="w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 py-3 rounded-lg font-semibold hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
+                            Edit Order
+                        </button>
+                    </div>
+                </div>
+            </div>
+             <style>{`
+                @keyframes fade-in-up {
+                    0% { opacity: 0; transform: translateY(20px); }
+                    100% { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in-up { animation: fade-in-up 0.3s ease-out forwards; }
+            `}</style>
+        </div>
+    );
+};
+
 
 const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
@@ -543,6 +670,21 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   // --- Success Toast State ---
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+
+  // --- Order Success Modal State ---
+  const [showOrderSuccessModal, setShowOrderSuccessModal] = useState(false);
+  const [lastSavedBill, setLastSavedBill] = useState<Bill | null>(null);
+  const [orderSeconds, setOrderSeconds] = useState(0);
+  const startTimeRef = useRef<number | null>(null);
+
+  // Track order start time
+  useEffect(() => {
+      if (cart.length > 0 && startTimeRef.current === null) {
+          startTimeRef.current = Date.now();
+      } else if (cart.length === 0) {
+          startTimeRef.current = null;
+      }
+  }, [cart.length]);
 
   useEffect(() => {
     if (lastAddedBatchIdRef.current) {
@@ -951,15 +1093,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                 setPrinterModalOpen(true); 
             }
         } else {
-            // Save Only: Reset Form immediately for next entry
-            setCart([]);
-            setCustomerName('');
-            setDoctorName('');
-            if (onCancelEdit && isEditing) {
-                onCancelEdit();
+            // Save Only: Don't reset form yet, show Order Success Modal
+            // Calculate time taken
+            if (startTimeRef.current) {
+                const seconds = Math.floor((Date.now() - startTimeRef.current) / 1000);
+                setOrderSeconds(seconds);
+            } else {
+                setOrderSeconds(0);
             }
             
-            // Show toast success message
+            setLastSavedBill(savedBill);
+            setShowOrderSuccessModal(true);
+            
+            // Show toast success message briefly
             setShowSuccessToast(true);
             setTimeout(() => setShowSuccessToast(false), 2500);
         }
@@ -1029,6 +1175,17 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     };
     const handleTabQtyKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); }
+    };
+
+    const resetBillingForm = () => {
+        setCart([]);
+        setCustomerName('');
+        setDoctorName('');
+        if (onCancelEdit && isEditing) {
+            onCancelEdit();
+        }
+        startTimeRef.current = null;
+        setOrderSeconds(0);
     };
 
   return (
@@ -1310,15 +1467,39 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
           />
       )}
 
+      <OrderSuccessModal
+        isOpen={showOrderSuccessModal}
+        onClose={() => setShowOrderSuccessModal(false)}
+        bill={lastSavedBill}
+        timeTaken={orderSeconds}
+        companyProfile={companyProfile}
+        onPrint={() => {
+            if (lastSavedBill) {
+                // Check for default printer logic similar to handleSaveBill
+                const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+                if (defaultPrinter) {
+                    executePrint(lastSavedBill, defaultPrinter, true); // Printing usually finalizes the flow
+                } else {
+                    setBillToPrint(lastSavedBill);
+                    setPrinterModalOpen(true);
+                }
+            }
+        }}
+        onCreateNew={() => {
+            resetBillingForm();
+            setShowOrderSuccessModal(false);
+        }}
+        onEditOrder={() => {
+            setShowOrderSuccessModal(false);
+        }}
+      />
+
       <PrinterSelectionModal 
           isOpen={isPrinterModalOpen}
           onClose={() => { 
             setPrinterModalOpen(false); 
             if (shouldResetAfterPrint) {
-                setCart([]);
-                setCustomerName('');
-                setDoctorName('');
-                if (onCancelEdit && isEditing) onCancelEdit();
+                resetBillingForm();
                 setShouldResetAfterPrint(false);
             }
             setBillToPrint(null);
