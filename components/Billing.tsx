@@ -535,24 +535,25 @@ const OrderSuccessModal: React.FC<{
         : '';
 
     const shareToWhatsApp = () => {
+        if (!mobileNumber || !mobileNumber.trim()) {
+            alert("Mobile Number is mandatory to share on WhatsApp.");
+            return;
+        }
+
         const text = `*TAX INVOICE*\n${companyProfile.name}\nBill No: ${bill.billNumber}\nDate: ${new Date(bill.date).toLocaleDateString()}\n\n*Items:*\n${bill.items.map(i => `${i.productName} x ${i.quantity} = ${i.total.toFixed(2)}`).join('\n')}\n\n*Total: ₹${bill.grandTotal.toFixed(2)}*\n\nThank you!`;
         
         let url = '';
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
-        if (mobileNumber && mobileNumber.trim()) {
-             let cleanNumber = mobileNumber.replace(/\D/g, '');
-             if (cleanNumber.length === 10) {
-                 cleanNumber = '91' + cleanNumber;
-             }
-             
-             if (isMobile) {
-                 url = `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
-             } else {
-                 url = `https://web.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
-             }
+        let cleanNumber = mobileNumber.replace(/\D/g, '');
+        if (cleanNumber.length === 10) {
+            cleanNumber = '91' + cleanNumber;
+        }
+        
+        if (isMobile) {
+            url = `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
         } else {
-             url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+            url = `https://web.whatsapp.com/send?phone=${cleanNumber}&text=${encodeURIComponent(text)}`;
         }
         
         window.open(url, '_blank');
@@ -593,7 +594,7 @@ const OrderSuccessModal: React.FC<{
                             type="tel"
                             value={mobileNumber}
                             onChange={(e) => setMobileNumber(e.target.value)}
-                            placeholder="Customer WhatsApp No."
+                            placeholder="Customer WhatsApp No.*"
                             className="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none transition-all text-center placeholder-slate-500 font-medium text-lg tracking-wide"
                         />
                     </div>
