@@ -994,7 +994,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   };
 
   const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
-    // ... (Keep existing executePrint logic)
     const doReset = () => {
         setCart([]);
         setCustomerName('');
@@ -1005,6 +1004,35 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         setShouldResetAfterPrint(false);
     };
     const shouldReset = forceReset || shouldResetAfterPrint;
+    
+    // Handle RawBT App Intent Printing
+    if (printer.connectionType === 'rawbt') {
+        const data = generateEscPosBill(bill, companyProfile, systemConfig);
+        const base64 = btoa(data.reduce((acc, byte) => acc + String.fromCharCode(byte), ''));
+        
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        
+        if (isAndroid) {
+             // Use Android Intent URL for better compatibility
+             const intentUrl = `intent:base64,${base64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`;
+             
+             // Trigger via anchor click for better WebView support
+             const a = document.createElement('a');
+             a.href = intentUrl;
+             a.style.display = 'none';
+             document.body.appendChild(a);
+             a.click();
+             document.body.removeChild(a);
+        } else {
+             window.location.href = `rawbt:base64,${base64}`;
+        }
+        
+        if (shouldReset) {
+            setTimeout(doReset, 1000); // Increased timeout
+        }
+        return;
+    }
+
     if (printer.format === 'Thermal' && window.BluetoothManager) {
         await printViaReactNative(bill, printer);
         if (shouldReset) doReset();

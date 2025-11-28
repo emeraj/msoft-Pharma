@@ -16,7 +16,7 @@ type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_ne
 
 const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
   const [view, setView] = useState<ViewState>('list');
-  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean; connectionType?: 'bluetooth' | 'usb' | 'network' }>({
+  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean; connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt' }>({
     name: '',
     format: 'Thermal',
     isDefault: false,
@@ -342,6 +342,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
                                     {printer.format} Format 
                                     {printer.connectionType === 'bluetooth' && ' (Bluetooth)'}
+                                    {printer.connectionType === 'rawbt' && ' (RawBT App)'}
                                 </p>
                             </div>
                             {printer.isShared && (
@@ -381,23 +382,33 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
       {view === 'type_select' && (
         <div className="space-y-6 animate-fade-in">
             <p className="text-slate-600 dark:text-slate-400">Select printer connection type</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
                 <button 
                     onClick={() => setView('perm_nearby')}
-                    className="flex flex-col items-center justify-center p-6 bg-blue-100 dark:bg-blue-900/30 rounded-2xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-all aspect-square shadow-sm"
+                    className="flex flex-col items-center justify-center p-4 bg-blue-100 dark:bg-blue-900/30 rounded-2xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-all aspect-square shadow-sm"
                 >
-                    <BluetoothIcon className="h-16 w-16 text-blue-600 mb-4" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">Bluetooth</span>
+                    <BluetoothIcon className="h-12 w-12 text-blue-600 mb-2" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Bluetooth</span>
+                </button>
+                <button 
+                     onClick={() => {
+                         setNewPrinter({ name: 'RawBT Printer', format: 'Thermal', isDefault: false, connectionType: 'rawbt' });
+                         setView('manual_setup');
+                     }}
+                    className="flex flex-col items-center justify-center p-4 bg-green-100 dark:bg-green-900/30 rounded-2xl hover:bg-green-200 dark:hover:bg-green-900/50 transition-all aspect-square shadow-sm"
+                >
+                    <PrinterIcon className="h-12 w-12 text-green-600 mb-2" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">RawBT App</span>
                 </button>
                 <button 
                      onClick={() => {
                          setNewPrinter({ name: '', format: 'Thermal', isDefault: false, connectionType: 'usb' });
                          setView('multi_device');
                      }}
-                    className="flex flex-col items-center justify-center p-6 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm"
+                    className="flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm"
                 >
-                    <UsbIcon className="h-16 w-16 text-slate-600 dark:text-slate-400 mb-4" />
-                    <span className="font-semibold text-slate-800 dark:text-slate-200">USB Cable</span>
+                    <UsbIcon className="h-12 w-12 text-slate-600 dark:text-slate-400 mb-2" />
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 text-sm">USB Cable</span>
                 </button>
             </div>
             <div className="flex justify-start">
@@ -502,7 +513,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <label htmlFor="isDefault" className="text-sm text-slate-700 dark:text-slate-300">Make this the default printer</label>
             </div>
             <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700">
-                <button onClick={() => setView('multi_device')} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Back</button>
+                <button onClick={() => setView('type_select')} className="px-4 py-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">Back</button>
                 <button onClick={handleAddPrinter} disabled={!newPrinter.name} className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
                     Save Printer
                 </button>

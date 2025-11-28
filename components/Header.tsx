@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import type { AppView, ReportView, SystemConfig } from '../types';
+import type { AppView, ReportView, SystemConfig, UserPermissions } from '../types';
 import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
@@ -12,6 +12,8 @@ interface HeaderProps {
   user: User;
   onLogout: () => void;
   systemConfig: SystemConfig;
+  userPermissions?: UserPermissions; // Optional for Admins
+  isOperator: boolean;
 }
 
 const NavButton: React.FC<{
@@ -83,7 +85,7 @@ const ReportsDropdown: React.FC<{
         <span className="hidden sm:inline">{t.nav.reports}</span>
       </button>
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
+        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5 max-h-[80vh] overflow-y-auto">
           {reportViews.map(view => (
              <a
               key={view}
@@ -109,8 +111,11 @@ const ReportsDropdown: React.FC<{
 };
 
 
-const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout, systemConfig }) => {
+const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout, systemConfig, userPermissions, isOperator }) => {
   const t = getTranslation(systemConfig.language);
+
+  // Helper to check permission. If admin (not operator), always true.
+  const hasPermission = (perm: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[perm]);
 
   return (
     <header className="bg-white dark:bg-slate-800 shadow-md sticky top-0 z-40">
@@ -133,15 +138,16 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
             <span className="hidden md:inline text-sm text-slate-600 dark:text-slate-400">
-              {user.displayName || user.email}
+              {user.displayName || user.email} {isOperator && '(Operator)'}
             </span>
              <nav className="hidden sm:flex space-x-2">
-              <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
-              <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
-              <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
-              <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
-              <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />
+              {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
+              {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
+              {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
+              {hasPermission('canPayment') && <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />}
+              {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
             </nav>
+            {!isOperator && (
              <button
               onClick={onOpenSettings}
               className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
@@ -150,6 +156,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             >
               <SettingsIcon className="h-6 w-6" />
             </button>
+            )}
             <button
               onClick={onLogout}
               className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
@@ -158,12 +165,13 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             </button>
           </div>
         </div>
+         {/* Mobile Nav: Removed overflow-x-auto to prevent dropdown clipping */}
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
-            <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />
-            <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />
-            <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />
-            <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />
-            <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />
+            {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
+            {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
+            {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
+            {hasPermission('canPayment') && <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />}
+            {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
         </nav>
       </div>
     </header>

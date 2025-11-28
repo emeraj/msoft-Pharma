@@ -1,10 +1,11 @@
 
-import { initializeApp } from 'firebase/app';
+
+import * as firebaseApp from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 // Your web app's Firebase configuration
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyASCvVS0YJYITLDwVZc_y5qhDHeuGSxSUg",
   authDomain: "medi-pharma-retail.firebaseapp.com",
   projectId: "medi-pharma-retail",
@@ -14,7 +15,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = firebaseApp.initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
@@ -29,13 +30,20 @@ replace the contents with the following:
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if request.auth != null && (
+        request.auth.uid == userId ||
+        exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid))
+      );
+    }
+    match /userMappings/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null; 
     }
   }
 }
 
-
-This ensures that only a logged-in user can read or write to their own data.
+This ensures that only a logged-in user can read or write to their own data, 
+OR a designated sub-user can access the parent's data.
 */
 
 export { db, auth };

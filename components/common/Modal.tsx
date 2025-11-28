@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { XIcon } from '../icons/Icons';
 
@@ -6,21 +7,22 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  maxWidth?: string;
 }
 
-const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, maxWidth = 'max-w-lg' }) => {
   if (!isOpen) return null;
 
   return (
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center"
+      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4"
       onClick={onClose}
     >
       <div 
-        className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 relative animate-fade-in-up"
+        className={`bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full ${maxWidth} flex flex-col max-h-[90vh] relative animate-fade-in-up`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center mb-4 pb-2 border-b dark:border-slate-700">
+        <div className="flex justify-between items-center p-6 pb-2 border-b dark:border-slate-700 flex-shrink-0">
           <h3 className="text-2xl font-semibold text-slate-800 dark:text-slate-200">{title}</h3>
           <button 
             onClick={onClose}
@@ -29,7 +31,9 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
             <XIcon className="h-6 w-6" />
           </button>
         </div>
-        {children}
+        <div className="p-6 pt-4 overflow-y-auto">
+            {children}
+        </div>
       </div>
       <style>{`
         @keyframes fade-in-up {

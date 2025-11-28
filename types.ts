@@ -137,7 +137,7 @@ export interface PrinterProfile {
   format: 'A4' | 'A5' | 'Thermal';
   isDefault: boolean;
   isShared?: boolean;
-  connectionType?: 'bluetooth' | 'usb' | 'network';
+  connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt';
 }
 
 export interface SystemConfig {
@@ -148,6 +148,31 @@ export interface SystemConfig {
   printers?: PrinterProfile[];
   language?: string;
 }
+
+// User Management Types
+export interface UserPermissions {
+  canBill: boolean;
+  canInventory: boolean;
+  canPurchase: boolean;
+  canPayment: boolean;
+  canReports: boolean;
+  // Settings are always Admin only
+}
+
+export interface SubUser {
+  id: string; // UID
+  name: string;
+  email: string;
+  role: 'operator';
+  permissions: UserPermissions;
+  createdAt: string;
+}
+
+export interface UserMapping {
+  ownerId: string;
+  role: 'admin' | 'operator';
+}
+
 declare global {
   interface Window {
     bluetoothSerial: any;

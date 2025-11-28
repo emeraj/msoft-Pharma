@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate, UserPermissions, SubUser } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -24,7 +23,8 @@ import {
   writeBatch,
   query,
   where,
-  arrayUnion
+  arrayUnion,
+  getDoc
 } from 'firebase/firestore';
 import type { Unsubscribe, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import SuppliersLedger from './components/SuppliersLedger';
@@ -47,6 +47,11 @@ const initialCompanyProfile: CompanyProfile = {
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  // Multi-User State
+  const [dataOwnerId, setDataOwnerId] = useState<string | null>(null);
+  const [userPermissions, setUserPermissions] = useState<UserPermissions | undefined>(undefined);
+  const [isOperator, setIsOperator] = useState(false);
 
   const [activeView, setActiveView] = useState<AppView>('dashboard');
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,6 +78,12 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       setCurrentUser(user);
+      // Reset state on logout/login
+      if (!user) {
+          setDataOwnerId(null);
+          setIsOperator(false);
+          setUserPermissions(undefined);
+      }
       setAuthLoading(false);
     });
     return () => unsubscribe();
@@ -85,41 +96,79 @@ const App: React.FC = () => {
   // Handle Browser Back Button Navigation
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
-      // If state exists and has view, update view
       if (event.state && event.state.view) {
         setActiveView(event.state.view);
-        // Clear editing state if navigating away from billing
         if (event.state.view !== 'billing') {
             setEditingBill(null);
         }
       } 
-      // Note: We intentionally do NOT set fallback to dashboard here.
-      // If event.state is null, it means we popped out of our history stack (or are at initial).
-      // In a mobile context, letting this happen allows the browser to exit or go back to previous page,
-      // which effectively implements "Exit on Back" when at the root.
     };
 
     window.addEventListener('popstate', handlePopState);
-    
-    // Initialize history state on mount if not present
     if (!window.history.state) {
         window.history.replaceState({ view: 'dashboard' }, '', '');
     }
-
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Navigation helper to push state
   const navigateTo = (view: AppView) => {
     if (view === activeView) return;
     setActiveView(view);
-    // Push new state
     window.history.pushState({ view }, '', '');
   };
 
+  // --- Logic to Determine Data Owner and Permissions ---
   useEffect(() => {
-    if (!currentUser) {
-      // Clear data when user logs out
+      const resolveUserRole = async () => {
+          if (!currentUser) return;
+          
+          try {
+              // Check global user mapping to see if this is a sub-user
+              const mappingDoc = await getDoc(doc(db, 'userMappings', currentUser.uid));
+              
+              if (mappingDoc.exists()) {
+                  // It is an Operator
+                  const data = mappingDoc.data();
+                  const ownerId = data.ownerId;
+                  
+                  // Fetch specific permissions from the parent's subUser collection
+                  const subUserDoc = await getDoc(doc(db, `users/${ownerId}/subUsers`, currentUser.uid));
+                  
+                  if (subUserDoc.exists()) {
+                      const subUserData = subUserDoc.data() as SubUser;
+                      setDataOwnerId(ownerId);
+                      setIsOperator(true);
+                      setUserPermissions(subUserData.permissions);
+                      
+                      // If current view is not allowed, redirect
+                      if (activeView === 'dashboard' && !subUserData.permissions.canReports) navigateTo('billing');
+                  } else {
+                      // Orphaned mapping? Treat as normal user or error
+                      setDataOwnerId(currentUser.uid);
+                      setIsOperator(false);
+                  }
+              } else {
+                  // It is an Admin (Main User)
+                  setDataOwnerId(currentUser.uid);
+                  setIsOperator(false);
+                  setUserPermissions(undefined); // Admin has implied full permissions
+              }
+          } catch (e) {
+              console.error("Error resolving user role:", e);
+              // Fallback to own data to prevent lockouts if offline/error, though permissions might fail if rules enforce it
+              setDataOwnerId(currentUser.uid);
+          }
+      };
+
+      if (currentUser) {
+          resolveUserRole();
+      }
+  }, [currentUser]);
+
+
+  // --- Data Fetching ---
+  useEffect(() => {
+    if (!currentUser || !dataOwnerId) {
       setProducts([]);
       setBills([]);
       setPurchases([]);
@@ -135,36 +184,35 @@ const App: React.FC = () => {
         remarkLine2: 'Get Well Soon.',
         language: 'en',
       });
-      setDataLoading(true); // Reset loading state for next login
-      setPermissionError(null); // Clear any existing errors
+      setDataLoading(!!currentUser); // Keep loading if user exists but owner not resolved
+      setPermissionError(null);
       return;
     }
 
     setDataLoading(true);
     setPermissionError(null);
-    const uid = currentUser.uid;
+    
+    // Use dataOwnerId for all data fetches
+    const uid = dataOwnerId;
 
     const createListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
       const collRef = collection(db, `users/${uid}/${collectionName}`);
       return onSnapshot(collRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const list = snapshot.docs.map(doc => {
           const data = doc.data() || {};
-          
-          // Defensive initialization for required array fields to prevent runtime errors
           if (collectionName === 'products' && !Array.isArray(data.batches)) {
             data.batches = [];
           }
           if ((collectionName === 'bills' || collectionName === 'purchases') && !Array.isArray(data.items)) {
             data.items = [];
           }
-
           return { ...data, id: doc.id };
         });
         setter(list as any[]);
       }, (error) => {
         console.error(`Error fetching ${collectionName}:`, error);
         if (error.code === 'permission-denied') {
-          setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firestore security rules.");
+          setPermissionError("Permission Denied. If you are an operator, ask the admin to check permissions. If you are an admin, please update Firestore Security Rules.");
           setDataLoading(false);
         }
       });
@@ -184,7 +232,6 @@ const App: React.FC = () => {
     const unsubProfile = onSnapshot(profileRef, (doc) => {
         if (doc.exists()) {
             const dbProfile = doc.data();
-            // GUARD against malformed data (e.g., non-object) before spreading.
             if (dbProfile && typeof dbProfile === 'object' && !Array.isArray(dbProfile)) {
                 setCompanyProfile({ ...initialCompanyProfile, ...dbProfile });
             }
@@ -198,7 +245,6 @@ const App: React.FC = () => {
     const unsubConfig = onSnapshot(configRef, (doc) => {
         if (doc.exists()) {
             const configData = doc.data();
-            // GUARD against malformed data (e.g., non-object) before spreading.
             if (configData && typeof configData === 'object' && !Array.isArray(configData)) {
                 setSystemConfig(prev => ({...prev, ...(configData as Partial<SystemConfig>)}));
             }
@@ -211,7 +257,7 @@ const App: React.FC = () => {
       .then(() => setDataLoading(false))
       .catch((error: any) => {
         if (error.code === 'permission-denied') {
-          setPermissionError("Permission Denied: Could not fetch your data from the database. This is likely due to incorrect Firestore security rules.");
+          setPermissionError("Permission Denied. Please check Firestore Security Rules.");
         } else {
            setPermissionError(`Could not connect to the database. Error: ${error.message}`);
         }
@@ -221,7 +267,7 @@ const App: React.FC = () => {
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [currentUser]);
+  }, [currentUser, dataOwnerId]); // Dependency on dataOwnerId
 
   const handleLogout = () => {
     signOut(auth);
@@ -229,71 +275,113 @@ const App: React.FC = () => {
 
   const PermissionErrorComponent: React.FC = () => (
     <div className="flex-grow flex items-center justify-center p-4">
-        <Card title="Database Permission Error" className="max-w-2xl w-full text-center border-2 border-red-500/50">
-            <p className="text-red-600 dark:text-red-400 mb-4">{permissionError}</p>
+        <Card title="Database Permission Error" className="max-w-4xl w-full text-center border-2 border-red-500/50">
+            <p className="text-red-600 dark:text-red-400 mb-4 font-semibold">{permissionError}</p>
             <div className="text-left bg-slate-100 dark:bg-slate-800 p-4 rounded-lg my-4">
-                <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200 mb-2">How to Fix</h3>
+                <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200 mb-2">Action Required (For Admins)</h3>
                 <p className="mb-4 text-slate-700 dark:text-slate-300">
-                    This application requires specific security rules to be set in your Firebase project to protect your data.
+                    To support User Management (Operators) and secure your data, copy the rules below and paste them into your <strong>Firebase Console &gt; Firestore Database &gt; Rules</strong> tab.
                 </p>
-                <ol className="list-decimal list-inside space-y-2 text-slate-700 dark:text-slate-300">
-                    <li>Open your Firebase project console.</li>
-                    <li>Navigate to <strong>Firestore Database</strong> &gt; <strong>Rules</strong> tab.</li>
-                    <li>Replace the content of the editor with the following:</li>
-                </ol>
-                <pre className="bg-black text-white p-3 rounded-md text-sm mt-3 overflow-x-auto">
+                <pre className="bg-black text-green-400 p-4 rounded-md text-xs sm:text-sm mt-3 overflow-x-auto font-mono leading-relaxed">
                     <code>
-{`service cloud.firestore {
+{`rules_version = '2';
+service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isOperator(userId) {
+      // Check if the current user exists in the target user's 'subUsers' collection
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid));
+    }
+
+    // 1. User Mappings (Links UID to Owner)
+    match /userMappings/{userId} {
+      // Users can read their own mapping to know who they work for
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Admins need to write here to create new operators
+      allow write: if isAuthenticated();
+    }
+
+    // 2. Main User Data Scope
+    match /users/{userId} {
+
+      // Sub-Users Management (Admin Only)
+      match /subUsers/{subUserId} {
+        allow read: if isOwner(userId) || (isAuthenticated() && request.auth.uid == subUserId);
+        allow write: if isOwner(userId);
+      }
+
+      // Configuration & Settings (Admin Write, Operator Read)
+      // Operators need read access to print bills and view settings
+      match /companyProfile/{document=**} {
+        allow read: if isOwner(userId) || isOperator(userId);
+        allow write: if isOwner(userId);
+      }
+      match /systemConfig/{document=**} {
+        allow read: if isOwner(userId) || isOperator(userId);
+        allow write: if isOwner(userId);
+      }
+      match /gstRates/{document=**} {
+        allow read: if isOwner(userId) || isOperator(userId);
+        allow write: if isOwner(userId);
+      }
+
+      // Operational Data (Read/Write for Admin & Operator)
+      match /products/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /bills/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /purchases/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /suppliers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /payments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /companies/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
     }
   }
 }`}
                     </code>
                 </pre>
-                 <p className="mt-4 text-sm text-slate-500">
-                    After applying these rules, please <strong>refresh this page</strong>.
-                </p>
-                 <p className="mt-2 text-xs text-slate-500">
-                    (This information is also available in the <code className="bg-slate-200 dark:bg-slate-700 p-1 rounded">firebase.ts</code> file.)
-                </p>
             </div>
             <button
                 onClick={handleLogout}
                 className="mt-4 px-6 py-2 bg-slate-600 text-white font-semibold rounded-lg shadow hover:bg-slate-700 transition-colors"
             >
-                Logout
+                Logout & Retry
             </button>
         </Card>
     </div>
   );
 
   const handleProfileChange = (profile: CompanyProfile) => {
-    if (!currentUser) return;
-    const profileRef = doc(db, `users/${currentUser.uid}/companyProfile`, 'profile');
+    if (!dataOwnerId) return;
+    const profileRef = doc(db, `users/${dataOwnerId}/companyProfile`, 'profile');
     setDoc(profileRef, profile);
     setCompanyProfile(profile);
   };
   
   const handleSystemConfigChange = (config: SystemConfig) => {
-    if (!currentUser) return;
-    const configRef = doc(db, `users/${currentUser.uid}/systemConfig`, 'config');
+    if (!dataOwnerId) return;
+    const configRef = doc(db, `users/${dataOwnerId}/systemConfig`, 'config');
     setDoc(configRef, config);
     setSystemConfig(config);
   };
 
+  // --- CRUD Handlers (Updated to use dataOwnerId) ---
+
   const handleAddProduct = async (productData: Omit<Product, 'id' | 'batches'>, firstBatchData: Omit<Batch, 'id'>) => {
-    if (!currentUser) return;
-    const uid = currentUser.uid;
+    if (!dataOwnerId) return;
     const batch = writeBatch(db);
 
-    // Ensure company exists
     const companyName = productData.company.trim();
     const companyExists = companies.some(c => c.name.toLowerCase() === companyName.toLowerCase());
     
     if (companyName && !companyExists) {
-        const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+        const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
         batch.set(newCompanyRef, { name: companyName });
     }
 
@@ -302,36 +390,26 @@ const App: React.FC = () => {
         batches: [{ ...firstBatchData, id: `batch_${Date.now()}` }]
     };
     
-    // Auto-generate barcode in Retail mode if left blank (Fallback logic)
     if (systemConfig.softwareMode === 'Retail' && (!newProductData.barcode || newProductData.barcode.trim() === '')) {
       let maxBarcodeNum = 0;
       products.forEach(p => {
-        // Only consider numeric barcodes with length < 8 to identify internal sequence
-        // This ignores commercial barcodes like EAN-13 (13 digits) or UPC (12 digits)
         if (p.barcode && /^\d+$/.test(p.barcode) && p.barcode.length < 8) {
           const barcodeNum = parseInt(p.barcode, 10);
-          if (barcodeNum > maxBarcodeNum) {
-            maxBarcodeNum = barcodeNum;
-          }
+          if (barcodeNum > maxBarcodeNum) maxBarcodeNum = barcodeNum;
         }
       });
-      const newBarcodeNum = maxBarcodeNum + 1;
-      newProductData.barcode = String(newBarcodeNum).padStart(6, '0');
+      newProductData.barcode = String(maxBarcodeNum + 1).padStart(6, '0');
     }
 
-    const newProductRef = doc(collection(db, `users/${uid}/products`));
+    const newProductRef = doc(collection(db, `users/${dataOwnerId}/products`));
     batch.set(newProductRef, newProductData);
-    
     await batch.commit();
   };
   
   const handleUpdateProduct = async (productId: string, productData: any) => {
-    if (!currentUser) return;
-    
+    if (!dataOwnerId) return;
     const product = products.find(p => p.id === productId);
     const updates: any = { ...productData };
-    
-    // Handle batch updates for single-batch products (e.g., from Edit Product modal)
     const batchFields = ['mrp', 'purchasePrice', 'stock'];
     const hasBatchUpdates = batchFields.some(f => f in updates);
 
@@ -340,144 +418,82 @@ const App: React.FC = () => {
         if ('mrp' in updates) updatedBatch.mrp = updates.mrp;
         if ('purchasePrice' in updates) updatedBatch.purchasePrice = updates.purchasePrice;
         if ('stock' in updates) updatedBatch.stock = updates.stock;
-        
         updates.batches = [updatedBatch];
-        
-        // Clean up root level update object
         batchFields.forEach(f => delete updates[f]);
     } else {
-        // Safety cleanup
         batchFields.forEach(f => delete updates[f]);
     }
 
-    const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
-    try {
-        await updateDoc(productRef, updates);
-    } catch (error) {
-        console.error("Error updating product:", error);
-        alert("Failed to update product details.");
-    }
+    const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
+    try { await updateDoc(productRef, updates); } catch (error) { console.error(error); alert("Failed to update product."); }
   };
 
   const handleAddBatch = async (productId: string, batchData: Omit<Batch, 'id'>) => {
-    if (!currentUser) return;
-    const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+    if (!dataOwnerId) return;
+    const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
     await updateDoc(productRef, {
         batches: arrayUnion({ ...batchData, id: `batch_${Date.now()}` })
     });
   };
   
   const handleDeleteBatch = async (productId: string, batchId: string) => {
-    if (!currentUser) return;
-
-    // 1. Check if batch is used in any bills
-    const isInBill = bills.some(bill => 
-      bill.items.some(item => item.batchId === batchId)
-    );
-
-    if (isInBill) {
-      alert('Cannot delete batch: This batch is part of a sales record.');
-      return;
-    }
-
-    // 2. Check if batch is part of any purchase record
-    const isInPurchase = purchases.some(purchase => 
-      purchase.items.some(item => item.batchId === batchId)
-    );
-
-    if (isInPurchase) {
-      alert('Cannot delete batch: This batch is linked to a purchase entry. Please edit or delete the corresponding purchase to remove this batch.');
-      return;
-    }
+    if (!dataOwnerId) return;
+    const isInBill = bills.some(bill => bill.items.some(item => item.batchId === batchId));
+    if (isInBill) { alert('Cannot delete batch: Part of sales record.'); return; }
+    const isInPurchase = purchases.some(purchase => purchase.items.some(item => item.batchId === batchId));
+    if (isInPurchase) { alert('Cannot delete batch: Part of purchase record.'); return; }
     
-    // 3. Find the product and update its batches array
     const productToUpdate = products.find(p => p.id === productId);
-    if (!productToUpdate) {
-      alert('Error: Product not found.');
-      return;
-    }
-    
+    if (!productToUpdate) return;
     const updatedBatches = productToUpdate.batches.filter(b => b.id !== batchId);
-
     try {
-      const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+      const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
       await updateDoc(productRef, { batches: updatedBatches });
       alert('Batch deleted successfully.');
-    } catch (error) {
-      console.error("Error deleting batch:", error);
-      alert('Failed to delete batch.');
-    }
+    } catch (error) { console.error(error); alert('Failed to delete batch.'); }
   };
 
   const handleDeleteProduct = async (productId: string, productName: string) => {
-    if (!currentUser) return;
-
-    // Check if product exists in any bills
+    if (!dataOwnerId) return;
     const inBill = bills.some(bill => bill.items.some(item => item.productId === productId));
-    if (inBill) {
-        alert(`Cannot delete "${productName}": This product is part of one or more sales records. Deleting it would corrupt your sales history.`);
-        return;
-    }
-
-    // Check if product exists in any purchases
+    if (inBill) { alert(`Cannot delete product. Used in sales.`); return; }
     const inPurchase = purchases.some(purchase => purchase.items.some(item => item.productId === productId));
-    if (inPurchase) {
-        alert(`Cannot delete "${productName}": This product is part of one or more purchase records. Deleting it would corrupt your purchase history.`);
-        return;
-    }
+    if (inPurchase) { alert(`Cannot delete product. Used in purchases.`); return; }
 
     try {
-        const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+        const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
         await deleteDoc(productRef);
-        alert(`Product "${productName}" has been deleted successfully.`);
-    } catch (error) {
-        console.error("Error deleting product:", error);
-        alert(`Failed to delete product "${productName}".`);
-    }
+        alert(`Product deleted successfully.`);
+    } catch (error) { console.error(error); alert(`Failed to delete product.`); }
   };
 
   const handleBulkAddProducts = async (newProducts: Omit<Product, 'id' | 'batches'>[]): Promise<{success: number; skipped: number}> => {
-    if (!currentUser) return { success: 0, skipped: 0 };
-    const uid = currentUser.uid;
+    if (!dataOwnerId) return { success: 0, skipped: 0 };
     const batch = writeBatch(db);
-
     const existingProductKeys = new Set(products.map(p => `${p.name.trim().toLowerCase()}|${p.company.trim().toLowerCase()}`));
     const newCompanyNames = new Set<string>();
-
     let successCount = 0;
     let skippedCount = 0;
 
     for (const productData of newProducts) {
         const key = `${productData.name.trim().toLowerCase()}|${productData.company.trim().toLowerCase()}`;
-        if (existingProductKeys.has(key)) {
-            skippedCount++;
-            continue;
-        }
+        if (existingProductKeys.has(key)) { skippedCount++; continue; }
 
-        // Add new company if needed
         const companyName = productData.company.trim();
         const companyExists = companies.some(c => c.name.toLowerCase() === companyName.toLowerCase());
         
         if (companyName && !companyExists && !newCompanyNames.has(companyName.toLowerCase())) {
-            const newCompanyRef = doc(collection(db, `users/${uid}/companies`));
+            const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
             batch.set(newCompanyRef, { name: companyName });
             newCompanyNames.add(companyName.toLowerCase());
         }
 
-        const newProductRef = doc(collection(db, `users/${uid}/products`));
-        
-        batch.set(newProductRef, {
-            ...productData,
-            batches: [] 
-        });
+        const newProductRef = doc(collection(db, `users/${dataOwnerId}/products`));
+        batch.set(newProductRef, { ...productData, batches: [] });
         existingProductKeys.add(key);
         successCount++;
     }
-
-    if (successCount > 0) {
-        await batch.commit();
-    }
-    
+    if (successCount > 0) await batch.commit();
     return { success: successCount, skipped: skippedCount };
   };
 
@@ -493,15 +509,33 @@ const App: React.FC = () => {
     return <PermissionErrorComponent />;
   }
 
+  // --- Helper to check permissions ---
+  const canAccess = (view: AppView) => {
+      if (!isOperator) return true; // Admin has full access
+      if (!userPermissions) return false;
+      
+      if (view === 'billing') return userPermissions.canBill;
+      if (view === 'inventory') return userPermissions.canInventory;
+      if (view === 'purchases') return userPermissions.canPurchase;
+      if (view === 'paymentEntry') return userPermissions.canPayment;
+      if (['dashboard', 'daybook', 'suppliersLedger', 'salesReport', 'companyWiseSale', 'companyWiseBillWiseProfit'].includes(view)) return userPermissions.canReports;
+      return false;
+  };
+
   return (
     <div className={`min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200 font-sans flex flex-col`}>
       <Header 
         activeView={activeView} 
-        setActiveView={navigateTo} 
+        setActiveView={(view) => {
+            if (canAccess(view)) navigateTo(view);
+            else alert("You do not have permission to access this section.");
+        }} 
         onOpenSettings={() => setSettingsModalOpen(true)} 
         user={currentUser}
         onLogout={handleLogout}
         systemConfig={systemConfig}
+        userPermissions={userPermissions}
+        isOperator={isOperator}
       />
       
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 flex-grow w-full">
@@ -511,79 +545,62 @@ const App: React.FC = () => {
            </div>
         ) : (
           <>
-            {activeView === 'dashboard' && <SalesDashboard bills={bills} products={products} systemConfig={systemConfig} />}
+            {activeView === 'dashboard' && canAccess('dashboard') && <SalesDashboard bills={bills} products={products} systemConfig={systemConfig} />}
             
-            {activeView === 'billing' && (
+            {activeView === 'billing' && canAccess('billing') && (
               <Billing 
                 products={products} 
                 bills={bills}
                 companyProfile={companyProfile}
                 systemConfig={systemConfig}
                 onGenerateBill={async (billData) => {
-                    if (!currentUser) return null;
+                    if (!dataOwnerId) return null;
                     try {
-                        const billRef = doc(collection(db, `users/${currentUser.uid}/bills`));
+                        const billRef = doc(collection(db, `users/${dataOwnerId}/bills`));
                         let maxBillNum = 0;
                         bills.forEach(b => {
                             const num = parseInt(b.billNumber.replace(/\D/g, ''));
                             if (!isNaN(num) && num > maxBillNum) maxBillNum = num;
                         });
-                        const nextBillNum = maxBillNum + 1;
-                        const billNumber = `B${String(nextBillNum).padStart(4, '0')}`;
-
+                        const billNumber = `B${String(maxBillNum + 1).padStart(4, '0')}`;
                         const newBill = { ...billData, billNumber, id: billRef.id };
-                        
                         const batch = writeBatch(db);
                         batch.set(billRef, newBill);
 
                         for (const item of billData.items) {
-                            const productRef = doc(db, `users/${currentUser.uid}/products`, item.productId);
+                            const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
                             const product = products.find(p => p.id === item.productId);
                             if (product) {
                                 const updatedBatches = product.batches.map(b => {
-                                    if (b.id === item.batchId) {
-                                        return { ...b, stock: b.stock - item.quantity };
-                                    }
+                                    if (b.id === item.batchId) return { ...b, stock: b.stock - item.quantity };
                                     return b;
                                 });
                                 batch.update(productRef, { batches: updatedBatches });
                             }
                         }
-                        
                         await batch.commit();
                         return newBill as Bill;
-                    } catch (e) {
-                        console.error("Error saving bill", e);
-                        return null;
-                    }
+                    } catch (e) { console.error(e); return null; }
                 }}
                 editingBill={editingBill}
                 onUpdateBill={async (billId, billData, originalBill) => {
-                    if (!currentUser) return null;
+                    if (!dataOwnerId) return null;
                     try {
                         const batch = writeBatch(db);
-                        const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
+                        const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
                         
+                        // Revert old stock
                         const stockChanges = new Map<string, number>();
-                        
-                        originalBill.items.forEach(item => {
-                            const current = stockChanges.get(item.batchId) || 0;
-                            stockChanges.set(item.batchId, current + item.quantity);
-                        });
-                        
-                        billData.items.forEach(item => {
-                            const current = stockChanges.get(item.batchId) || 0;
-                            stockChanges.set(item.batchId, current - item.quantity);
-                        });
+                        originalBill.items.forEach(item => stockChanges.set(item.batchId, (stockChanges.get(item.batchId) || 0) + item.quantity));
+                        // Subtract new stock
+                        billData.items.forEach(item => stockChanges.set(item.batchId, (stockChanges.get(item.batchId) || 0) - item.quantity));
                         
                         const productChanges = new Map<string, Map<string, number>>();
                         stockChanges.forEach((change, batchId) => {
                             if (change === 0) return;
                             const product = products.find(p => p.batches.some(b => b.id === batchId));
                             if (product) {
-                                if (!productChanges.has(product.id)) {
-                                    productChanges.set(product.id, new Map());
-                                }
+                                if (!productChanges.has(product.id)) productChanges.set(product.id, new Map());
                                 productChanges.get(product.id)!.set(batchId, change);
                             }
                         });
@@ -593,12 +610,9 @@ const App: React.FC = () => {
                             if (product) {
                                 const updatedBatches = product.batches.map(b => {
                                     const change = batchMap.get(b.id);
-                                    if (change !== undefined) {
-                                        return { ...b, stock: b.stock + change };
-                                    }
-                                    return b;
+                                    return change !== undefined ? { ...b, stock: b.stock + change } : b;
                                 });
-                                const productRef = doc(db, `users/${currentUser.uid}/products`, productId);
+                                const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
                                 batch.update(productRef, { batches: updatedBatches });
                             }
                         });
@@ -606,19 +620,13 @@ const App: React.FC = () => {
                         batch.update(billRef, billData);
                         await batch.commit();
                         return { ...billData, id: billId } as Bill;
-                    } catch (e) {
-                        console.error("Error updating bill", e);
-                        return null;
-                    }
+                    } catch (e) { console.error(e); return null; }
                 }}
-                onCancelEdit={() => {
-                    setEditingBill(null);
-                    navigateTo('daybook');
-                }}
+                onCancelEdit={() => { setEditingBill(null); navigateTo('daybook'); }}
               />
             )}
             
-            {activeView === 'inventory' && (
+            {activeView === 'inventory' && canAccess('inventory') && (
               <Inventory 
                 products={products}
                 companies={companies}
@@ -636,7 +644,7 @@ const App: React.FC = () => {
               />
             )}
             
-            {activeView === 'purchases' && (
+            {activeView === 'purchases' && canAccess('purchases') && (
               <Purchases 
                 products={products}
                 purchases={purchases}
@@ -645,18 +653,16 @@ const App: React.FC = () => {
                 systemConfig={systemConfig}
                 gstRates={gstRates}
                 onAddPurchase={async (purchaseData) => {
-                    if (!currentUser) return;
+                    if (!dataOwnerId) return;
                     const batch = writeBatch(db);
-                    const purchaseRef = doc(collection(db, `users/${currentUser.uid}/purchases`));
-                    
+                    const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
                     batch.set(purchaseRef, purchaseData);
                     
                     for (const item of purchaseData.items) {
                         if (item.isNewProduct) {
                             let productId = item.productId;
-                            
                             if (!productId) {
-                                const newProductRef = doc(collection(db, `users/${currentUser.uid}/products`));
+                                const newProductRef = doc(collection(db, `users/${dataOwnerId}/products`));
                                 productId = newProductRef.id;
                                 const newProduct: any = {
                                     name: item.productName,
@@ -669,16 +675,14 @@ const App: React.FC = () => {
                                 if(item.composition) newProduct.composition = item.composition;
                                 if(item.unitsPerStrip) newProduct.unitsPerStrip = item.unitsPerStrip;
                                 if(item.isScheduleH) newProduct.isScheduleH = item.isScheduleH;
-                                
                                 batch.set(newProductRef, newProduct);
                                 
                                 const companyExists = companies.some(c => c.name.toLowerCase() === item.company.toLowerCase());
                                 if (!companyExists) {
-                                     const newCompanyRef = doc(collection(db, `users/${currentUser.uid}/companies`));
+                                     const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
                                      batch.set(newCompanyRef, { name: item.company });
                                 }
                             }
-                            
                             const newBatch: Batch = {
                                 id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                 batchNumber: item.batchNumber,
@@ -687,11 +691,8 @@ const App: React.FC = () => {
                                 mrp: item.mrp,
                                 purchasePrice: item.purchasePrice
                             };
-                            
-                            const productRef = doc(db, `users/${currentUser.uid}/products`, productId!);
-                            if (item.productId) {
-                                batch.update(productRef, { batches: arrayUnion(newBatch) });
-                            }
+                            const productRef = doc(db, `users/${dataOwnerId}/products`, productId!);
+                            if (item.productId) batch.update(productRef, { batches: arrayUnion(newBatch) });
                         } else {
                              if (item.productId) {
                                 const newBatch: Batch = {
@@ -702,130 +703,113 @@ const App: React.FC = () => {
                                     mrp: item.mrp,
                                     purchasePrice: item.purchasePrice
                                 };
-                                const productRef = doc(db, `users/${currentUser.uid}/products`, item.productId);
+                                const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
                                 batch.update(productRef, { batches: arrayUnion(newBatch) });
                              }
                         }
                     }
-                    
                     await batch.commit();
                 }}
-                onUpdatePurchase={async (id, data, originalPurchase) => {
-                    if (!currentUser) return;
-                    const purchaseRef = doc(db, `users/${currentUser.uid}/purchases`, id);
+                onUpdatePurchase={async (id, data) => {
+                    if (!dataOwnerId) return;
+                    const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, id);
                     await updateDoc(purchaseRef, data);
                 }}
                 onDeletePurchase={async (purchase) => {
-                    if (!currentUser) return;
+                    if (!dataOwnerId) return;
                     if (!window.confirm("Delete this purchase record? Stock will NOT be automatically reverted.")) return;
-                    const purchaseRef = doc(db, `users/${currentUser.uid}/purchases`, purchase.id);
+                    const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, purchase.id);
                     await deleteDoc(purchaseRef);
                 }}
                 onAddSupplier={async (supplierData) => {
-                    if (!currentUser) return null;
+                    if (!dataOwnerId) return null;
                     try {
-                        const docRef = await addDoc(collection(db, `users/${currentUser.uid}/suppliers`), supplierData);
+                        const docRef = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), supplierData);
                         return { id: docRef.id, ...supplierData } as Supplier;
-                    } catch (e) {
-                        console.error("Error adding supplier", e);
-                        return null;
-                    }
+                    } catch (e) { console.error(e); return null; }
                 }}
               />
             )}
             
-            {activeView === 'paymentEntry' && (
+            {activeView === 'paymentEntry' && canAccess('paymentEntry') && (
               <PaymentEntry 
                 suppliers={suppliers}
                 payments={payments}
                 companyProfile={companyProfile}
                 onAddPayment={async (paymentData) => {
-                    if (!currentUser) return null;
+                    if (!dataOwnerId) return null;
                     try {
                         const voucherNumber = `PV-${Date.now().toString().slice(-6)}`;
                         const newPayment = { ...paymentData, voucherNumber };
-                        const docRef = await addDoc(collection(db, `users/${currentUser.uid}/payments`), newPayment);
+                        const docRef = await addDoc(collection(db, `users/${dataOwnerId}/payments`), newPayment);
                         return { id: docRef.id, ...newPayment } as Payment;
-                    } catch (e) {
-                        console.error("Error adding payment", e);
-                        return null;
-                    }
+                    } catch (e) { console.error(e); return null; }
                 }}
                 onUpdatePayment={async (id, data) => {
-                    if (!currentUser) return;
-                    const ref = doc(db, `users/${currentUser.uid}/payments`, id);
+                    if (!dataOwnerId) return;
+                    const ref = doc(db, `users/${dataOwnerId}/payments`, id);
                     await updateDoc(ref, data);
                 }}
                 onDeletePayment={async (id) => {
-                    if (!currentUser) return;
+                    if (!dataOwnerId) return;
                     if (!window.confirm("Delete this payment record?")) return;
-                    const ref = doc(db, `users/${currentUser.uid}/payments`, id);
+                    const ref = doc(db, `users/${dataOwnerId}/payments`, id);
                     await deleteDoc(ref);
                 }}
               />
             )}
 
-            {activeView === 'daybook' && (
+            {activeView === 'daybook' && canAccess('daybook') && (
               <DayBook 
                 bills={bills} 
                 companyProfile={companyProfile}
                 systemConfig={systemConfig}
                 onDeleteBill={async (bill) => {
-                    if (!currentUser) return;
+                    if (!dataOwnerId) return;
                     if (!window.confirm(`Delete Bill ${bill.billNumber}? Stock will be restored.`)) return;
-                    
                     const batch = writeBatch(db);
-                    const billRef = doc(db, `users/${currentUser.uid}/bills`, bill.id);
+                    const billRef = doc(db, `users/${dataOwnerId}/bills`, bill.id);
                     batch.delete(billRef);
                     
                     for (const item of bill.items) {
                         const product = products.find(p => p.id === item.productId);
                         if (product) {
-                            const productRef = doc(db, `users/${currentUser.uid}/products`, product.id);
+                            const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
                             const updatedBatches = product.batches.map(b => {
-                                if (b.id === item.batchId) {
-                                    return { ...b, stock: b.stock + item.quantity };
-                                }
+                                if (b.id === item.batchId) return { ...b, stock: b.stock + item.quantity };
                                 return b;
                             });
                             batch.update(productRef, { batches: updatedBatches });
                         }
                     }
-                    
                     await batch.commit();
                 }}
-                onEditBill={(bill) => {
-                    setEditingBill(bill);
-                    navigateTo('billing');
-                }}
+                onEditBill={(bill) => { setEditingBill(bill); navigateTo('billing'); }}
                 onUpdateBillDetails={async (billId, updates) => {
-                    if (!currentUser) return;
-                    const billRef = doc(db, `users/${currentUser.uid}/bills`, billId);
+                    if (!dataOwnerId) return;
+                    const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
                     await updateDoc(billRef, updates);
                 }}
               />
             )}
 
-            {activeView === 'suppliersLedger' && (
+            {activeView === 'suppliersLedger' && canAccess('suppliersLedger') && (
               <SuppliersLedger 
                 suppliers={suppliers}
                 purchases={purchases}
                 payments={payments}
                 companyProfile={companyProfile}
                 onUpdateSupplier={async (id, data) => {
-                    if (!currentUser) return;
-                    const ref = doc(db, `users/${currentUser.uid}/suppliers`, id);
+                    if (!dataOwnerId) return;
+                    const ref = doc(db, `users/${dataOwnerId}/suppliers`, id);
                     await updateDoc(ref, data);
                 }}
               />
             )}
 
-            {activeView === 'salesReport' && <SalesReport bills={bills} />}
-            
-            {activeView === 'companyWiseSale' && <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />}
-            
-            {activeView === 'companyWiseBillWiseProfit' && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
-
+            {activeView === 'salesReport' && canAccess('salesReport') && <SalesReport bills={bills} />}
+            {activeView === 'companyWiseSale' && canAccess('companyWiseSale') && <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />}
+            {activeView === 'companyWiseBillWiseProfit' && canAccess('companyWiseBillWiseProfit') && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
           </>
         )}
       </main>
@@ -850,16 +834,7 @@ const App: React.FC = () => {
         systemConfig={systemConfig}
         onSystemConfigChange={handleSystemConfigChange}
         onBackupData={() => {
-            const data = {
-                products,
-                bills,
-                purchases,
-                companies,
-                suppliers,
-                payments,
-                companyProfile,
-                systemConfig
-            };
+            const data = { products, bills, purchases, companies, suppliers, payments, companyProfile, systemConfig };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
@@ -871,21 +846,18 @@ const App: React.FC = () => {
         }}
         gstRates={gstRates}
         onAddGstRate={async (rate) => {
-            if (!currentUser) return;
-            await addDoc(collection(db, `users/${currentUser.uid}/gstRates`), { rate });
+            if (!dataOwnerId) return;
+            await addDoc(collection(db, `users/${dataOwnerId}/gstRates`), { rate });
         }}
         onUpdateGstRate={async (id, newRate) => {
-            if (!currentUser) return;
-            await updateDoc(doc(db, `users/${currentUser.uid}/gstRates`, id), { rate: newRate });
+            if (!dataOwnerId) return;
+            await updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), { rate: newRate });
         }}
         onDeleteGstRate={async (id, rateValue) => {
-            if (!currentUser) return;
+            if (!dataOwnerId) return;
             const usedInProducts = products.some(p => p.gst === rateValue);
-            if (usedInProducts) {
-                alert(`Cannot delete GST Rate ${rateValue}% as it is used in some products.`);
-                return;
-            }
-            await deleteDoc(doc(db, `users/${currentUser.uid}/gstRates`, id));
+            if (usedInProducts) { alert(`Cannot delete GST Rate ${rateValue}% as it is used in some products.`); return; }
+            await deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id));
         }}
       />
     </div>

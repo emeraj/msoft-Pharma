@@ -1,9 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile } from '../types';
+import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser } from '../types';
 import Modal from './common/Modal';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
+import UserManagement from './UserManagement';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
+import { auth } from '../firebase';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -19,7 +23,7 @@ interface SettingsModalProps {
   onDeleteGstRate: (id: string, rateValue: number) => void;
 }
 
-type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language';
+type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language' | 'users';
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
@@ -75,15 +79,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterFormat, setNewPrinterFormat] = useState<'A4' | 'A5' | 'Thermal'>('Thermal');
 
+  // User Management State
+  const [subUsers, setSubUsers] = useState<SubUser[]>([]);
+
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
         setConfig(systemConfig);
-        if (activeTab !== 'language' && activeTab !== 'printers') {
+        if (activeTab !== 'language' && activeTab !== 'printers' && activeTab !== 'users') {
              setActiveTab('profile');
         }
+        fetchSubUsers();
     }
   }, [companyProfile, systemConfig, isOpen]);
+
+  const fetchSubUsers = async () => {
+      if (!auth.currentUser) return;
+      try {
+          const snapshot = await getDocs(collection(db, `users/${auth.currentUser.uid}/subUsers`));
+          const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubUser));
+          setSubUsers(users);
+      } catch (e) {
+          console.error("Failed to fetch sub users", e);
+      }
+  };
 
   const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -198,7 +217,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             return (
                 <div className="space-y-4 animate-fade-in">
                     {/* Shop Logo Upload Section */}
-                    <div className="flex items-center gap-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-dashed border-slate-300 dark:border-slate-600">
+                    <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-dashed border-slate-300 dark:border-slate-600">
                         <div className="flex-shrink-0">
                             {profile.logo ? (
                                 <div className="relative group w-24 h-24 bg-white rounded-lg overflow-hidden border dark:border-slate-600 shadow-sm flex items-center justify-center">
@@ -219,9 +238,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </div>
                             )}
                         </div>
-                        <div className="flex-grow">
+                        <div className="flex-grow w-full text-center sm:text-left">
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Shop Logo</label>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center justify-center sm:justify-start gap-3">
                                 <label className="cursor-pointer px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
                                     Upload New
                                     <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
@@ -315,7 +334,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
                             Select the primary mode of operation for the software.
                         </p>
-                        <div className="flex gap-4">
+                        <div className="flex flex-col sm:flex-row gap-4">
                             <label className="flex items-center gap-2 p-3 border rounded-lg cursor-pointer w-full dark:border-slate-600 has-[:checked]:bg-indigo-50 dark:has-[:checked]:bg-indigo-900/50 has-[:checked]:border-indigo-500">
                                 <input
                                     type="radio"
@@ -495,27 +514,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
             </div>
           );
+      case 'users':
+          return (
+              <UserManagement 
+                currentUserUid={auth.currentUser?.uid || ''} 
+                subUsers={subUsers} 
+                onRefresh={fetchSubUsers}
+              />
+          );
     }
   };
 
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings">
-      <div>
-        <div className="flex border-b dark:border-slate-700 mb-4 overflow-x-auto pb-1">
+    <Modal isOpen={isOpen} onClose={onClose} title="Settings" maxWidth="max-w-3xl">
+      <div className="flex flex-col h-full">
+        <div className="flex border-b dark:border-slate-700 mb-4 overflow-x-auto pb-1 flex-shrink-0">
             <TabButton label="Shop Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
+            <TabButton label="User Mgmt" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Printers" isActive={activeTab === 'printers'} onClick={() => setActiveTab('printers')} icon={<PrinterIcon className="h-5 w-5" />} />
-            <TabButton label="Backup/Restore" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<DownloadIcon className="h-5 w-5" />} />
+            <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<DownloadIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />
             <TabButton label="GST Master" isActive={activeTab === 'gstMaster'} onClick={() => setActiveTab('gstMaster')} icon={<PercentIcon className="h-5 w-5" />} />
         </div>
         
-        <div className="pt-4">
+        <div className="flex-grow overflow-y-auto min-h-[50vh]">
             {renderContent()}
         </div>
 
-        <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700">
+        <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700 flex-shrink-0">
             <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500">
                 Close
             </button>
