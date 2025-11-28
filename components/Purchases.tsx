@@ -3,8 +3,9 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
+import { GoogleGenAI } from "@google/genai";
 
 interface PurchasesProps {
     products: Product[];
@@ -502,10 +503,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
     const [itemToEdit, setItemToEdit] = useState<PurchaseLineItem | null>(null);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    const [isProcessingImage, setIsProcessingImage] = useState(false);
     
     // State for purchase history filtering
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (editingPurchase) {
@@ -613,6 +617,110 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         resetForm();
     };
 
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!process.env.API_KEY) {
+            alert("Gemini API Key is missing. Please configure it in your environment.");
+            return;
+        }
+
+        setIsProcessingImage(true);
+
+        try {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async () => {
+                const base64Data = (reader.result as string).split(',')[1];
+                
+                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+                const prompt = `
+                    Analyze this purchase invoice image. Extract the following details into a JSON object:
+                    - supplierName (string)
+                    - invoiceNumber (string)
+                    - invoiceDate (YYYY-MM-DD format)
+                    - items (array of objects):
+                        - productName (string)
+                        - quantity (number)
+                        - purchasePrice (number, price per unit)
+                        - mrp (number, price per unit, if not found use purchasePrice)
+                        - tax (number, GST percentage)
+                        - discount (number, percentage)
+                        - hsnCode (string, optional)
+                        - batchNumber (string, optional)
+                        - expiryDate (YYYY-MM string, optional)
+                    
+                    Strictly return ONLY the JSON object. Do not include markdown formatting.
+                `;
+
+                try {
+                    const response = await ai.models.generateContent({
+                        model: 'gemini-2.5-flash',
+                        contents: {
+                            parts: [
+                                { inlineData: { mimeType: file.type, data: base64Data } },
+                                { text: prompt }
+                            ]
+                        }
+                    });
+
+                    let jsonString = response.text || "{}";
+                    // Cleanup potential markdown blocks
+                    jsonString = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const extractedData = JSON.parse(jsonString);
+
+                    if (extractedData) {
+                        const newItems: PurchaseLineItem[] = extractedData.items?.map((item: any) => {
+                            // Check if product exists
+                            const existingProduct = products.find(p => p.name.toLowerCase() === item.productName.toLowerCase());
+                            
+                            return {
+                                isNewProduct: !existingProduct,
+                                productId: existingProduct?.id,
+                                productName: item.productName || "Unknown Product",
+                                company: existingProduct?.company || extractedData.supplierName || "Unknown",
+                                hsnCode: item.hsnCode || existingProduct?.hsnCode || "",
+                                gst: item.tax || existingProduct?.gst || 0,
+                                quantity: item.quantity || 1,
+                                mrp: item.mrp || 0,
+                                purchasePrice: item.purchasePrice || 0,
+                                discount: item.discount || 0,
+                                batchNumber: item.batchNumber || (isPharmaMode ? '' : 'DEFAULT'),
+                                expiryDate: item.expiryDate || (isPharmaMode ? '' : '9999-12'),
+                                unitsPerStrip: existingProduct?.unitsPerStrip || 1,
+                                isScheduleH: existingProduct?.isScheduleH || false,
+                                barcode: existingProduct?.barcode
+                            };
+                        }) || [];
+
+                        setFormState(prev => ({
+                            ...prev,
+                            supplierName: extractedData.supplierName || prev.supplierName,
+                            invoiceNumber: extractedData.invoiceNumber || prev.invoiceNumber,
+                            invoiceDate: extractedData.invoiceDate || prev.invoiceDate,
+                            currentItems: [...prev.currentItems, ...newItems]
+                        }));
+                        
+                        alert(`Successfully scanned! Added ${newItems.length} items from invoice.`);
+                    }
+
+                } catch (apiError) {
+                    console.error("Gemini API Error:", apiError);
+                    alert("Failed to extract data from image. Please try again.");
+                }
+            };
+        } catch (error) {
+            console.error("Image processing error:", error);
+            alert("Error processing the image.");
+        } finally {
+            setIsProcessingImage(false);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
+
     const filteredPurchases = useMemo(() => {
         return purchases
             .filter(p => {
@@ -656,7 +764,41 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
     return (
         <div className="p-4 sm:p-6 space-y-6">
-            <Card title={editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}>
+            <Card title={
+                <div className="flex justify-between items-center">
+                    <span>{editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}</span>
+                    <div className="relative">
+                        <input 
+                            type="file" 
+                            accept="image/*" 
+                            ref={fileInputRef} 
+                            onChange={handleImageUpload} 
+                            className="hidden" 
+                        />
+                        <button 
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isProcessingImage}
+                            className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg shadow-sm transition-all ${
+                                isProcessingImage 
+                                ? 'bg-slate-200 text-slate-500 cursor-wait' 
+                                : 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:from-purple-600 hover:to-indigo-700'
+                            }`}
+                        >
+                            {isProcessingImage ? (
+                                <>
+                                    <div className="animate-spin h-4 w-4 border-2 border-slate-500 border-t-transparent rounded-full"></div>
+                                    <span>Scanning...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <UploadIcon className="h-4 w-4" />
+                                    <span>Scan Invoice Image (AI)</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            }>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
