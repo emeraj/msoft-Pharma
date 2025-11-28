@@ -1,26 +1,11 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { GoogleGenAI, Type } from "@google/genai";
+import type { Purchase, Product, Supplier, SystemConfig, GstRate, PurchaseLineItem, Company } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon } from './icons/Icons';
-import BarcodeScannerModal from './BarcodeScannerModal';
-import { GoogleGenAI } from "@google/genai";
+import { PlusIcon, PencilIcon, TrashIcon, UploadIcon, DownloadIcon } from './icons/Icons';
 
-interface PurchasesProps {
-    products: Product[];
-    purchases: Purchase[];
-    companies: Company[];
-    suppliers: Supplier[];
-    systemConfig: SystemConfig;
-    gstRates: GstRate[];
-    onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
-    onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
-    onDeletePurchase: (purchase: Purchase) => void;
-    onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
-}
-
-// --- Utility function to export data to CSV ---
 const exportToCsv = (filename: string, data: any[]) => {
   if (data.length === 0) {
     alert("No data to export.");
@@ -29,11 +14,10 @@ const exportToCsv = (filename: string, data: any[]) => {
 
   const headers = Object.keys(data[0]);
   const csvContent = [
-    headers.join(','), // header row
+    headers.join(','),
     ...data.map(row => 
       headers.map(header => {
         let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
-        // handle commas, quotes, and newlines in data
         if (/[",\n]/.test(cell)) {
           cell = `"${cell.replace(/"/g, '""')}"`;
         }
@@ -55,725 +39,409 @@ const exportToCsv = (filename: string, data: any[]) => {
   }
 };
 
+interface PurchasesProps {
+  products: Product[];
+  purchases: Purchase[];
+  companies: Company[];
+  suppliers: Supplier[];
+  systemConfig: SystemConfig;
+  gstRates: GstRate[];
+  onAddPurchase: (purchaseData: any) => Promise<void>;
+  onUpdatePurchase: (id: string, data: any) => Promise<void>;
+  onDeletePurchase: (purchase: Purchase) => Promise<void>;
+  onAddSupplier: (supplierData: any) => Promise<Supplier | null>;
+}
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
+const Purchases: React.FC<PurchasesProps> = ({ 
+    products, 
+    purchases, 
+    companies, 
+    suppliers, 
+    systemConfig, 
+    gstRates, 
+    onAddPurchase, 
+    onUpdatePurchase, 
+    onDeletePurchase,
+    onAddSupplier 
+}) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
-const AddSupplierModal: React.FC<{
+  const filteredPurchases = useMemo(() => {
+    return purchases.filter(p => {
+        const matchesSearch = p.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                              p.supplier.toLowerCase().includes(searchTerm.toLowerCase());
+        const purchaseDate = new Date(p.invoiceDate);
+        purchaseDate.setHours(0,0,0,0);
+        
+        let matchesDate = true;
+        if (fromDate) {
+            const start = new Date(fromDate);
+            start.setHours(0,0,0,0);
+            if (purchaseDate < start) matchesDate = false;
+        }
+        if (toDate) {
+            const end = new Date(toDate);
+            end.setHours(0,0,0,0);
+            if (purchaseDate > end) matchesDate = false;
+        }
+        return matchesSearch && matchesDate;
+    }).sort((a,b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
+  }, [purchases, searchTerm, fromDate, toDate]);
+
+  const handleExport = () => {
+      const data = filteredPurchases.map(p => ({
+          'Invoice No': p.invoiceNumber,
+          'Date': new Date(p.invoiceDate).toLocaleDateString(),
+          'Supplier': p.supplier,
+          'Total Amount': p.totalAmount.toFixed(2),
+          'Items Count': p.items.length
+      }));
+      exportToCsv('purchases_report', data);
+  };
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6">
+      <Card>
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Purchase Management</h1>
+          <button 
+            onClick={() => { setEditingPurchase(null); setIsModalOpen(true); }}
+            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors duration-200"
+          >
+            <PlusIcon className="h-5 w-5" /> Add New Purchase
+          </button>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+            <input 
+                type="text" 
+                placeholder="Search Invoice # or Supplier..." 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)} 
+                className={formInputStyle} 
+            />
+            <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600 dark:text-slate-400">From:</span>
+                <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-600 dark:text-slate-400">To:</span>
+                <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
+            </div>
+        </div>
+        
+        <div className="flex justify-end mt-4">
+             <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 rounded shadow hover:bg-green-700 text-sm">
+                <DownloadIcon className="h-4 w-4" /> Export CSV
+            </button>
+        </div>
+      </Card>
+
+      <Card title="Purchase History">
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+                    <tr>
+                        <th className="px-6 py-3">Date</th>
+                        <th className="px-6 py-3">Invoice #</th>
+                        <th className="px-6 py-3">Supplier</th>
+                        <th className="px-6 py-3 text-right">Total Amount</th>
+                        <th className="px-6 py-3 text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {filteredPurchases.map(purchase => (
+                        <tr key={purchase.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
+                            <td className="px-6 py-4">{new Date(purchase.invoiceDate).toLocaleDateString()}</td>
+                            <td className="px-6 py-4 font-medium">{purchase.invoiceNumber}</td>
+                            <td className="px-6 py-4">{purchase.supplier}</td>
+                            <td className="px-6 py-4 text-right font-bold">₹{purchase.totalAmount.toFixed(2)}</td>
+                            <td className="px-6 py-4">
+                                <div className="flex items-center justify-center gap-3">
+                                    <button onClick={() => { setEditingPurchase(purchase); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-800">
+                                        <PencilIcon className="h-4 w-4" />
+                                    </button>
+                                    <button onClick={() => onDeletePurchase(purchase)} className="text-red-600 hover:text-red-800">
+                                        <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                    {filteredPurchases.length === 0 && (
+                        <tr>
+                            <td colSpan={5} className="text-center py-8 text-slate-500">No purchases found.</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+      </Card>
+
+      {isModalOpen && (
+          <AddPurchaseModal 
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            existingPurchase={editingPurchase}
+            products={products}
+            suppliers={suppliers}
+            gstRates={gstRates}
+            systemConfig={systemConfig}
+            onSave={async (data) => {
+                if (editingPurchase) {
+                    await onUpdatePurchase(editingPurchase.id, data);
+                } else {
+                    await onAddPurchase(data);
+                }
+                setIsModalOpen(false);
+            }}
+            onAddSupplier={onAddSupplier}
+          />
+      )}
+    </div>
+  );
+};
+
+interface AddPurchaseModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => void;
-    initialName?: string;
-}> = ({ isOpen, onClose, onAddSupplier, initialName = '' }) => {
-    const [formState, setFormState] = useState({
-        name: '', address: '', phone: '', gstin: '', openingBalance: ''
-    });
+    existingPurchase: Purchase | null;
+    products: Product[];
+    suppliers: Supplier[];
+    gstRates: GstRate[];
+    systemConfig: SystemConfig;
+    onSave: (data: any) => Promise<void>;
+    onAddSupplier: (data: any) => Promise<Supplier | null>;
+}
 
-    useEffect(() => {
-        if (isOpen) {
-            setFormState({
-                name: initialName, address: '', phone: '', gstin: '', openingBalance: '0'
-            });
-        }
-    }, [isOpen, initialName]);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFormState({ ...formState, [e.target.name]: e.target.value });
-    };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formState.name) {
-            alert('Supplier Name is required.');
-            return;
-        }
-        onAddSupplier({
-            ...formState,
-            openingBalance: parseFloat(formState.openingBalance) || 0
-        });
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Add New Supplier">
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name*</label>
-                        <input name="name" value={formState.name} onChange={handleChange} className={formInputStyle} required />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone</label>
-                        <input name="phone" value={formState.phone} onChange={handleChange} className={formInputStyle} />
-                    </div>
-                </div>
-                 <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
-                    <input name="address" value={formState.address} onChange={handleChange} className={formInputStyle} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
-                        <input name="gstin" value={formState.gstin} onChange={handleChange} className={formInputStyle} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
-                        <input name="openingBalance" value={formState.openingBalance} onChange={handleChange} type="number" step="0.01" className={formInputStyle} />
-                    </div>
-                </div>
-                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700 mt-4">
-                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Supplier</button>
-                </div>
-            </form>
-        </Modal>
-    );
-};
-
-
-const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], disabled?: boolean, itemToEdit?: PurchaseLineItem | null }> = ({ products, onAddItem, companies, systemConfig, gstRates, disabled = false, itemToEdit }) => {
-    const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
-    const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
-    
-    const getInitialFormState = () => ({
-        isNewProduct: false,
-        productSearch: '',
-        selectedProduct: null as Product | null,
-        productName: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No',
-        batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '',
-        barcode: '',
-        discount: '',
-        tax: defaultGst
-    });
-
-    const [formState, setFormState] = useState(getInitialFormState());
-    const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
-    const [activeIndex, setActiveIndex] = useState(0);
-    const activeItemRef = useRef<HTMLLIElement>(null);
-    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
-    const [isScanning, setIsScanning] = useState(false);
-
-    // Effect to populate form when editing
-    useEffect(() => {
-        if (itemToEdit) {
-            const existingProduct = itemToEdit.productId ? products.find(p => p.id === itemToEdit.productId) : null;
-            
-            setFormState({
-                isNewProduct: itemToEdit.isNewProduct,
-                productSearch: itemToEdit.productName,
-                selectedProduct: existingProduct || null,
-                productName: itemToEdit.productName,
-                company: itemToEdit.company,
-                hsnCode: itemToEdit.hsnCode,
-                gst: String(itemToEdit.gst),
-                composition: itemToEdit.composition || '',
-                unitsPerStrip: String(itemToEdit.unitsPerStrip || ''),
-                isScheduleH: itemToEdit.isScheduleH ? 'Yes' : 'No',
-                batchNumber: itemToEdit.batchNumber,
-                expiryDate: itemToEdit.expiryDate,
-                quantity: String(itemToEdit.quantity),
-                mrp: String(itemToEdit.mrp),
-                purchasePrice: String(itemToEdit.purchasePrice),
-                barcode: itemToEdit.barcode || '',
-                discount: itemToEdit.discount ? String(itemToEdit.discount) : '',
-                tax: String(itemToEdit.gst)
-            });
-        }
-    }, [itemToEdit, products]);
-
-    const companySuggestions = useMemo(() => {
-        if (!formState.company) return companies.slice(0, 5);
-        return companies.filter(c => c.name.toLowerCase().includes(formState.company.toLowerCase()));
-    }, [formState.company, companies]);
-
-    const companyExists = useMemo(() => {
-        return companies.some(c => c.name.toLowerCase() === formState.company.trim().toLowerCase());
-    }, [formState.company, companies]);
-
-    const handleSelectCompany = (companyName: string) => {
-        setFormState(prev => ({ ...prev, company: companyName }));
-        setShowCompanySuggestions(false);
-    };
-
-    const searchResults = useMemo(() => {
-        if (!formState.productSearch || formState.selectedProduct) return [];
-        const term = formState.productSearch.toLowerCase();
-        return products.filter(p => 
-            p.name.toLowerCase().includes(term) || 
-            (!isPharmaMode && p.barcode && p.barcode.includes(term))
-        ).slice(0, 5);
-    }, [formState.productSearch, products, formState.selectedProduct, isPharmaMode]);
-
-    useEffect(() => {
-        setActiveIndex(0);
-    }, [formState.productSearch]);
-
-    useEffect(() => {
-        activeItemRef.current?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'nearest',
-        });
-    }, [activeIndex]);
-
-    const handleScanSuccess = (decodedText: string) => {
-        setFormState(prev => ({ ...prev, barcode: decodedText }));
-        setIsScanning(false);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (searchResults.length === 0) return;
-
-        switch (e.key) {
-            case 'ArrowDown':
-                e.preventDefault();
-                setActiveIndex(prev => (prev + 1) % searchResults.length);
-                break;
-            case 'ArrowUp':
-                e.preventDefault();
-                setActiveIndex(prev => (prev - 1 + searchResults.length) % searchResults.length);
-                break;
-            case 'Enter':
-                e.preventDefault();
-                if (activeIndex >= 0 && activeIndex < searchResults.length) {
-                    handleSelectProduct(searchResults[activeIndex]);
-                }
-                break;
-            case 'Escape':
-                e.preventDefault();
-                setFormState(prev => ({...prev, productSearch: '', selectedProduct: null}));
-                break;
-            default:
-                break;
-        }
-    };
-
-
-    const handleSelectProduct = (product: Product) => {
-        setFormState(prev => ({
-            ...prev,
-            selectedProduct: product,
-            productSearch: product.name,
-            productName: product.name,
-            company: product.company,
-            hsnCode: product.hsnCode,
-            gst: String(product.gst),
-            tax: String(product.gst), // Sync tax field with product GST
-            unitsPerStrip: String(product.unitsPerStrip || ''),
-            isScheduleH: product.isScheduleH ? 'Yes' : 'No',
-            isNewProduct: false,
-        }));
-        setActiveIndex(-1);
-    };
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormState(prev => {
-            const newState = { ...prev, [name]: value };
-            if (name === 'productSearch') {
-                newState.selectedProduct = null;
-                newState.isNewProduct = false;
-            }
-            // If GST changes in top section, update tax field in bottom section
-            if (name === 'gst') {
-                newState.tax = value;
-            }
-            // If tax changes in bottom section, update gst in top section
-            if (name === 'tax') {
-                newState.gst = value;
-            }
-            return newState;
-        });
-    };
-
-    const handleToggleNewProduct = () => {
-        setFormState(getInitialFormState());
-        setFormState(prev => ({
-            ...prev,
-            isNewProduct: true,
-        }));
-    };
-    
-    const handleAddItem = (e: React.FormEvent) => {
-        e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, composition, unitsPerStrip, isScheduleH, batchNumber, expiryDate, quantity, mrp, purchasePrice, barcode, discount, tax } = formState;
-
-        if (isNewProduct && (!productName || !company)) {
-            alert('Product Name and Company are required for a new product.');
-            return;
-        }
-        if (!isNewProduct && !selectedProduct) {
-            alert('Please select an existing product or switch to add a new one.');
-            return;
-        }
-
-        const item: PurchaseLineItem = {
-            isNewProduct,
-            productName: isNewProduct ? productName : selectedProduct!.name,
-            company: company.trim(),
-            hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
-            gst: parseFloat(tax) || parseFloat(gst) || 0, // Use tax value
-            batchNumber: isPharmaMode ? batchNumber : 'DEFAULT',
-            expiryDate: isPharmaMode ? expiryDate : '9999-12',
-            quantity: parseInt(quantity, 10),
-            mrp: parseFloat(mrp),
-            purchasePrice: parseFloat(purchasePrice),
-            barcode: isNewProduct && !isPharmaMode ? barcode : undefined,
-            discount: parseFloat(discount) || 0,
-        };
-
-        if (isPharmaMode && isNewProduct) {
-            item.isScheduleH = isScheduleH === 'Yes';
-             if (composition) {
-                item.composition = composition;
-            }
-            const units = parseInt(unitsPerStrip, 10);
-            if (!isNaN(units) && units > 1) {
-                item.unitsPerStrip = units;
-            }
-        } else {
-            item.isScheduleH = false;
-            item.unitsPerStrip = 1;
-        }
-        
-        if (!isNewProduct && selectedProduct) {
-            item.productId = selectedProduct.id;
-        }
-
-        onAddItem(item);
-        setFormState(getInitialFormState()); // Reset form
-    };
-
-    return (
-        <form onSubmit={handleAddItem} className={`p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                <div className="md:col-span-2 relative">
-                    <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">Search Existing Product</label>
-                    <input
-                        type="text"
-                        name="productSearch"
-                        value={formState.productSearch}
-                        onChange={handleChange}
-                        onKeyDown={handleKeyDown}
-                        placeholder={isPharmaMode ? "Type to search..." : "Scan barcode or type name..."}
-                        className={`mt-1 w-full ${formInputStyle}`}
-                        disabled={formState.isNewProduct || disabled}
-                        autoComplete="off"
-                    />
-                    {searchResults.length > 0 && (
-                        <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 shadow-lg rounded max-h-48 overflow-y-auto">
-                            {searchResults.map((p, index) => (
-                                <li 
-                                    key={p.id} 
-                                    ref={index === activeIndex ? activeItemRef : null}
-                                    onClick={() => handleSelectProduct(p)} 
-                                    onMouseEnter={() => setActiveIndex(index)}
-                                    className={`p-2 text-slate-800 dark:text-slate-200 cursor-pointer ${
-                                        index === activeIndex 
-                                            ? 'bg-indigo-200 dark:bg-indigo-700' 
-                                            : 'hover:bg-indigo-100 dark:hover:bg-indigo-900'
-                                    }`}
-                                >
-                                    {p.name} ({p.company}) {!isPharmaMode && p.barcode && <span className="text-xs text-gray-500">[{p.barcode}]</span>}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-                <div>
-                     <button type="button" onClick={handleToggleNewProduct} className="w-full h-10 px-4 py-2 bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 rounded-md hover:bg-green-200 dark:hover:bg-green-900 transition-colors" disabled={disabled}>
-                        Or, Add New Product
-                    </button>
-                </div>
-            </div>
-
-            {formState.isNewProduct && (
-                 <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800 animate-fade-in">
-                    <h4 className="font-semibold text-green-800 dark:text-green-300 mb-2">New Product Details</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                        <input name="productName" value={formState.productName} onChange={handleChange} placeholder="Product Name*" className={formInputStyle} required />
-                        <div className="relative">
-                            <input
-                                name="company"
-                                value={formState.company}
-                                onChange={handleChange}
-                                onFocus={() => setShowCompanySuggestions(true)}
-                                onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)}
-                                placeholder="Company*"
-                                className={formInputStyle}
-                                required
-                                autoComplete="off"
-                            />
-                            {showCompanySuggestions && (
-                                <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                    {companySuggestions.map(c => (
-                                        <li key={c.id} onClick={() => handleSelectCompany(c.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
-                                            {c.name}
-                                        </li>
-                                    ))}
-                                    {!companyExists && formState.company.trim().length > 0 && (
-                                        <li onClick={() => handleSelectCompany(formState.company.trim())} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
-                                            Create: "{formState.company.trim()}"
-                                        </li>
-                                    )}
-                                </ul>
-                            )}
-                        </div>
-                        <input name="hsnCode" value={formState.hsnCode} onChange={handleChange} placeholder="HSN Code" className={formInputStyle} />
-                        {!isPharmaMode && (
-                            <div className="relative flex gap-1 items-center col-span-2 md:col-span-1">
-                                <input name="barcode" value={formState.barcode} onChange={handleChange} placeholder="Barcode" className={formInputStyle} />
-                                <button
-                                    type="button"
-                                    onClick={() => setIsScanning(true)}
-                                    className="p-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-300"
-                                    title="Scan Barcode"
-                                >
-                                    <CameraIcon className="h-5 w-5" />
-                                </button>
-                            </div>
-                        )}
-                        <select name="gst" value={formState.gst} onChange={handleChange} className={formSelectStyle}>
-                           {sortedGstRates.map(rate => (
-                            <option key={rate.id} value={rate.rate}>{`GST ${rate.rate}%`}</option>
-                            ))}
-                        </select>
-                        {isPharmaMode && (
-                           <>
-                                <input name="unitsPerStrip" value={formState.unitsPerStrip} onChange={handleChange} type="number" placeholder="Units / Strip" className={formInputStyle} min="1"/>
-                                <select name="isScheduleH" value={formState.isScheduleH} onChange={handleChange} className={formSelectStyle}>
-                                    <option value="No">Sch. H? No</option>
-                                    <option value="Yes">Sch. H? Yes</option>
-                                </select>
-                                <div className="col-span-2 md:col-span-6">
-                                <input name="composition" value={formState.composition} onChange={handleChange} placeholder="Composition (e.g., Paracetamol 500mg)" className={formInputStyle} />
-                                </div>
-                           </>
-                        )}
-                    </div>
-                </div>
-            )}
-
-            {(formState.selectedProduct || formState.isNewProduct) && (
-                <div className="animate-fade-in">
-                     <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2 pt-2 border-t dark:border-slate-600">Purchase Details</h4>
-                     <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
-                         {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={handleChange} placeholder="Batch No.*" className={formInputStyle} required />}
-                         {isPharmaMode && <input name="expiryDate" value={formState.expiryDate} onChange={handleChange} type="month" className={formInputStyle} required />}
-                         <input name="quantity" value={formState.quantity} onChange={handleChange} type="number" placeholder={`Qty ${isPharmaMode ? '(Strips)' : ''}*`} className={formInputStyle} required min="1" />
-                         <input name="purchasePrice" value={formState.purchasePrice} onChange={handleChange} type="number" placeholder={`Price / ${isPharmaMode ? 'Strip' : 'Unit'}*`} className={formInputStyle} required min="0" step="0.01" />
-                         <input name="mrp" value={formState.mrp} onChange={handleChange} type="number" placeholder={`MRP / ${isPharmaMode ? 'Strip' : 'Unit'}*`} className={formInputStyle} required min="0" step="0.01" />
-                         <input name="discount" value={formState.discount} onChange={handleChange} type="number" placeholder="Disc (%)" className={formInputStyle} min="0" step="0.01" />
-                         <input name="tax" value={formState.tax} onChange={handleChange} type="number" placeholder="Tax (%)" className={formInputStyle} min="0" step="0.01" />
-                     </div>
-                     <div className="flex justify-end mt-4">
-                        <button type="submit" className="inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 transition-colors">
-                            <PlusIcon className="h-5 w-5" /> {itemToEdit ? 'Update Item' : 'Add Item to Purchase'}
-                        </button>
-                     </div>
-                </div>
-            )}
-             <BarcodeScannerModal 
-                isOpen={isScanning} 
-                onClose={() => setIsScanning(false)} 
-                onScanSuccess={handleScanSuccess} 
-             />
-            <style>{`
-                @keyframes fade-in {
-                    0% { opacity: 0; transform: translateY(-10px); }
-                    100% { opacity: 1; transform: translateY(0); }
-                }
-                .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
-            `}</style>
-        </form>
-    );
-};
-
-
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
-    const initialFormState = {
-        supplierName: '',
-        invoiceNumber: '',
-        invoiceDate: new Date().toISOString().split('T')[0],
-        currentItems: [] as PurchaseLineItem[]
-    };
-    
-    const [formState, setFormState] = useState(initialFormState);
-    const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
-    const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
-    const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
-    const [itemToEdit, setItemToEdit] = useState<PurchaseLineItem | null>(null);
-    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+const AddPurchaseModal: React.FC<AddPurchaseModalProps> = ({ 
+    isOpen, onClose, existingPurchase, products, suppliers, gstRates, systemConfig, onSave, onAddSupplier 
+}) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [isProcessingImage, setIsProcessingImage] = useState(false);
     
-    // State for purchase history filtering
-    const [fromDate, setFromDate] = useState('');
-    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
-
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [header, setHeader] = useState({
+        invoiceNumber: '',
+        invoiceDate: new Date().toISOString().split('T')[0],
+        supplier: '',
+    });
+    const [lineItems, setLineItems] = useState<PurchaseLineItem[]>([]);
+    
+    // Line item input state
+    const [currentItem, setCurrentItem] = useState<Partial<PurchaseLineItem>>({
+        isNewProduct: false,
+        productName: '',
+        company: '',
+        hsnCode: '',
+        gst: 12,
+        batchNumber: '',
+        expiryDate: '',
+        quantity: 0,
+        mrp: 0,
+        purchasePrice: 0,
+        unitsPerStrip: 1,
+    });
 
     useEffect(() => {
-        if (editingPurchase) {
-            setFormState({
-                supplierName: editingPurchase.supplier,
-                invoiceNumber: editingPurchase.invoiceNumber,
-                invoiceDate: new Date(editingPurchase.invoiceDate).toISOString().split('T')[0],
-                currentItems: editingPurchase.items || [],
+        if (existingPurchase) {
+            setHeader({
+                invoiceNumber: existingPurchase.invoiceNumber,
+                invoiceDate: existingPurchase.invoiceDate.split('T')[0],
+                supplier: existingPurchase.supplier,
             });
-            window.scrollTo(0, 0); // Scroll to top to see the form
-        } else {
-            setFormState(initialFormState);
+            setLineItems(existingPurchase.items);
         }
-    }, [editingPurchase]);
-
-    const supplierSuggestions = useMemo(() => {
-        if (!formState.supplierName) return [];
-        return suppliers.filter(s => s.name.toLowerCase().includes(formState.supplierName.toLowerCase()));
-    }, [formState.supplierName, suppliers]);
-
-    const exactMatch = useMemo(() => {
-        return suppliers.some(s => s.name.toLowerCase() === formState.supplierName.trim().toLowerCase());
-    }, [formState.supplierName, suppliers]);
-
-    const handleSelectSupplier = (name: string) => {
-        setFormState(prev => ({ ...prev, supplierName: name }));
-        setShowSupplierSuggestions(false);
-    };
-
-    const handleOpenSupplierModal = () => {
-        setSupplierModalOpen(true);
-        setShowSupplierSuggestions(false);
-    };
-
-    const handleAddNewSupplier = async (supplierData: Omit<Supplier, 'id'>) => {
-        const newSupplier = await onAddSupplier(supplierData);
-        if (newSupplier) {
-            setFormState(prev => ({ ...prev, supplierName: newSupplier.name }));
-            setSupplierModalOpen(false);
-        }
-    };
-
-    const handleAddItem = (item: PurchaseLineItem) => {
-        setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}));
-        setItemToEdit(null); // Clear edit state after adding
-    };
-
-    const handleRemoveItem = (index: number) => {
-        setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== index)}));
-    };
-
-    const handleEditItem = (index: number) => {
-        const item = formState.currentItems[index];
-        setItemToEdit(item);
-        handleRemoveItem(index); // Remove from list to be re-added after edit
-        // Optionally, scroll to top/form
-        const formElement = document.querySelector('form');
-        if (formElement) {
-            formElement.scrollIntoView({ behavior: 'smooth' });
-        }
-    };
-
-    // Helper function to calculate line item total
-    const calculateLineTotal = (item: PurchaseLineItem) => {
-        const amount = item.purchasePrice * item.quantity;
-        const discountAmount = amount * ((item.discount || 0) / 100);
-        const taxableAmount = amount - discountAmount;
-        const taxAmount = taxableAmount * (item.gst / 100);
-        return taxableAmount + taxAmount;
-    };
-
-    const totalAmount = useMemo(() => {
-        return formState.currentItems.reduce((total, item) => total + calculateLineTotal(item), 0);
-    }, [formState.currentItems]);
-    
-    const resetForm = () => {
-        setEditingPurchase(null);
-        setFormState(initialFormState);
-        setItemToEdit(null);
-    };
-
-    const handleSavePurchase = () => {
-        if (!formState.supplierName || !formState.invoiceDate || formState.currentItems.length === 0) {
-            alert('Please select a supplier, set the date, and add at least one item.');
-            return;
-        }
-        if (!formState.invoiceNumber.trim()) {
-            alert('Invoice Number is required.');
-            return;
-        }
-        
-        const purchaseData = { 
-            supplier: formState.supplierName, 
-            invoiceNumber: formState.invoiceNumber, 
-            invoiceDate: formState.invoiceDate, 
-            items: formState.currentItems,
-            totalAmount
-        };
-
-        if (editingPurchase && editingPurchase.id) {
-             onUpdatePurchase(editingPurchase.id, purchaseData, editingPurchase);
-        } else {
-            onAddPurchase(purchaseData);
-        }
-        resetForm();
-    };
+    }, [existingPurchase]);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        if (!process.env.API_KEY) {
-            alert("Gemini API Key is missing. Please configure it in your environment.");
-            return;
-        }
-
         setIsProcessingImage(true);
-
         try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            
+            // Convert file to base64
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onload = async () => {
-                const base64Data = (reader.result as string).split(',')[1];
-                
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                const prompt = `
-                    Analyze this purchase invoice (image or PDF). Extract the following details into a JSON object:
-                    - supplierName (string)
-                    - invoiceNumber (string)
-                    - invoiceDate (YYYY-MM-DD format)
-                    - items (array of objects):
-                        - productName (string)
-                        - quantity (number)
-                        - purchasePrice (number, price per unit)
-                        - mrp (number, price per unit, if not found use purchasePrice)
-                        - tax (number, GST percentage)
-                        - discount (number, percentage)
-                        - hsnCode (string, optional)
-                        - batchNumber (string, optional)
-                        - expiryDate (YYYY-MM string, optional)
-                    
-                    Strictly return ONLY the JSON object. Do not include markdown formatting.
-                `;
-
-                try {
-                    const response = await ai.models.generateContent({
-                        model: 'gemini-2.5-flash',
-                        contents: {
-                            parts: [
-                                { inlineData: { mimeType: file.type, data: base64Data } },
-                                { text: prompt }
-                            ]
+            await new Promise((resolve) => { reader.onload = resolve; });
+            const base64Data = (reader.result as string).split(',')[1];
+            
+            const prompt = "Extract invoice details: invoice number, date, supplier name, and line items (product name, company, hsn, batch, expiry (YYYY-MM), quantity, mrp, rate, gst, units per strip). Return as JSON.";
+            
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                    { inlineData: { mimeType: file.type, data: base64Data } },
+                    { text: prompt }
+                ],
+                config: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            invoiceNumber: { type: Type.STRING },
+                            invoiceDate: { type: Type.STRING },
+                            supplierName: { type: Type.STRING },
+                            items: {
+                                type: Type.ARRAY,
+                                items: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        productName: { type: Type.STRING },
+                                        company: { type: Type.STRING },
+                                        hsnCode: { type: Type.STRING },
+                                        batchNumber: { type: Type.STRING },
+                                        expiryDate: { type: Type.STRING },
+                                        quantity: { type: Type.NUMBER },
+                                        mrp: { type: Type.NUMBER },
+                                        purchasePrice: { type: Type.NUMBER },
+                                        gst: { type: Type.NUMBER },
+                                        unitsPerStrip: { type: Type.NUMBER },
+                                    }
+                                }
+                            }
                         }
-                    });
-
-                    let jsonString = response.text || "{}";
-                    // Cleanup potential markdown blocks
-                    jsonString = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
-                    const extractedData = JSON.parse(jsonString);
-
-                    if (extractedData) {
-                        const newItems: PurchaseLineItem[] = extractedData.items?.map((item: any) => {
-                            // Check if product exists
-                            const existingProduct = products.find(p => p.name.toLowerCase() === item.productName.toLowerCase());
-                            
-                            return {
-                                isNewProduct: !existingProduct,
-                                productId: existingProduct?.id,
-                                productName: item.productName || "Unknown Product",
-                                company: existingProduct?.company || extractedData.supplierName || "Unknown",
-                                hsnCode: item.hsnCode || existingProduct?.hsnCode || "",
-                                gst: item.tax || existingProduct?.gst || 0,
-                                quantity: item.quantity || 1,
-                                mrp: item.mrp || 0,
-                                purchasePrice: item.purchasePrice || 0,
-                                discount: item.discount || 0,
-                                batchNumber: item.batchNumber || (isPharmaMode ? '' : 'DEFAULT'),
-                                expiryDate: item.expiryDate || (isPharmaMode ? '' : '9999-12'),
-                                unitsPerStrip: existingProduct?.unitsPerStrip || 1,
-                                isScheduleH: existingProduct?.isScheduleH || false,
-                                barcode: existingProduct?.barcode
-                            };
-                        }) || [];
-
-                        setFormState(prev => ({
-                            ...prev,
-                            supplierName: extractedData.supplierName || prev.supplierName,
-                            invoiceNumber: extractedData.invoiceNumber || prev.invoiceNumber,
-                            invoiceDate: extractedData.invoiceDate || prev.invoiceDate,
-                            currentItems: [...prev.currentItems, ...newItems]
-                        }));
-                        
-                        alert(`Successfully scanned! Added ${newItems.length} items from invoice.`);
                     }
-
-                } catch (apiError) {
-                    console.error("Gemini API Error:", apiError);
-                    alert("Failed to extract data from file. Please try again.");
                 }
-            };
-        } catch (error) {
-            console.error("Image processing error:", error);
-            alert("Error processing the file.");
+            });
+
+            if (response.text) {
+                const data = JSON.parse(response.text);
+                
+                // Auto-fill header
+                setHeader(prev => ({
+                    ...prev,
+                    invoiceNumber: data.invoiceNumber || prev.invoiceNumber,
+                    invoiceDate: data.invoiceDate ? new Date(data.invoiceDate).toISOString().split('T')[0] : prev.invoiceDate,
+                    supplier: data.supplierName || prev.supplier
+                }));
+
+                // Map items
+                const newItems: PurchaseLineItem[] = data.items.map((item: any) => {
+                    // Try to find existing product
+                    const existingProduct = products.find(p => p.name.toLowerCase() === item.productName?.toLowerCase());
+                    
+                    return {
+                        isNewProduct: !existingProduct,
+                        productId: existingProduct?.id,
+                        productName: item.productName || '',
+                        company: item.company || existingProduct?.company || '',
+                        hsnCode: item.hsnCode || existingProduct?.hsnCode || '',
+                        gst: item.gst || existingProduct?.gst || 12,
+                        batchNumber: item.batchNumber || '',
+                        expiryDate: item.expiryDate || '',
+                        quantity: item.quantity || 0,
+                        mrp: item.mrp || 0,
+                        purchasePrice: item.purchasePrice || 0,
+                        unitsPerStrip: item.unitsPerStrip || existingProduct?.unitsPerStrip || 1,
+                        isScheduleH: existingProduct?.isScheduleH || false
+                    };
+                });
+                
+                setLineItems(prev => [...prev, ...newItems]);
+            }
+
+        } catch (e: any) {
+            console.error("AI Extraction Failed", e);
+            alert("Failed to process invoice: " + e.message);
         } finally {
             setIsProcessingImage(false);
-            if (fileInputRef.current) {
-                fileInputRef.current.value = '';
-            }
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    const filteredPurchases = useMemo(() => {
-        return purchases
-            .filter(p => {
-                const purchaseDate = new Date(p.invoiceDate);
-                purchaseDate.setHours(0,0,0,0);
-                
-                if (fromDate) {
-                    const start = new Date(fromDate);
-                    start.setHours(0,0,0,0);
-                    if (purchaseDate < start) return false;
-                }
-                
-                if (toDate) {
-                    const end = new Date(toDate);
-                    end.setHours(0,0,0,0);
-                    if (purchaseDate > end) return false;
-                }
-                
-                return true;
-            })
-            .sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime());
-    }, [purchases, fromDate, toDate]);
-    
-    const handleExport = () => {
-        if (filteredPurchases.length === 0) {
-            alert("No purchase data to export for the selected date range.");
+    const handleAddLineItem = () => {
+        if (!currentItem.productName || !currentItem.quantity || !currentItem.mrp || !currentItem.batchNumber) {
+            alert("Please fill all required item details.");
             return;
         }
-    
-        const exportData = filteredPurchases.map(p => ({
-            'Date': new Date(p.invoiceDate).toLocaleDateString(),
-            'Invoice #': p.invoiceNumber,
-            'Supplier': p.supplier,
-            'Items': p.items.length,
-            'Total Amount': p.totalAmount.toFixed(2),
-        }));
-        
-        const filename = `purchase_history_${fromDate || 'all-time'}_to_${toDate || 'today'}`;
-        exportToCsv(filename, exportData);
+        setLineItems(prev => [...prev, currentItem as PurchaseLineItem]);
+        setCurrentItem({
+            isNewProduct: false,
+            productName: '',
+            company: '',
+            hsnCode: '',
+            gst: 12,
+            batchNumber: '',
+            expiryDate: '',
+            quantity: 0,
+            mrp: 0,
+            purchasePrice: 0,
+            unitsPerStrip: 1,
+        });
+    };
+
+    const handleRemoveItem = (index: number) => {
+        setLineItems(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleSavePurchase = () => {
+        if (!header.invoiceNumber || !header.supplier || lineItems.length === 0) {
+            alert("Please fill invoice details and add at least one item.");
+            return;
+        }
+        const totalAmount = lineItems.reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0);
+        onSave({
+            ...header,
+            items: lineItems,
+            totalAmount
+        });
     };
 
     return (
-        <div className="p-4 sm:p-6 space-y-6">
-            <Card title={
-                <div className="flex justify-between items-center">
-                    <span>{editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}</span>
-                    <div className="relative">
+        <Modal isOpen={isOpen} onClose={onClose} title={existingPurchase ? "Edit Purchase" : "Add Purchase"} maxWidth="max-w-4xl">
+            <div className="space-y-6">
+                {/* Header Section with AI Upload */}
+                <div className="flex flex-col md:flex-row justify-between items-start gap-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow w-full">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Number</label>
+                            <input 
+                                value={header.invoiceNumber} 
+                                onChange={e => setHeader({...header, invoiceNumber: e.target.value})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                            <input 
+                                type="date"
+                                value={header.invoiceDate} 
+                                onChange={e => setHeader({...header, invoiceDate: e.target.value})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier</label>
+                            <input 
+                                list="suppliers-list"
+                                value={header.supplier} 
+                                onChange={e => setHeader({...header, supplier: e.target.value})} 
+                                className={formInputStyle} 
+                                placeholder="Select or type..."
+                            />
+                            <datalist id="suppliers-list">
+                                {suppliers.map(s => <option key={s.id} value={s.name} />)}
+                            </datalist>
+                        </div>
+                    </div>
+                    
+                    {/* AI Upload Button - Exact snippet integration */}
+                    <div className="flex flex-col items-center gap-2 pt-6">
                         <input 
                             type="file" 
-                            accept="image/*,application/pdf" 
                             ref={fileInputRef} 
-                            onChange={handleFileUpload} 
                             className="hidden" 
+                            accept="image/*,application/pdf"
+                            onChange={handleFileUpload}
                         />
                         <button 
                             onClick={() => fileInputRef.current?.click()}
@@ -787,184 +455,186 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             {isProcessingImage ? (
                                 <>
                                     <div className="animate-spin h-4 w-4 border-2 border-slate-500 border-t-transparent rounded-full"></div>
-                                    <span>Scanning...</span>
+                                    <span>Processing...</span>
                                 </>
                             ) : (
                                 <>
                                     <UploadIcon className="h-4 w-4" />
-                                    <span>Scan Invoice Image/PDF (AI)</span>
+                                    <span>Upload Invoice Image/PDF (AI)</span>
                                 </>
                             )}
                         </button>
                     </div>
                 </div>
-            }>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="relative">
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
-                        <input 
-                            value={formState.supplierName} 
-                            onChange={e => setFormState(prev => ({...prev, supplierName: e.target.value}))}
-                            onFocus={() => setShowSupplierSuggestions(true)}
-                            onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)}
-                            placeholder="Search or Add Supplier*" 
-                            className={formInputStyle} 
-                            required
-                            autoComplete="off"
-                        />
-                         {showSupplierSuggestions && formState.supplierName.length > 0 && (
-                          <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                              {supplierSuggestions.map(s => (
-                                  <li key={s.id} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
-                                      {s.name}
-                                  </li>
-                              ))}
-                              {!exactMatch && formState.supplierName.trim().length > 0 && (
-                                  <li onClick={handleOpenSupplierModal} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
-                                      <PlusIcon className="h-4 w-4 inline mr-2"/> Add new supplier: "{formState.supplierName.trim()}"
-                                  </li>
-                              )}
-                          </ul>
+
+                {/* Add Item Form */}
+                <div className="p-4 border rounded-lg dark:border-slate-600">
+                    <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-3">Add Line Item</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        <div className="col-span-2">
+                            <label className="block text-xs font-medium mb-1">Product Name</label>
+                            <input 
+                                value={currentItem.productName} 
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    const existing = products.find(p => p.name.toLowerCase() === val.toLowerCase());
+                                    setCurrentItem(prev => ({
+                                        ...prev, 
+                                        productName: val,
+                                        isNewProduct: !existing,
+                                        productId: existing?.id,
+                                        company: existing?.company || prev.company,
+                                        hsnCode: existing?.hsnCode || prev.hsnCode,
+                                        gst: existing?.gst || prev.gst,
+                                        unitsPerStrip: existing?.unitsPerStrip || prev.unitsPerStrip,
+                                    }));
+                                }}
+                                list="products-list"
+                                className={formInputStyle}
+                                placeholder="Search product..."
+                            />
+                            <datalist id="products-list">
+                                {products.map(p => <option key={p.id} value={p.name} />)}
+                            </datalist>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Batch No.</label>
+                            <input 
+                                value={currentItem.batchNumber} 
+                                onChange={e => setCurrentItem({...currentItem, batchNumber: e.target.value})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Expiry (YYYY-MM)</label>
+                            <input 
+                                type="month"
+                                value={currentItem.expiryDate} 
+                                onChange={e => setCurrentItem({...currentItem, expiryDate: e.target.value})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Qty {systemConfig.softwareMode === 'Pharma' ? '(Strips)' : ''}</label>
+                            <input 
+                                type="number"
+                                value={currentItem.quantity || ''} 
+                                onChange={e => setCurrentItem({...currentItem, quantity: parseFloat(e.target.value)})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">MRP</label>
+                            <input 
+                                type="number"
+                                value={currentItem.mrp || ''} 
+                                onChange={e => setCurrentItem({...currentItem, mrp: parseFloat(e.target.value)})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">Purchase Rate</label>
+                            <input 
+                                type="number"
+                                value={currentItem.purchasePrice || ''} 
+                                onChange={e => setCurrentItem({...currentItem, purchasePrice: parseFloat(e.target.value)})} 
+                                className={formInputStyle} 
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium mb-1">GST %</label>
+                            <select 
+                                value={currentItem.gst} 
+                                onChange={e => setCurrentItem({...currentItem, gst: parseFloat(e.target.value)})} 
+                                className={formSelectStyle}
+                            >
+                                {gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}
+                            </select>
+                        </div>
+                        {currentItem.isNewProduct && (
+                            <>
+                                <div>
+                                    <label className="block text-xs font-medium mb-1">Company</label>
+                                    <input 
+                                        value={currentItem.company} 
+                                        onChange={e => setCurrentItem({...currentItem, company: e.target.value})} 
+                                        className={formInputStyle} 
+                                    />
+                                </div>
+                                {systemConfig.softwareMode === 'Pharma' && (
+                                    <div>
+                                        <label className="block text-xs font-medium mb-1">Units/Strip</label>
+                                        <input 
+                                            type="number"
+                                            value={currentItem.unitsPerStrip} 
+                                            onChange={e => setCurrentItem({...currentItem, unitsPerStrip: parseFloat(e.target.value)})} 
+                                            className={formInputStyle} 
+                                        />
+                                    </div>
+                                )}
+                            </>
                         )}
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Number</label>
-                        <input value={formState.invoiceNumber} onChange={e => setFormState(prev => ({...prev, invoiceNumber: e.target.value}))} placeholder="Invoice Number*" className={formInputStyle} required/>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Invoice Date</label>
-                        <input value={formState.invoiceDate} onChange={e => setFormState(prev => ({...prev, invoiceDate: e.target.value}))} type="date" className={formInputStyle} required/>
+                        <div className="flex items-end">
+                            <button onClick={handleAddLineItem} className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-700">Add</button>
+                        </div>
                     </div>
                 </div>
 
-                <AddItemForm 
-                    products={products} 
-                    onAddItem={handleAddItem} 
-                    companies={companies} 
-                    systemConfig={systemConfig} 
-                    gstRates={gstRates} 
-                    itemToEdit={itemToEdit}
-                />
-                
-                {formState.currentItems.length > 0 && (
-                    <div className="mt-4">
-                         <h3 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Items in Current Purchase</h3>
-                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-slate-800 dark:text-slate-300">
-                                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
-                                    <tr>
-                                        <th className="px-4 py-2 text-left">Product</th>
-                                        {isPharmaMode && <th className="px-4 py-2 text-left">Batch</th>}
-                                        <th className="px-4 py-2 text-center">Qty</th>
-                                        <th className="px-4 py-2 text-right">Rate</th>
-                                        <th className="px-4 py-2 text-center">Disc (%)</th>
-                                        <th className="px-4 py-2 text-center">Tax (%)</th>
-                                        <th className="px-4 py-2 text-right">Total</th>
-                                        <th className="px-4 py-2 text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {formState.currentItems.map((item, index) => (
-                                        <tr key={index} className="border-b dark:border-slate-700">
-                                            <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 dark:text-green-400 font-semibold">(New)</span>}</td>
-                                            {isPharmaMode && <td className="px-4 py-2">{item.batchNumber}</td>}
-                                            <td className="px-4 py-2 text-center">{item.quantity}</td>
-                                            <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
-                                            <td className="px-4 py-2 text-center">{item.discount || 0}%</td>
-                                            <td className="px-4 py-2 text-center">{item.gst}%</td>
-                                            <td className="px-4 py-2 text-right font-semibold">₹{calculateLineTotal(item).toFixed(2)}</td>
-                                            <td className="px-4 py-2 text-center">
-                                                <div className="flex justify-center gap-3">
-                                                    <button onClick={() => handleEditItem(index)} className="text-blue-500 hover:text-blue-700" title="Edit Item">
-                                                        <PencilIcon className="h-4 w-4" />
-                                                    </button>
-                                                    <button onClick={() => handleRemoveItem(index)} className="text-red-500 hover:text-red-700" title="Remove Item">
-                                                        <TrashIcon className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                         </div>
-                         <div className="flex flex-col sm:flex-row justify-end items-center mt-4 gap-4">
-                            <div className="text-xl font-bold text-slate-800 dark:text-slate-200">
-                                <span>Total Amount: </span>
-                                <span>₹{totalAmount.toFixed(2)}</span>
-                            </div>
-                            {editingPurchase && (
-                                <button type="button" onClick={resetForm} className="bg-slate-500 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-slate-600 transition-colors w-full sm:w-auto">
-                                    Cancel Edit
-                                </button>
-                            )}
-                            <button onClick={handleSavePurchase} className="bg-green-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition-colors w-full sm:w-auto">
-                                {editingPurchase ? 'Update Purchase' : 'Save Purchase'}
-                            </button>
-                         </div>
-                    </div>
-                )}
-            </Card>
-            
-            <AddSupplierModal 
-                isOpen={isSupplierModalOpen}
-                onClose={() => setSupplierModalOpen(false)}
-                onAddSupplier={handleAddNewSupplier}
-                initialName={formState.supplierName}
-            />
-
-            <Card title="Purchase History">
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
-                    <div className="flex items-center gap-2">
-                        <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>
-                        <input type="date" id="fromDate" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <label htmlFor="toDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">To</label>
-                        <input type="date" id="toDate" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
-                    </div>
-                    <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
-                        <DownloadIcon className="h-5 w-5" /> Export to Excel
-                    </button>
-                </div>
-                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                        <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+                {/* Items List */}
+                <div className="border rounded-lg overflow-hidden dark:border-slate-600">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-100 dark:bg-slate-700 text-xs uppercase">
                             <tr>
-                                <th className="px-6 py-3">Date</th>
-                                <th className="px-6 py-3">Invoice #</th>
-                                <th className="px-6 py-3">Supplier</th>
-                                <th className="px-6 py-3 text-center">Items</th>
-                                <th className="px-6 py-3 text-right">Total Amount</th>
-                                <th className="px-6 py-3 text-center">Actions</th>
+                                <th className="px-4 py-2">Product</th>
+                                <th className="px-4 py-2">Batch</th>
+                                <th className="px-4 py-2">Exp</th>
+                                <th className="px-4 py-2 text-center">Qty</th>
+                                <th className="px-4 py-2 text-right">Rate</th>
+                                <th className="px-4 py-2 text-right">Total</th>
+                                <th className="px-4 py-2 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredPurchases.map(p => (
-                                <tr key={p.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                                    <td className="px-6 py-4">{new Date(p.invoiceDate).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{p.invoiceNumber}</td>
-                                    <td className="px-6 py-4">{p.supplier}</td>
-                                    <td className="px-6 py-4 text-center">{p.items.length}</td>
-                                    <td className="px-6 py-4 font-semibold text-right">₹{p.totalAmount.toFixed(2)}</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex justify-center items-center gap-4">
-                                            <button onClick={() => setEditingPurchase(p)} title="Edit Purchase" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
-                                                <PencilIcon className="h-5 w-5" />
-                                            </button>
-                                            <button onClick={() => onDeletePurchase(p)} title="Delete Purchase" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
-                                                <TrashIcon className="h-5 w-5" />
-                                            </button>
-                                        </div>
+                            {lineItems.map((item, idx) => (
+                                <tr key={idx} className="border-b dark:border-slate-600">
+                                    <td className="px-4 py-2">
+                                        {item.productName}
+                                        {item.isNewProduct && <span className="ml-2 text-xs bg-green-100 text-green-800 px-1 rounded">New</span>}
+                                    </td>
+                                    <td className="px-4 py-2">{item.batchNumber}</td>
+                                    <td className="px-4 py-2">{item.expiryDate}</td>
+                                    <td className="px-4 py-2 text-center">{item.quantity}</td>
+                                    <td className="px-4 py-2 text-right">{item.purchasePrice.toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-right">{(item.quantity * item.purchasePrice).toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-center">
+                                        <button onClick={() => handleRemoveItem(idx)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-4 w-4" /></button>
                                     </td>
                                 </tr>
                             ))}
+                            {lineItems.length === 0 && (
+                                <tr><td colSpan={7} className="text-center py-4 text-slate-500">No items added yet.</td></tr>
+                            )}
                         </tbody>
+                        <tfoot className="bg-slate-50 dark:bg-slate-700 font-bold">
+                            <tr>
+                                <td colSpan={5} className="px-4 py-2 text-right">Total:</td>
+                                <td className="px-4 py-2 text-right">
+                                    {lineItems.reduce((sum, item) => sum + (item.quantity * item.purchasePrice), 0).toFixed(2)}
+                                </td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
                     </table>
-                    {filteredPurchases.length === 0 && <p className="text-center py-6 text-slate-600 dark:text-slate-400">No purchase history found for the selected dates.</p>}
-                 </div>
-            </Card>
-        </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700">
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded hover:bg-slate-300">Cancel</button>
+                    <button onClick={handleSavePurchase} className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
+                        {existingPurchase ? 'Update Purchase' : 'Save Purchase'}
+                    </button>
+                </div>
+            </div>
+        </Modal>
     );
 };
 
