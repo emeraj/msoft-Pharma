@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate, UserPermissions, SubUser } from './types';
 import Header from './components/Header';
@@ -288,53 +289,45 @@ const App: React.FC = () => {
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
-
+    
     function isOperator(userId) {
-      // Check if the current user exists in the target user's 'subUsers' collection
-      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid));
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid));
     }
 
-    // 1. User Mappings (Links UID to Owner)
-    match /userMappings/{userId} {
-      // Users can read their own mapping to know who they work for
-      allow read: if isAuthenticated() && request.auth.uid == userId;
-      // Admins need to write here to create new operators
-      allow write: if isAuthenticated();
+    // 1. User Mappings
+    match /userMappings/{mappingId} {
+      allow read: if request.auth != null && request.auth.uid == mappingId;
+      allow write: if request.auth != null; 
     }
 
-    // 2. Main User Data Scope
+    // 2. User Data Scope
     match /users/{userId} {
-
-      // Sub-Users Management (Admin Only)
+      
+      // Admin Collections (Protected)
       match /subUsers/{subUserId} {
-        allow read: if isOwner(userId) || (isAuthenticated() && request.auth.uid == subUserId);
+        allow read: if isOwner(userId) || (request.auth != null && request.auth.uid == subUserId);
         allow write: if isOwner(userId);
       }
-
-      // Configuration & Settings (Admin Write, Operator Read)
-      // Operators need read access to print bills and view settings
+      
       match /companyProfile/{document=**} {
         allow read: if isOwner(userId) || isOperator(userId);
         allow write: if isOwner(userId);
       }
+      
       match /systemConfig/{document=**} {
         allow read: if isOwner(userId) || isOperator(userId);
         allow write: if isOwner(userId);
       }
+      
       match /gstRates/{document=**} {
         allow read: if isOwner(userId) || isOperator(userId);
         allow write: if isOwner(userId);
       }
 
-      // Operational Data (Read/Write for Admin & Operator)
+      // Operational Collections (Read/Write for both)
       match /products/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /bills/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /purchases/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }

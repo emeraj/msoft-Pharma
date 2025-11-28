@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { SubUser, UserPermissions } from '../types';
 import { PlusIcon, TrashIcon, CheckCircleIcon, XIcon, PencilIcon } from './icons/Icons';
-import * as firebaseApp from 'firebase/app';
+import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 import { firebaseConfig, db } from '../firebase';
 import { doc, setDoc, collection, deleteDoc, getDoc, updateDoc } from 'firebase/firestore';
@@ -75,7 +74,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
       } else {
           // --- CREATE LOGIC ---
           // 1. Create User in Firebase Auth using a secondary app instance
-          const secondaryApp = firebaseApp.initializeApp(firebaseConfig, "Secondary");
+          const secondaryApp = initializeApp(firebaseConfig, "Secondary");
           const secondaryAuth = getAuth(secondaryApp);
           
           const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);

@@ -85,7 +85,7 @@ const ReportsDropdown: React.FC<{
         <span className="hidden sm:inline">{t.nav.reports}</span>
       </button>
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5 max-h-[80vh] overflow-y-auto">
+        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
           {reportViews.map(view => (
              <a
               key={view}
@@ -165,8 +165,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             </button>
           </div>
         </div>
-         {/* Mobile Nav: Removed overflow-x-auto to prevent dropdown clipping */}
-         <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
+         <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700 overflow-x-auto">
             {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
             {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
             {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
