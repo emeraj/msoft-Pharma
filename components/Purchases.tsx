@@ -617,7 +617,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         resetForm();
     };
 
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -636,7 +636,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 const prompt = `
-                    Analyze this purchase invoice image. Extract the following details into a JSON object:
+                    Analyze this purchase invoice (image or PDF). Extract the following details into a JSON object:
                     - supplierName (string)
                     - invoiceNumber (string)
                     - invoiceDate (YYYY-MM-DD format)
@@ -707,12 +707,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
                 } catch (apiError) {
                     console.error("Gemini API Error:", apiError);
-                    alert("Failed to extract data from image. Please try again.");
+                    alert("Failed to extract data from file. Please try again.");
                 }
             };
         } catch (error) {
             console.error("Image processing error:", error);
-            alert("Error processing the image.");
+            alert("Error processing the file.");
         } finally {
             setIsProcessingImage(false);
             if (fileInputRef.current) {
@@ -770,9 +770,9 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     <div className="relative">
                         <input 
                             type="file" 
-                            accept="image/*" 
+                            accept="image/*,application/pdf" 
                             ref={fileInputRef} 
-                            onChange={handleImageUpload} 
+                            onChange={handleFileUpload} 
                             className="hidden" 
                         />
                         <button 
@@ -792,7 +792,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             ) : (
                                 <>
                                     <UploadIcon className="h-4 w-4" />
-                                    <span>Scan Invoice Image (AI)</span>
+                                    <span>Scan Invoice Image/PDF (AI)</span>
                                 </>
                             )}
                         </button>
