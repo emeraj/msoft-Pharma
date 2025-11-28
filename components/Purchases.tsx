@@ -317,9 +317,12 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
-            barcode: isNewProduct && !isPharmaMode ? barcode : undefined,
             discount: parseFloat(discount) || 0,
         };
+
+        if (isNewProduct && !isPharmaMode && barcode) {
+            item.barcode = barcode;
+        }
 
         if (isPharmaMode && isNewProduct) {
             item.isScheduleH = isScheduleH === 'Yes';
@@ -675,9 +678,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             // Check if product exists
                             const existingProduct = products.find(p => p.name.toLowerCase() === item.productName.toLowerCase());
                             
-                            return {
+                            const lineItem: PurchaseLineItem = {
                                 isNewProduct: !existingProduct,
-                                productId: existingProduct?.id,
                                 productName: item.productName || "Unknown Product",
                                 company: existingProduct?.company || extractedData.supplierName || "Unknown",
                                 hsnCode: item.hsnCode || existingProduct?.hsnCode || "",
@@ -690,8 +692,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 expiryDate: item.expiryDate || (isPharmaMode ? '' : '9999-12'),
                                 unitsPerStrip: existingProduct?.unitsPerStrip || 1,
                                 isScheduleH: existingProduct?.isScheduleH || false,
-                                barcode: existingProduct?.barcode
                             };
+
+                            // Only add these fields if they are defined to avoid Firestore "undefined" error
+                            if (existingProduct?.id) lineItem.productId = existingProduct.id;
+                            if (existingProduct?.barcode) lineItem.barcode = existingProduct.barcode;
+
+                            return lineItem;
                         }) || [];
 
                         setFormState(prev => ({
