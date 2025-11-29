@@ -5,7 +5,7 @@ import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 interface PurchasesProps {
     products: Product[];
@@ -877,6 +877,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         const file = event.target.files?.[0];
         if (!file) return;
 
+        if (!process.env.API_KEY) {
+            alert("API Key is missing. Please configure the environment variable.");
+            return;
+        }
+
         setIsProcessingOCR(true);
         try {
             let base64Data = "";
@@ -898,9 +903,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 const cleanBase64 = base64Data.split(',')[1];
                 await analyzeInvoiceWithGemini(cleanBase64, mimeType);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('AI Analysis Error:', error);
-            alert('Failed to analyze invoice. Please fill details manually.');
+            const msg = error instanceof Error ? error.message : String(error);
+            alert(`Failed to analyze invoice. Details: ${msg}`);
         } finally {
             setIsProcessingOCR(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
@@ -938,8 +944,9 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     const analyzeInvoiceWithGemini = async (base64Data: string, mimeType: string) => {
+        // Use gemini-2.5-flash which is more stable for general users on free tier
+        const model = 'gemini-2.5-flash'; 
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const model = 'gemini-3-pro-preview';
 
         const prompt = `Analyze this purchase invoice image carefully. Extract the following details:
         1. Supplier Name
@@ -961,30 +968,30 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         - If Unit Rate is missing, calculate it as Total Amount / Quantity.
         - If Expiry is not found, leave empty or estimate from context if obvious.
         - Return '0' for missing numeric fields.
-        - Strict JSON format.
         `;
 
+        // Use string literals for types to avoid runtime Enum resolution issues
         const responseSchema = {
-            type: Type.OBJECT,
+            type: 'OBJECT' as any,
             properties: {
-                supplierName: { type: Type.STRING },
-                invoiceNumber: { type: Type.STRING },
-                invoiceDate: { type: Type.STRING, description: "YYYY-MM-DD format" },
+                supplierName: { type: 'STRING' as any },
+                invoiceNumber: { type: 'STRING' as any },
+                invoiceDate: { type: 'STRING' as any, description: "YYYY-MM-DD format" },
                 items: {
-                    type: Type.ARRAY,
+                    type: 'ARRAY' as any,
                     items: {
-                        type: Type.OBJECT,
+                        type: 'OBJECT' as any,
                         properties: {
-                            productName: { type: Type.STRING },
-                            hsnCode: { type: Type.STRING },
-                            batchNumber: { type: Type.STRING },
-                            expiryDate: { type: Type.STRING, description: "YYYY-MM format (e.g. 2025-12)" },
-                            quantity: { type: Type.NUMBER },
-                            rate: { type: Type.NUMBER },
-                            mrp: { type: Type.NUMBER },
-                            discount: { type: Type.NUMBER },
-                            gst: { type: Type.NUMBER },
-                            amount: { type: Type.NUMBER }
+                            productName: { type: 'STRING' as any },
+                            hsnCode: { type: 'STRING' as any },
+                            batchNumber: { type: 'STRING' as any },
+                            expiryDate: { type: 'STRING' as any, description: "YYYY-MM format (e.g. 2025-12)" },
+                            quantity: { type: 'NUMBER' as any },
+                            rate: { type: 'NUMBER' as any },
+                            mrp: { type: 'NUMBER' as any },
+                            discount: { type: 'NUMBER' as any },
+                            gst: { type: 'NUMBER' as any },
+                            amount: { type: 'NUMBER' as any }
                         }
                     }
                 }
