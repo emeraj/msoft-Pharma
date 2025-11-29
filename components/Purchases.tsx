@@ -5,6 +5,7 @@ import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
+import { GoogleGenAI, Type } from "@google/genai";
 
 interface PurchasesProps {
     products: Product[];
@@ -870,7 +871,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         resetForm();
     };
 
-    // --- OCR Logic with Geometric Layout Analysis ---
+    // --- Gemini AI Analysis Logic ---
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -878,48 +879,50 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
         setIsProcessingOCR(true);
         try {
-            let extractedData: any = null;
-            
+            let base64Data = "";
+            let mimeType = file.type;
+
             if (file.type === 'application/pdf') {
-                extractedData = await extractDataFromPdf(file);
+                base64Data = await convertPdfToImageBase64(file);
+                mimeType = "image/png"; // Converted to PNG
             } else if (file.type.startsWith('image/')) {
-                extractedData = await extractDataFromImage(file);
+                base64Data = await convertFileToBase64(file);
             } else {
                 alert('Unsupported file type. Please upload an image or PDF.');
                 setIsProcessingOCR(false);
                 return;
             }
             
-            if (extractedData) {
-                processInvoiceData(extractedData);
+            if (base64Data) {
+                // Remove header if present (e.g. "data:image/png;base64,") for API
+                const cleanBase64 = base64Data.split(',')[1];
+                await analyzeInvoiceWithGemini(cleanBase64, mimeType);
             }
         } catch (error) {
-            console.error('OCR Error:', error);
-            alert('Failed to process invoice. Please fill details manually.');
+            console.error('AI Analysis Error:', error);
+            alert('Failed to analyze invoice. Please fill details manually.');
         } finally {
             setIsProcessingOCR(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
-    const extractDataFromImage = async (file: File) => {
-        const Tesseract = (window as any).Tesseract;
-        if (!Tesseract) throw new Error("Tesseract.js not loaded");
-        
-        // Return the full result object, not just text
-        const result = await Tesseract.recognize(file, 'eng', {
-            logger: (m: any) => console.log(m)
+    const convertFileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = error => reject(error);
         });
-        return result.data;
     };
 
-    const extractDataFromPdf = async (file: File) => {
+    const convertPdfToImageBase64 = async (file: File): Promise<string> => {
         const pdfjsLib = (window as any).pdfjsLib;
         if (!pdfjsLib) throw new Error("PDF.js not loaded");
 
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const page = await pdf.getPage(1);
+        const page = await pdf.getPage(1); // Process first page only
         
         const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
@@ -929,214 +932,157 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
         if (context) {
             await page.render({ canvasContext: context, viewport: viewport }).promise;
-            const dataUrl = canvas.toDataURL('image/png');
-            
-            const Tesseract = (window as any).Tesseract;
-            const result = await Tesseract.recognize(dataUrl, 'eng');
-            return result.data;
+            return canvas.toDataURL('image/png');
         }
-        return null;
+        throw new Error("Could not render PDF");
     };
 
-    // --- Geometric Layout Analysis ---
-    
-    interface ColumnDefinition {
-        type: 'desc' | 'hsn' | 'qty' | 'rate' | 'disc' | 'tax' | 'amount';
-        x0: number;
-        x1: number;
-    }
+    const analyzeInvoiceWithGemini = async (base64Data: string, mimeType: string) => {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const model = 'gemini-3-pro-preview';
 
-    const processInvoiceData = (pageData: any) => {
+        const prompt = `Analyze this purchase invoice image carefully. Extract the following details:
+        1. Supplier Name
+        2. Invoice Number
+        3. Invoice Date (Format: YYYY-MM-DD)
+        4. Line Items. For each item, extract:
+           - Product Name (Description)
+           - HSN Code
+           - Batch Number
+           - Expiry Date (Format: YYYY-MM)
+           - Quantity (Total units)
+           - Unit Rate (Purchase Price per unit before tax)
+           - MRP (Maximum Retail Price per unit)
+           - Discount Percentage
+           - GST Percentage
+           - Total Amount (Taxable Value for this line)
+
+        Important: 
+        - If Unit Rate is missing, calculate it as Total Amount / Quantity.
+        - If Expiry is not found, leave empty or estimate from context if obvious.
+        - Return '0' for missing numeric fields.
+        - Strict JSON format.
+        `;
+
+        const responseSchema = {
+            type: Type.OBJECT,
+            properties: {
+                supplierName: { type: Type.STRING },
+                invoiceNumber: { type: Type.STRING },
+                invoiceDate: { type: Type.STRING, description: "YYYY-MM-DD format" },
+                items: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            productName: { type: Type.STRING },
+                            hsnCode: { type: Type.STRING },
+                            batchNumber: { type: Type.STRING },
+                            expiryDate: { type: Type.STRING, description: "YYYY-MM format (e.g. 2025-12)" },
+                            quantity: { type: Type.NUMBER },
+                            rate: { type: Type.NUMBER },
+                            mrp: { type: Type.NUMBER },
+                            discount: { type: Type.NUMBER },
+                            gst: { type: Type.NUMBER },
+                            amount: { type: Type.NUMBER }
+                        }
+                    }
+                }
+            }
+        };
+
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: {
+                parts: [
+                    { inlineData: { mimeType: mimeType, data: base64Data } },
+                    { text: prompt }
+                ]
+            },
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: responseSchema
+            }
+        });
+
+        const text = response.text;
+        if (text) {
+            const result = JSON.parse(text);
+            processAiResult(result);
+        }
+    };
+
+    // Helper to clean numbers from strings if AI messes up types
+    const parseNumber = (val: any) => {
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') return parseFloat(val.replace(/[^0-9.-]/g, '')) || 0;
+        return 0;
+    };
+
+    const normalizeDate = (dateStr: string) => {
+        if (!dateStr) return new Date().toISOString().split('T')[0];
+        // Handle DD/MM/YYYY or DD-MM-YYYY which AI sometimes returns despite instructions
+        if (dateStr.match(/^\d{2}[\/-]\d{2}[\/-]\d{4}$/)) {
+            const parts = dateStr.split(/[\/-]/);
+            return `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        return dateStr; // Assume YYYY-MM-DD
+    };
+
+    const processAiResult = (result: any) => {
         const currentData = {
-            supplierName: '',
-            invoiceNumber: '',
-            invoiceDate: new Date().toISOString().split('T')[0],
+            supplierName: result.supplierName || '',
+            invoiceNumber: result.invoiceNumber || '',
+            invoiceDate: normalizeDate(result.invoiceDate),
             items: [] as PurchaseLineItem[]
         };
 
-        const lines = pageData.lines || [];
-        const fullText = pageData.text;
+        // Try to match Supplier from DB
+        const matchedSupplier = suppliers.find(s => 
+            s.name.toLowerCase().includes(result.supplierName?.toLowerCase() || '$$$') || 
+            (result.supplierName && s.name.toLowerCase().includes(result.supplierName.toLowerCase()))
+        );
+        if (matchedSupplier) currentData.supplierName = matchedSupplier.name;
 
-        // 1. Basic Header Extraction (Regex on top part)
-        const headerText = lines.slice(0, Math.min(20, lines.length)).map((l: any) => l.text).join('\n');
-        
-        const invMatch = headerText.match(/(?:Invoice\s*No|Bill\s*No|Inv\s*No|Invoice\s*#|Bill\s*#)[\.:\s-]*([A-Za-z0-9\/-]+)/i);
-        if (invMatch && invMatch[1]) currentData.invoiceNumber = invMatch[1].trim();
-
-        const dateMatch = headerText.match(/(?:Date|Dated|Invoice\s*Date)[\.:\s-]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\d{4}[\/\.-]\d{1,2}[\/\.-]\d{1,2})/i);
-        if (dateMatch && dateMatch[1]) {
-            try {
-                const rawDate = dateMatch[1].replace(/[\/.]/g, '-');
-                // Basic check for DD-MM-YYYY vs YYYY-MM-DD
-                const parts = rawDate.split('-');
-                let d;
-                if (parts[0].length === 4) { d = new Date(rawDate); } 
-                else { d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); } // Assume DD-MM-YYYY
+        if (result.items && Array.isArray(result.items)) {
+            currentData.items = result.items.map((item: any) => {
+                const existingProduct = products.find(p => p.name.toLowerCase() === item.productName?.toLowerCase());
                 
-                if (!isNaN(d.getTime())) currentData.invoiceDate = d.toISOString().split('T')[0];
-            } catch (e) {}
-        }
-
-        const supplier = suppliers.find(s => headerText.toLowerCase().includes(s.name.toLowerCase()));
-        if (supplier) currentData.supplierName = supplier.name;
-
-        // 2. Identify Table Header Row & Column Layout
-        let headerLineIndex = -1;
-        let columns: ColumnDefinition[] = [];
-        
-        // Heuristics for column headers
-        const colKeywords: Record<string, string[]> = {
-            desc: ['description', 'particulars', 'item', 'product', 'item name', 'desc'],
-            hsn: ['hsn', 'code'],
-            qty: ['qty', 'quantity', 'unit', 'nos', 'pcs'],
-            rate: ['rate', 'price', 'mrp', 'unit price'],
-            disc: ['disc', 'discount', 'dis', '%'],
-            tax: ['tax', 'gst', 'vat', 'igst'],
-            amount: ['amount', 'total', 'value', 'net']
-        };
-
-        for (let i = 0; i < lines.length; i++) {
-            const lineWords = lines[i].words;
-            const foundCols: ColumnDefinition[] = [];
-            
-            lineWords.forEach((word: any) => {
-                const text = word.text.toLowerCase().replace(/[^a-z]/g, '');
-                for (const [type, keywords] of Object.entries(colKeywords)) {
-                    if (keywords.includes(text)) {
-                        foundCols.push({ type: type as any, x0: word.bbox.x0, x1: word.bbox.x1 });
-                        break;
-                    }
+                const qty = parseNumber(item.quantity);
+                const amt = parseNumber(item.amount);
+                let rate = parseNumber(item.rate);
+                
+                // Smart Fallback: Calculate rate if missing but we have Total Amount & Qty
+                if (rate === 0 && qty > 0 && amt > 0) {
+                    rate = amt / qty;
                 }
+
+                // Smart Fallback: If MRP missing, default to Purchase Rate (better than 0)
+                let mrp = parseNumber(item.mrp);
+                if (mrp === 0 && rate > 0) mrp = rate;
+
+                return {
+                    isNewProduct: !existingProduct,
+                    productId: existingProduct?.id,
+                    productName: existingProduct?.name || item.productName || 'Unknown Product',
+                    company: existingProduct?.company || (currentData.supplierName || 'Unknown Company'),
+                    hsnCode: existingProduct?.hsnCode || item.hsnCode || '',
+                    gst: existingProduct?.gst || parseNumber(item.gst) || 0,
+                    batchNumber: item.batchNumber || 'BATCH',
+                    expiryDate: item.expiryDate || '2025-12',
+                    quantity: qty || 1,
+                    mrp: mrp,
+                    purchasePrice: rate,
+                    discount: parseNumber(item.discount) || 0,
+                    unitsPerStrip: existingProduct?.unitsPerStrip || 1,
+                    isScheduleH: existingProduct?.isScheduleH || false,
+                    composition: existingProduct?.composition || ''
+                };
             });
-
-            // Ideally we find at least 3 recognizable columns to confirm it's a header
-            if (foundCols.length >= 3) {
-                headerLineIndex = i;
-                columns = foundCols.sort((a, b) => a.x0 - b.x0);
-                break;
-            }
-        }
-
-        // 3. Process Rows if layout detected
-        if (headerLineIndex !== -1 && columns.length > 0) {
-            // Expand column boundaries to capture wider content below
-            // E.g., 'Description' header is short, but content is wide. 
-            // Logic: A column spans from its start until the start of the next column.
-            for (let i = 0; i < columns.length; i++) {
-                if (i < columns.length - 1) {
-                    columns[i].x1 = columns[i + 1].x0 - 5; // Buffer
-                } else {
-                    columns[i].x1 = 9999; // Last column goes to end
-                }
-            }
-
-            for (let i = headerLineIndex + 1; i < lines.length; i++) {
-                const line = lines[i];
-                const text = line.text.toLowerCase();
-                
-                // Stop at footer
-                if (text.match(/total|amount in words|grand total|taxable/)) break;
-
-                const rowData: any = { desc: [], qty: [], rate: [], amount: [], hsn: [], tax: [], disc: [] };
-
-                line.words.forEach((word: any) => {
-                    const mid = (word.bbox.x0 + word.bbox.x1) / 2;
-                    // Find which column this word belongs to
-                    const col = columns.find(c => mid >= c.x0 && mid <= c.x1);
-                    if (col) {
-                        rowData[col.type].push(word.text);
-                    }
-                });
-
-                // Reconstruct Fields
-                const desc = rowData.desc.join(' ');
-                const qty = parseFloat(rowData.qty.join('').replace(/[^0-9.]/g, '')) || 0;
-                const rate = parseFloat(rowData.rate.join('').replace(/[^0-9.]/g, '')) || 0;
-                const hsn = rowData.hsn.join('').replace(/[^0-9]/g, '');
-                
-                // Sometimes Amount bucket gets mixed with Tax/Disc if they are adjacent and empty
-                // Simple arithmetic check: Qty * Rate ~= Amount?
-                let amount = parseFloat(rowData.amount.join('').replace(/[^0-9.]/g, '')) || 0;
-                if (qty > 0 && rate > 0 && amount === 0) amount = qty * rate;
-
-                // Validate Row: Must have Description and at least (Qty + Rate) OR Amount
-                if (desc.length > 2 && (amount > 0 || (qty > 0 && rate > 0))) {
-                    
-                    const existingProduct = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
-                    
-                    currentData.items.push({
-                        isNewProduct: !existingProduct,
-                        productId: existingProduct?.id,
-                        productName: desc,
-                        company: existingProduct?.company || (currentData.supplierName || 'Unknown'),
-                        hsnCode: hsn || existingProduct?.hsnCode || '',
-                        gst: existingProduct?.gst || 0,
-                        batchNumber: 'BATCH',
-                        expiryDate: '2025-12',
-                        quantity: qty || 1,
-                        mrp: (rate > 0 ? rate : amount) * 1.2,
-                        purchasePrice: rate > 0 ? rate : amount,
-                        discount: 0,
-                    });
-                }
-            }
-        } else {
-            // Fallback to simple regex if geometric layout fails
-            const simpleParserItems = parseInvoiceTextFallback(fullText);
-            currentData.items = simpleParserItems;
         }
 
         setOcrData(currentData);
         setIsOcrPreviewOpen(true);
-    };
-
-    // Fallback Regex Parser (Simplified version of previous iteration)
-    const parseInvoiceTextFallback = (text: string) => {
-        const lines = text.split(/\r?\n/);
-        const items: PurchaseLineItem[] = [];
-        const numberRegex = /(\d+(\.\d{1,2})?)/g;
-        
-        let startTable = false;
-        for (const line of lines) {
-            if (line.match(/description|particulars/i)) { startTable = true; continue; }
-            if (line.match(/total|amount/i) && startTable) break;
-            if (!startTable) continue;
-
-            const numbers = line.match(numberRegex);
-            if (numbers && numbers.length >= 2) {
-                // Heuristic: Last number = Amount, 2nd Last = Rate, 3rd Last = Qty
-                const vals = numbers.map(n => parseFloat(n));
-                const amount = vals[vals.length - 1];
-                let rate = vals.length > 1 ? vals[vals.length - 2] : 0;
-                let qty = vals.length > 2 ? vals[vals.length - 3] : 1;
-
-                if (Math.abs(qty * rate - amount) > 1) {
-                    // Try different combination if math fails
-                    if (vals.length >= 2 && Math.abs(1 * vals[vals.length-2] - amount) < 1) {
-                       qty = 1; rate = vals[vals.length-2];
-                    }
-                }
-
-                const desc = line.replace(numberRegex, '').trim();
-                if (desc.length > 2 && amount > 0) {
-                     const existingProduct = products.find(p => p.name.toLowerCase().includes(desc.toLowerCase()));
-                     items.push({
-                        isNewProduct: !existingProduct,
-                        productName: desc,
-                        company: existingProduct?.company || 'Unknown',
-                        hsnCode: '',
-                        gst: 0,
-                        batchNumber: 'BATCH',
-                        expiryDate: '2025-12',
-                        quantity: qty,
-                        mrp: rate * 1.2,
-                        purchasePrice: rate,
-                        discount: 0
-                     });
-                }
-            }
-        }
-        return items;
     };
 
     const handleImportFromOcr = (data: { supplierName: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => {
@@ -1211,12 +1157,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 {isProcessingOCR ? (
                                     <>
                                         <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                                        <span>Analyzing Layout...</span>
+                                        <span>Analyzing Invoice with AI...</span>
                                     </>
                                 ) : (
                                     <>
                                         <UploadIcon className="h-5 w-5" />
-                                        <span>Auto-Fill from Invoice (OCR)</span>
+                                        <span>Auto-Fill from Invoice (AI)</span>
                                     </>
                                 )}
                             </button>
