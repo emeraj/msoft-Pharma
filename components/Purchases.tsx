@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface PurchasesProps {
@@ -125,6 +125,252 @@ const AddSupplierModal: React.FC<{
                     <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Add Supplier</button>
                 </div>
             </form>
+        </Modal>
+    );
+};
+
+// --- OCR Preview Modal ---
+interface OcrPreviewModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    data: {
+        supplierName: string;
+        invoiceNumber: string;
+        invoiceDate: string;
+        items: PurchaseLineItem[];
+    };
+    suppliers: Supplier[];
+    onImport: (data: { supplierName: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => void;
+    isPharmaMode: boolean;
+}
+
+const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data, suppliers, onImport, isPharmaMode }) => {
+    const [supplierName, setSupplierName] = useState(data.supplierName);
+    const [invoiceNumber, setInvoiceNumber] = useState(data.invoiceNumber);
+    const [invoiceDate, setInvoiceDate] = useState(data.invoiceDate);
+    const [items, setItems] = useState<(PurchaseLineItem & { selected: boolean })[]>([]);
+    
+    useEffect(() => {
+        if (isOpen) {
+            setSupplierName(data.supplierName);
+            setInvoiceNumber(data.invoiceNumber);
+            setInvoiceDate(data.invoiceDate);
+            setItems(data.items.map(i => ({ ...i, selected: true })));
+        }
+    }, [isOpen, data]);
+
+    const handleItemChange = (index: number, field: keyof PurchaseLineItem, value: any) => {
+        setItems(prev => prev.map((item, i) => {
+            if (i === index) {
+                return { ...item, [field]: value };
+            }
+            return item;
+        }));
+    };
+
+    const handleToggleSelect = (index: number) => {
+        setItems(prev => prev.map((item, i) => i === index ? { ...item, selected: !item.selected } : item));
+    };
+
+    const handleImport = () => {
+        const selectedItems = items.filter(i => i.selected).map(({ selected, ...rest }) => rest);
+        onImport({
+            supplierName,
+            invoiceNumber,
+            invoiceDate,
+            items: selectedItems
+        });
+        onClose();
+    };
+
+    const handleAddItem = () => {
+        const newItem: PurchaseLineItem & { selected: boolean } = {
+            isNewProduct: true,
+            productName: '',
+            company: '',
+            hsnCode: '',
+            gst: 0,
+            batchNumber: isPharmaMode ? '' : 'DEFAULT',
+            expiryDate: isPharmaMode ? '' : '9999-12',
+            quantity: 1,
+            mrp: 0,
+            purchasePrice: 0,
+            discount: 0,
+            selected: true
+        };
+        setItems([...items, newItem]);
+    };
+
+    const handleDeleteItem = (index: number) => {
+        setItems(prev => prev.filter((_, i) => i !== index));
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Verify Scanned Invoice" maxWidth="max-w-6xl">
+            <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Supplier</label>
+                        <input 
+                            value={supplierName} 
+                            onChange={(e) => setSupplierName(e.target.value)} 
+                            className={formInputStyle} 
+                            list="supplier-list-ocr"
+                        />
+                        <datalist id="supplier-list-ocr">
+                            {suppliers.map(s => <option key={s.id} value={s.name} />)}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Invoice No</label>
+                        <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className={formInputStyle} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Date</label>
+                        <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={formInputStyle} />
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto border dark:border-slate-700 rounded-lg max-h-[60vh]">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-100 dark:bg-slate-700 text-xs uppercase sticky top-0 z-10">
+                            <tr>
+                                <th className="px-2 py-3 w-10 text-center">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={items.every(i => i.selected)} 
+                                        onChange={(e) => setItems(prev => prev.map(i => ({...i, selected: e.target.checked})))} 
+                                        className="rounded border-gray-300"
+                                    />
+                                </th>
+                                <th className="px-2 py-3 min-w-[200px]">Product / Desc</th>
+                                <th className="px-2 py-3 w-24">HSN</th>
+                                {isPharmaMode && <th className="px-2 py-3 w-24">Batch</th>}
+                                {isPharmaMode && <th className="px-2 py-3 w-32">Expiry</th>}
+                                <th className="px-2 py-3 w-20 text-center">Qty</th>
+                                <th className="px-2 py-3 w-24 text-right">Rate</th>
+                                <th className="px-2 py-3 w-16 text-center">Disc%</th>
+                                <th className="px-2 py-3 w-16 text-center">Tax%</th>
+                                <th className="px-2 py-3 w-28 text-right">Amount</th>
+                                <th className="px-2 py-3 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                            {items.map((item, index) => {
+                                const amount = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0)/100);
+                                const taxAmt = amount * (item.gst/100);
+                                const total = amount + taxAmt;
+
+                                return (
+                                    <tr key={index} className={`hover:bg-slate-50 dark:hover:bg-slate-800 ${!item.selected ? 'opacity-50' : ''}`}>
+                                        <td className="px-2 py-2 text-center">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={item.selected} 
+                                                onChange={() => handleToggleSelect(index)}
+                                                className="rounded border-gray-300"
+                                            />
+                                        </td>
+                                        <td className="px-2 py-2">
+                                            <input 
+                                                value={item.productName} 
+                                                onChange={(e) => handleItemChange(index, 'productName', e.target.value)}
+                                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                            {item.isNewProduct && <span className="text-[10px] text-green-600 font-bold block">NEW PRODUCT</span>}
+                                        </td>
+                                        <td className="px-2 py-2">
+                                            <input 
+                                                value={item.hsnCode} 
+                                                onChange={(e) => handleItemChange(index, 'hsnCode', e.target.value)}
+                                                className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </td>
+                                        {isPharmaMode && (
+                                            <td className="px-2 py-2">
+                                                <input 
+                                                    value={item.batchNumber} 
+                                                    onChange={(e) => handleItemChange(index, 'batchNumber', e.target.value)}
+                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                                />
+                                            </td>
+                                        )}
+                                        {isPharmaMode && (
+                                            <td className="px-2 py-2">
+                                                <input 
+                                                    type="month"
+                                                    value={item.expiryDate} 
+                                                    onChange={(e) => handleItemChange(index, 'expiryDate', e.target.value)}
+                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                                />
+                                            </td>
+                                        )}
+                                        <td className="px-2 py-2">
+                                            <input 
+                                                type="number"
+                                                value={item.quantity} 
+                                                onChange={(e) => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)}
+                                                className="w-full text-center bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </td>
+                                        <td className="px-2 py-2">
+                                            <input 
+                                                type="number"
+                                                step="0.01"
+                                                value={item.purchasePrice} 
+                                                onChange={(e) => handleItemChange(index, 'purchasePrice', parseFloat(e.target.value) || 0)}
+                                                className="w-full text-right bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </td>
+                                        <td className="px-2 py-2">
+                                            <input 
+                                                type="number"
+                                                step="0.01"
+                                                value={item.discount} 
+                                                onChange={(e) => handleItemChange(index, 'discount', parseFloat(e.target.value) || 0)}
+                                                className="w-full text-center bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </td>
+                                        <td className="px-2 py-2">
+                                            <input 
+                                                type="number"
+                                                step="0.01"
+                                                value={item.gst} 
+                                                onChange={(e) => handleItemChange(index, 'gst', parseFloat(e.target.value) || 0)}
+                                                className="w-full text-center bg-transparent border-b border-transparent hover:border-slate-300 focus:border-indigo-500 focus:outline-none"
+                                            />
+                                        </td>
+                                        <td className="px-2 py-2 text-right font-medium">
+                                            {total.toFixed(2)}
+                                        </td>
+                                        <td className="px-2 py-2 text-center">
+                                            <button onClick={() => handleDeleteItem(index)} className="text-red-500 hover:text-red-700">
+                                                <TrashIcon className="h-4 w-4" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div className="flex justify-between items-center pt-2">
+                    <button onClick={handleAddItem} className="text-indigo-600 hover:text-indigo-800 text-sm font-medium flex items-center gap-1">
+                        <PlusIcon className="h-4 w-4" /> Add Missing Item
+                    </button>
+                    <div className="text-right">
+                        <p className="text-sm text-slate-500">Total Items: {items.filter(i => i.selected).length}</p>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700">
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg hover:bg-slate-300">Cancel</button>
+                    <button onClick={handleImport} className="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700 flex items-center gap-2">
+                        <CheckCircleIcon className="h-5 w-5" /> Import Selected Data
+                    </button>
+                </div>
+            </div>
         </Modal>
     );
 };
@@ -506,6 +752,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     // OCR Processing State
     const [isProcessingOCR, setIsProcessingOCR] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isOcrPreviewOpen, setIsOcrPreviewOpen] = useState(false);
+    const [ocrData, setOcrData] = useState<{
+        supplierName: string;
+        invoiceNumber: string;
+        invoiceDate: string;
+        items: PurchaseLineItem[];
+    }>({ supplierName: '', invoiceNumber: '', invoiceDate: '', items: [] });
 
     // State for purchase history filtering
     const [fromDate, setFromDate] = useState('');
@@ -617,7 +870,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         resetForm();
     };
 
-    // --- OCR Logic ---
+    // --- OCR Logic with Geometric Layout Analysis ---
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -625,18 +878,21 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
         setIsProcessingOCR(true);
         try {
-            let extractedText = '';
+            let extractedData: any = null;
+            
             if (file.type === 'application/pdf') {
-                extractedText = await extractTextFromPdf(file);
+                extractedData = await extractDataFromPdf(file);
             } else if (file.type.startsWith('image/')) {
-                extractedText = await extractTextFromImage(file);
+                extractedData = await extractDataFromImage(file);
             } else {
                 alert('Unsupported file type. Please upload an image or PDF.');
                 setIsProcessingOCR(false);
                 return;
             }
             
-            parseInvoiceText(extractedText);
+            if (extractedData) {
+                processInvoiceData(extractedData);
+            }
         } catch (error) {
             console.error('OCR Error:', error);
             alert('Failed to process invoice. Please fill details manually.');
@@ -646,27 +902,26 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         }
     };
 
-    const extractTextFromImage = async (file: File): Promise<string> => {
+    const extractDataFromImage = async (file: File) => {
         const Tesseract = (window as any).Tesseract;
-        if (!Tesseract) {
-            throw new Error("Tesseract.js not loaded");
-        }
+        if (!Tesseract) throw new Error("Tesseract.js not loaded");
         
-        const { data: { text } } = await Tesseract.recognize(file, 'eng', {
+        // Return the full result object, not just text
+        const result = await Tesseract.recognize(file, 'eng', {
             logger: (m: any) => console.log(m)
         });
-        return text;
+        return result.data;
     };
 
-    const extractTextFromPdf = async (file: File): Promise<string> => {
+    const extractDataFromPdf = async (file: File) => {
         const pdfjsLib = (window as any).pdfjsLib;
         if (!pdfjsLib) throw new Error("PDF.js not loaded");
 
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const page = await pdf.getPage(1); // Process first page only for header info
+        const page = await pdf.getPage(1);
         
-        const viewport = page.getViewport({ scale: 2.0 }); // High scale for better OCR
+        const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
         canvas.height = viewport.height;
@@ -677,219 +932,220 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             const dataUrl = canvas.toDataURL('image/png');
             
             const Tesseract = (window as any).Tesseract;
-            const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
-            return text;
+            const result = await Tesseract.recognize(dataUrl, 'eng');
+            return result.data;
         }
-        return '';
+        return null;
     };
 
-    const parseInvoiceText = (text: string) => {
-        console.log("Raw OCR Text:", text);
-        const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
-        const newFormState = { ...formState };
-        const detectedInfo: string[] = [];
-        const potentialItems: PurchaseLineItem[] = [];
+    // --- Geometric Layout Analysis ---
+    
+    interface ColumnDefinition {
+        type: 'desc' | 'hsn' | 'qty' | 'rate' | 'disc' | 'tax' | 'amount';
+        x0: number;
+        x1: number;
+    }
 
-        // --- Improved Header Extraction ---
+    const processInvoiceData = (pageData: any) => {
+        const currentData = {
+            supplierName: '',
+            invoiceNumber: '',
+            invoiceDate: new Date().toISOString().split('T')[0],
+            items: [] as PurchaseLineItem[]
+        };
+
+        const lines = pageData.lines || [];
+        const fullText = pageData.text;
+
+        // 1. Basic Header Extraction (Regex on top part)
+        const headerText = lines.slice(0, Math.min(20, lines.length)).map((l: any) => l.text).join('\n');
         
-        // Match: Invoice No, Bill No, Inv No, etc. followed by spacers and the ID
-        const invMatch = text.match(/(?:Invoice\s*No|Bill\s*No|Inv\s*No|Invoice\s*#|Bill\s*#)[\.:\s-]*([A-Za-z0-9\/-]+)/i);
-        if (invMatch && invMatch[1]) {
-            newFormState.invoiceNumber = invMatch[1].trim();
-            detectedInfo.push(`Invoice No: ${newFormState.invoiceNumber}`);
-        }
+        const invMatch = headerText.match(/(?:Invoice\s*No|Bill\s*No|Inv\s*No|Invoice\s*#|Bill\s*#)[\.:\s-]*([A-Za-z0-9\/-]+)/i);
+        if (invMatch && invMatch[1]) currentData.invoiceNumber = invMatch[1].trim();
 
-        // Match Date formats: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD
-        const dateMatch = text.match(/(?:Date|Dated|Invoice\s*Date)[\.:\s-]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\d{4}[\/\.-]\d{1,2}[\/\.-]\d{1,2})/i);
+        const dateMatch = headerText.match(/(?:Date|Dated|Invoice\s*Date)[\.:\s-]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\d{4}[\/\.-]\d{1,2}[\/\.-]\d{1,2})/i);
         if (dateMatch && dateMatch[1]) {
             try {
-                // Normalize date separators
                 const rawDate = dateMatch[1].replace(/[\/.]/g, '-');
-                const d = new Date(rawDate);
-                if (!isNaN(d.getTime())) {
-                    newFormState.invoiceDate = d.toISOString().split('T')[0];
-                    detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
-                }
+                // Basic check for DD-MM-YYYY vs YYYY-MM-DD
+                const parts = rawDate.split('-');
+                let d;
+                if (parts[0].length === 4) { d = new Date(rawDate); } 
+                else { d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); } // Assume DD-MM-YYYY
+                
+                if (!isNaN(d.getTime())) currentData.invoiceDate = d.toISOString().split('T')[0];
             } catch (e) {}
         }
 
-        // Supplier Match
-        if (!newFormState.supplierName) {
-            const supplier = suppliers.find(s => text.toLowerCase().includes(s.name.toLowerCase()));
-            if (supplier) {
-                newFormState.supplierName = supplier.name;
-                detectedInfo.push(`Supplier: ${supplier.name}`);
-            }
-        }
+        const supplier = suppliers.find(s => headerText.toLowerCase().includes(s.name.toLowerCase()));
+        if (supplier) currentData.supplierName = supplier.name;
 
-        // --- Intelligent Line Item Extraction ---
-        // Strategy: 
-        // 1. Skip lines until we find a table header (Description, Item Name, etc.)
-        // 2. Process lines. Identify numbers.
-        // 3. Check for arithmetic relationship: Qty * Rate ~= Amount
-        // 4. If math matches, we found a row!
-
-        let startProcessingItems = false;
-        const parseNum = (str: string) => {
-            if (!str) return NaN;
-            // Remove currency symbols, maintain dots, handle commas
-            const clean = str.replace(/[^0-9.]/g, ''); 
-            return parseFloat(clean);
+        // 2. Identify Table Header Row & Column Layout
+        let headerLineIndex = -1;
+        let columns: ColumnDefinition[] = [];
+        
+        // Heuristics for column headers
+        const colKeywords: Record<string, string[]> = {
+            desc: ['description', 'particulars', 'product', 'item name', 'desc'],
+            hsn: ['hsn', 'code'],
+            qty: ['qty', 'quantity', 'unit', 'nos', 'pcs'],
+            rate: ['rate', 'price', 'mrp', 'unit price'],
+            disc: ['disc', 'discount', 'dis', '%'],
+            tax: ['tax', 'gst', 'vat', 'igst'],
+            amount: ['amount', 'total', 'value', 'net']
         };
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const lowerLine = line.toLowerCase();
-
-            // Detect Table Header
-            if (!startProcessingItems && (
-                lowerLine.includes('description') || 
-                lowerLine.includes('particular') || 
-                lowerLine.includes('product') || 
-                lowerLine.includes('item name') ||
-                (lowerLine.includes('qty') && lowerLine.includes('rate'))
-            )) {
-                startProcessingItems = true;
-                detectedInfo.push("Detected Item Table Start...");
-                continue; 
-            }
-
-            // Stop at Footer keywords
-            if (startProcessingItems && (
-                lowerLine.match(/^(total|grand total|sub total|taxable|net amount|amount in words)/) ||
-                lowerLine.includes('total amount')
-            )) {
-                break;
-            }
-
-            // --- Row Parsing Logic ---
-            // Tokenize line by multiple spaces to separate columns better
-            const tokens = line.split(/\s+/);
-            if (tokens.length < 2) continue; 
-
-            // Find all numbers in the line with their index
-            const numberCandidates: { value: number, index: number }[] = [];
-            tokens.forEach((t, idx) => {
-                // Check if it looks like a number (allow dots, commas, currency)
-                if (/^[\d,.]+$/.test(t.replace(/[₹$]/, ''))) {
-                    const val = parseNum(t);
-                    if (!isNaN(val)) {
-                        numberCandidates.push({ value: val, index: idx });
+            const lineWords = lines[i].words;
+            const foundCols: ColumnDefinition[] = [];
+            
+            lineWords.forEach((word: any) => {
+                const text = word.text.toLowerCase().replace(/[^a-z]/g, '');
+                for (const [type, keywords] of Object.entries(colKeywords)) {
+                    if (keywords.includes(text)) {
+                        foundCols.push({ type: type as any, x0: word.bbox.x0, x1: word.bbox.x1 });
+                        break;
                     }
                 }
             });
 
-            // We need at least one number (Amount)
-            if (numberCandidates.length === 0) continue;
-
-            let qty = 1;
-            let rate = 0;
-            let amount = 0;
-            let desc = "";
-            let matchFound = false;
-
-            // Strategy 1: Look for Qty * Rate = Amount relationship (Reverse order search)
-            for (let a = numberCandidates.length - 1; a >= 0; a--) {
-                const possibleAmount = numberCandidates[a];
-                
-                // Try to find Rate and Qty before Amount
-                for (let r = a - 1; r >= 0; r--) {
-                    const possibleRate = numberCandidates[r];
-                    
-                    // Check Qty before Rate
-                    for (let q = r - 1; q >= 0; q--) {
-                        const possibleQty = numberCandidates[q];
-                        
-                        // Check Math: Qty * Rate ~= Amount (allow 1.0 margin for rounding errors)
-                        const calcAmount = possibleQty.value * possibleRate.value;
-                        if (Math.abs(calcAmount - possibleAmount.value) < 1.0) {
-                            // MATCH FOUND!
-                            qty = possibleQty.value;
-                            rate = possibleRate.value;
-                            amount = possibleAmount.value;
-                            
-                            // Description is everything before Qty
-                            desc = tokens.slice(0, possibleQty.index).join(" ");
-                            matchFound = true;
-                            break;
-                        }
-                    }
-                    if (matchFound) break;
-                }
-                if (matchFound) break;
+            // Ideally we find at least 3 recognizable columns to confirm it's a header
+            if (foundCols.length >= 3) {
+                headerLineIndex = i;
+                columns = foundCols.sort((a, b) => a.x0 - b.x0);
+                break;
             }
+        }
 
-            // Strategy 2: Fallback - Last number is Amount, prev is Rate. 
-            // Assume Qty = Amount / Rate (if result is close to integer)
-            if (!matchFound && numberCandidates.length >= 2) {
-                const lastNum = numberCandidates[numberCandidates.length - 1];
-                const prevNum = numberCandidates[numberCandidates.length - 2];
-                
-                amount = lastNum.value;
-                rate = prevNum.value;
-                
-                if (amount >= rate && rate > 0) {
-                    const calcQty = amount / rate;
-                    if (Math.abs(Math.round(calcQty) - calcQty) < 0.1) {
-                        qty = Math.round(calcQty);
-                        desc = tokens.slice(0, prevNum.index).join(" ");
-                        matchFound = true;
-                    }
+        // 3. Process Rows if layout detected
+        if (headerLineIndex !== -1 && columns.length > 0) {
+            // Expand column boundaries to capture wider content below
+            // E.g., 'Description' header is short, but content is wide. 
+            // Logic: A column spans from its start until the start of the next column.
+            for (let i = 0; i < columns.length; i++) {
+                if (i < columns.length - 1) {
+                    columns[i].x1 = columns[i + 1].x0 - 5; // Buffer
+                } else {
+                    columns[i].x1 = 9999; // Last column goes to end
                 }
             }
 
-            // Strategy 3: Fallback - If table started, assume last number is Amount, Qty=1, Rate=Amount
-            if (!matchFound && startProcessingItems && numberCandidates.length >= 1) {
-                 const lastNum = numberCandidates[numberCandidates.length - 1];
-                 amount = lastNum.value;
-                 rate = amount;
-                 qty = 1;
-                 desc = tokens.slice(0, lastNum.index).join(" ");
-                 // Simple filter: Desc shouldn't be empty or just numbers
-                 if (desc.length > 2 && !/^\d+$/.test(desc)) {
-                     matchFound = true;
-                 }
-            }
+            for (let i = headerLineIndex + 1; i < lines.length; i++) {
+                const line = lines[i];
+                const text = line.text.toLowerCase();
+                
+                // Stop at footer
+                if (text.match(/total|amount in words|grand total|taxable/)) break;
 
-            if (matchFound && desc.length > 0) {
-                // Try to find matching existing product
-                const existingProduct = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
+                const rowData: any = { desc: [], qty: [], rate: [], amount: [], hsn: [], tax: [], disc: [] };
 
-                 potentialItems.push({
-                    isNewProduct: !existingProduct,
-                    productId: existingProduct?.id,
-                    productName: desc,
-                    company: existingProduct?.company || (newFormState.supplierName || 'Unknown'),
-                    hsnCode: existingProduct?.hsnCode || '',
-                    gst: existingProduct?.gst || 0,
-                    batchNumber: 'BATCH', // Placeholder, OCR usually fails on this or it's complex
-                    expiryDate: '2025-12', // Placeholder
-                    quantity: qty,
-                    mrp: rate * 1.2, // Heuristic: MRP = Rate + 20%
-                    purchasePrice: rate,
-                    discount: 0
+                line.words.forEach((word: any) => {
+                    const mid = (word.bbox.x0 + word.bbox.x1) / 2;
+                    // Find which column this word belongs to
+                    const col = columns.find(c => mid >= c.x0 && mid <= c.x1);
+                    if (col) {
+                        rowData[col.type].push(word.text);
+                    }
                 });
+
+                // Reconstruct Fields
+                const desc = rowData.desc.join(' ');
+                const qty = parseFloat(rowData.qty.join('').replace(/[^0-9.]/g, '')) || 0;
+                const rate = parseFloat(rowData.rate.join('').replace(/[^0-9.]/g, '')) || 0;
+                const hsn = rowData.hsn.join('').replace(/[^0-9]/g, '');
+                
+                // Sometimes Amount bucket gets mixed with Tax/Disc if they are adjacent and empty
+                // Simple arithmetic check: Qty * Rate ~= Amount?
+                let amount = parseFloat(rowData.amount.join('').replace(/[^0-9.]/g, '')) || 0;
+                if (qty > 0 && rate > 0 && amount === 0) amount = qty * rate;
+
+                // Validate Row: Must have Description and at least (Qty + Rate) OR Amount
+                if (desc.length > 2 && (amount > 0 || (qty > 0 && rate > 0))) {
+                    
+                    const existingProduct = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
+                    
+                    currentData.items.push({
+                        isNewProduct: !existingProduct,
+                        productId: existingProduct?.id,
+                        productName: desc,
+                        company: existingProduct?.company || (currentData.supplierName || 'Unknown'),
+                        hsnCode: hsn || existingProduct?.hsnCode || '',
+                        gst: existingProduct?.gst || 0,
+                        batchNumber: 'BATCH',
+                        expiryDate: '2025-12',
+                        quantity: qty || 1,
+                        mrp: (rate > 0 ? rate : amount) * 1.2,
+                        purchasePrice: rate > 0 ? rate : amount,
+                        discount: 0,
+                    });
+                }
+            }
+        } else {
+            // Fallback to simple regex if geometric layout fails
+            const simpleParserItems = parseInvoiceTextFallback(fullText);
+            currentData.items = simpleParserItems;
+        }
+
+        setOcrData(currentData);
+        setIsOcrPreviewOpen(true);
+    };
+
+    // Fallback Regex Parser (Simplified version of previous iteration)
+    const parseInvoiceTextFallback = (text: string) => {
+        const lines = text.split(/\r?\n/);
+        const items: PurchaseLineItem[] = [];
+        const numberRegex = /(\d+(\.\d{1,2})?)/g;
+        
+        let startTable = false;
+        for (const line of lines) {
+            if (line.match(/description|particulars/i)) { startTable = true; continue; }
+            if (line.match(/total|amount/i) && startTable) break;
+            if (!startTable) continue;
+
+            const numbers = line.match(numberRegex);
+            if (numbers && numbers.length >= 2) {
+                // Heuristic: Last number = Amount, 2nd Last = Rate, 3rd Last = Qty
+                const vals = numbers.map(n => parseFloat(n));
+                const amount = vals[vals.length - 1];
+                let rate = vals.length > 1 ? vals[vals.length - 2] : 0;
+                let qty = vals.length > 2 ? vals[vals.length - 3] : 1;
+
+                if (Math.abs(qty * rate - amount) > 1) {
+                    // Try different combination if math fails
+                    if (vals.length >= 2 && Math.abs(1 * vals[vals.length-2] - amount) < 1) {
+                       qty = 1; rate = vals[vals.length-2];
+                    }
+                }
+
+                const desc = line.replace(numberRegex, '').trim();
+                if (desc.length > 2 && amount > 0) {
+                     const existingProduct = products.find(p => p.name.toLowerCase().includes(desc.toLowerCase()));
+                     items.push({
+                        isNewProduct: !existingProduct,
+                        productName: desc,
+                        company: existingProduct?.company || 'Unknown',
+                        hsnCode: '',
+                        gst: 0,
+                        batchNumber: 'BATCH',
+                        expiryDate: '2025-12',
+                        quantity: qty,
+                        mrp: rate * 1.2,
+                        purchasePrice: rate,
+                        discount: 0
+                     });
+                }
             }
         }
+        return items;
+    };
 
-        // Try to find Total Amount if not found in loop
-        if (potentialItems.length > 0) {
-            newFormState.currentItems = potentialItems;
-            detectedInfo.push(`Found ${potentialItems.length} line items.`);
-        } else if (startProcessingItems) {
-             detectedInfo.push("Table header found, but couldn't parse line items reliably.");
-        }
-
-        setFormState(newFormState);
-        
-        let alertMsg = `Invoice scanned!`;
-        if (detectedInfo.length > 0) {
-            alertMsg += `\n\nDetails Found:\n${detectedInfo.join('\n')}`;
-        } else {
-            alertMsg += `\n\nCould not confidently extract details. Please fill manually.`;
-        }
-        alertMsg += `\n\nPlease verify all fields before saving.`;
-        alert(alertMsg);
+    const handleImportFromOcr = (data: { supplierName: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => {
+        setFormState({
+            supplierName: data.supplierName,
+            invoiceNumber: data.invoiceNumber,
+            invoiceDate: data.invoiceDate,
+            currentItems: [...formState.currentItems, ...data.items]
+        });
     };
 
     const filteredPurchases = useMemo(() => {
@@ -955,7 +1211,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 {isProcessingOCR ? (
                                     <>
                                         <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                                        <span>Processing...</span>
+                                        <span>Analyzing Layout...</span>
                                     </>
                                 ) : (
                                     <>
@@ -1023,6 +1279,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
                                     <tr>
                                         <th className="px-4 py-2 text-left">Product</th>
+                                        <th className="px-4 py-2 text-left">HSN</th>
                                         {isPharmaMode && <th className="px-4 py-2 text-left">Batch</th>}
                                         <th className="px-4 py-2 text-center">Qty</th>
                                         <th className="px-4 py-2 text-right">Rate</th>
@@ -1036,6 +1293,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                     {formState.currentItems.map((item, index) => (
                                         <tr key={index} className="border-b dark:border-slate-700">
                                             <td className="px-4 py-2 font-medium">{item.productName} {item.isNewProduct && <span className="text-xs text-green-600 dark:text-green-400 font-semibold">(New)</span>}</td>
+                                            <td className="px-4 py-2">{item.hsnCode}</td>
                                             {isPharmaMode && <td className="px-4 py-2">{item.batchNumber}</td>}
                                             <td className="px-4 py-2 text-center">{item.quantity}</td>
                                             <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
@@ -1080,6 +1338,15 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 onClose={() => setSupplierModalOpen(false)}
                 onAddSupplier={handleAddNewSupplier}
                 initialName={formState.supplierName}
+            />
+
+            <OcrPreviewModal 
+                isOpen={isOcrPreviewOpen}
+                onClose={() => setIsOcrPreviewOpen(false)}
+                data={ocrData}
+                suppliers={suppliers}
+                onImport={handleImportFromOcr}
+                isPharmaMode={isPharmaMode}
             />
 
             <Card title="Purchase History">
