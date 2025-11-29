@@ -178,5 +178,7 @@ declare global {
     bluetoothSerial: any;
     BluetoothManager: any;
     BluetoothEscposPrinter: any;
+    Tesseract: any;
+    pdfjsLib: any;
   }
 }

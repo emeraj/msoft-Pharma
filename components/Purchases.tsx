@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface PurchasesProps {
@@ -503,6 +503,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [itemToEdit, setItemToEdit] = useState<PurchaseLineItem | null>(null);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
+    // OCR Processing State
+    const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     // State for purchase history filtering
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -613,6 +617,122 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         resetForm();
     };
 
+    // --- OCR Logic ---
+
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setIsProcessingOCR(true);
+        try {
+            let extractedText = '';
+            if (file.type === 'application/pdf') {
+                extractedText = await extractTextFromPdf(file);
+            } else if (file.type.startsWith('image/')) {
+                extractedText = await extractTextFromImage(file);
+            } else {
+                alert('Unsupported file type. Please upload an image or PDF.');
+                setIsProcessingOCR(false);
+                return;
+            }
+            
+            parseInvoiceText(extractedText);
+        } catch (error) {
+            console.error('OCR Error:', error);
+            alert('Failed to process invoice. Please fill details manually.');
+        } finally {
+            setIsProcessingOCR(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const extractTextFromImage = async (file: File): Promise<string> => {
+        const Tesseract = (window as any).Tesseract;
+        if (!Tesseract) {
+            throw new Error("Tesseract.js not loaded");
+        }
+        
+        const { data: { text } } = await Tesseract.recognize(file, 'eng', {
+            logger: (m: any) => console.log(m)
+        });
+        return text;
+    };
+
+    const extractTextFromPdf = async (file: File): Promise<string> => {
+        const pdfjsLib = (window as any).pdfjsLib;
+        if (!pdfjsLib) throw new Error("PDF.js not loaded");
+
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1); // Process first page only for header info
+        
+        const viewport = page.getViewport({ scale: 2.0 }); // High scale for better OCR
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        if (context) {
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            const Tesseract = (window as any).Tesseract;
+            const { data: { text } } = await Tesseract.recognize(dataUrl, 'eng');
+            return text;
+        }
+        return '';
+    };
+
+    const parseInvoiceText = (text: string) => {
+        const lowerText = text.toLowerCase();
+        const newFormState = { ...formState };
+
+        // 1. Find Invoice Number
+        // Matches: Invoice No: 123, Inv# 123, Bill No. 123
+        const invRegex = /(?:invoice|bill)\s*(?:no\.?|#|number)?\s*[:.]?\s*([a-z0-9/-]+)/i;
+        const invMatch = text.match(invRegex);
+        if (invMatch && invMatch[1]) {
+            newFormState.invoiceNumber = invMatch[1].trim();
+        }
+
+        // 2. Find Date
+        // Matches: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
+        const dateRegex = /\b(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})\b/;
+        const dateMatch = text.match(dateRegex);
+        if (dateMatch && dateMatch[1]) {
+            let dateStr = dateMatch[1].replace(/\//g, '-').replace(/\./g, '-');
+            const parts = dateStr.split('-');
+            let validDate = '';
+            
+            // Attempt to normalize to YYYY-MM-DD
+            if (parts.length === 3) {
+                if (parts[0].length === 4) { // YYYY-MM-DD
+                    validDate = dateStr;
+                } else if (parts[2].length === 4) { // DD-MM-YYYY
+                    validDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                } else if (parts[2].length === 2) { // DD-MM-YY (Assume 20xx)
+                    validDate = `20${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                }
+            }
+            
+            if (validDate && !isNaN(Date.parse(validDate))) {
+                newFormState.invoiceDate = validDate;
+            }
+        }
+
+        // 3. Find Supplier
+        // Simple fuzzy match against existing suppliers list
+        for (const supplier of suppliers) {
+            if (lowerText.includes(supplier.name.toLowerCase())) {
+                newFormState.supplierName = supplier.name;
+                break;
+            }
+        }
+
+        setFormState(newFormState);
+        alert("Invoice scanned! Please verify the extracted details.");
+    };
+
     const filteredPurchases = useMemo(() => {
         return purchases
             .filter(p => {
@@ -656,7 +776,39 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
     return (
         <div className="p-4 sm:p-6 space-y-6">
-            <Card title={editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}>
+            <Card title={
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <span>{editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}</span>
+                    {!editingPurchase && (
+                        <div className="relative">
+                            <input 
+                                type="file" 
+                                accept="image/*,application/pdf" 
+                                ref={fileInputRef} 
+                                onChange={handleFileUpload} 
+                                className="hidden"
+                            />
+                            <button 
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isProcessingOCR}
+                                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-lg shadow-md hover:from-purple-600 hover:to-indigo-700 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                            >
+                                {isProcessingOCR ? (
+                                    <>
+                                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                                        <span>Processing...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <UploadIcon className="h-5 w-5" />
+                                        <span>Auto-Fill from Invoice</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            }>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
