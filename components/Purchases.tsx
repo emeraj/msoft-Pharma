@@ -986,7 +986,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         
         // Heuristics for column headers
         const colKeywords: Record<string, string[]> = {
-            desc: ['description', 'particulars', 'product', 'item name', 'desc'],
+            desc: ['description', 'particulars', 'item', 'product', 'item name', 'desc'],
             hsn: ['hsn', 'code'],
             qty: ['qty', 'quantity', 'unit', 'nos', 'pcs'],
             rate: ['rate', 'price', 'mrp', 'unit price'],
