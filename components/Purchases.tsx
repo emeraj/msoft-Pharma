@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
@@ -388,7 +389,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '',
         barcode: '',
         discount: '',
-        tax: defaultGst
+        tax: defaultGst // Sync initial tax with gst
     });
 
     const [formState, setFormState] = useState(getInitialFormState());
@@ -421,7 +422,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                 purchasePrice: String(itemToEdit.purchasePrice),
                 barcode: itemToEdit.barcode || '',
                 discount: itemToEdit.discount ? String(itemToEdit.discount) : '',
-                tax: String(itemToEdit.gst)
+                tax: String(itemToEdit.gst) // Sync Tax field
             });
         }
     }, [itemToEdit, products]);
@@ -502,7 +503,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             company: product.company,
             hsnCode: product.hsnCode,
             gst: String(product.gst),
-            tax: String(product.gst), // Sync tax field with product GST
+            tax: String(product.gst), // Automatically update tax field when product is selected
             unitsPerStrip: String(product.unitsPerStrip || ''),
             isScheduleH: product.isScheduleH ? 'Yes' : 'No',
             isNewProduct: false,
@@ -556,14 +557,14 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             productName: isNewProduct ? productName : selectedProduct!.name,
             company: company.trim(),
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
-            gst: parseFloat(tax) || parseFloat(gst) || 0, // Use tax value
+            gst: parseFloat(tax) || parseFloat(gst) || 0, // Prioritize tax field value
             batchNumber: isPharmaMode ? batchNumber : 'DEFAULT',
             expiryDate: isPharmaMode ? expiryDate : '9999-12',
             quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
-            barcode: isNewProduct && !isPharmaMode ? barcode : undefined,
             discount: parseFloat(discount) || 0,
+            ...(isNewProduct && !isPharmaMode && barcode ? { barcode } : {}), // Only include barcode if relevant
         };
 
         if (isPharmaMode && isNewProduct) {
@@ -1067,9 +1068,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 let mrp = parseNumber(item.mrp);
                 if (mrp === 0 && rate > 0) mrp = rate;
 
-                return {
+                const itemData: any = {
                     isNewProduct: !existingProduct,
-                    productId: existingProduct?.id,
                     productName: existingProduct?.name || item.productName || 'Unknown Product',
                     company: existingProduct?.company || (currentData.supplierName || 'Unknown Company'),
                     hsnCode: existingProduct?.hsnCode || item.hsnCode || '',
@@ -1084,6 +1084,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     isScheduleH: existingProduct?.isScheduleH || false,
                     composition: existingProduct?.composition || ''
                 };
+
+                if (existingProduct?.id) {
+                    itemData.productId = existingProduct.id;
+                }
+                
+                return itemData;
             });
         }
 

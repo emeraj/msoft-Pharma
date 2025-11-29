@@ -949,8 +949,8 @@ const EditProductModal: React.FC<{
   
   useEffect(() => {
     if (product) {
-        const batch = product.batches[0];
-        let stockVal = batch.stock;
+        const batch = product.batches.length > 0 ? product.batches[0] : null;
+        let stockVal = batch ? batch.stock : 0;
         
         // If pharma mode and we have units per strip, convert total units back to strips for display
         // This assumes the stock was entered as strips originally or user thinks in strips.
@@ -967,8 +967,8 @@ const EditProductModal: React.FC<{
             composition: product.composition || '', 
             unitsPerStrip: String(product.unitsPerStrip || ''), 
             isScheduleH: product.isScheduleH ? 'Yes' : 'No', 
-            mrp: showPriceFields ? String(batch.mrp) : '', 
-            purchasePrice: showPriceFields ? String(batch.purchasePrice) : '',
+            mrp: showPriceFields && batch ? String(batch.mrp) : '', 
+            purchasePrice: showPriceFields && batch ? String(batch.purchasePrice) : '',
             stock: showPriceFields ? String(stockVal) : ''
         });
     }
