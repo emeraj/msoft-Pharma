@@ -686,51 +686,60 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const parseInvoiceText = (text: string) => {
         const lowerText = text.toLowerCase();
         const newFormState = { ...formState };
+        let detectedInfo = [];
 
         // 1. Find Invoice Number
-        // Matches: Invoice No: 123, Inv# 123, Bill No. 123
-        const invRegex = /(?:invoice|bill)\s*(?:no\.?|#|number)?\s*[:.]?\s*([a-z0-9/-]+)/i;
+        // Common patterns: Invoice No: 123, Inv #123, Bill No. 123, Inv No.
+        const invRegex = /(?:invoice|bill|inv)\s*(?:no\.?|#|number|id)?\s*[:.-]?\s*([a-z0-9\-\/]+)/i;
         const invMatch = text.match(invRegex);
         if (invMatch && invMatch[1]) {
-            newFormState.invoiceNumber = invMatch[1].trim();
+            // Filter out common false positives
+            if (invMatch[1].length > 1 && !['no', 'date'].includes(invMatch[1].toLowerCase())) {
+                newFormState.invoiceNumber = invMatch[1].trim();
+                detectedInfo.push(`Invoice #: ${newFormState.invoiceNumber}`);
+            }
         }
 
         // 2. Find Date
-        // Matches: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
-        const dateRegex = /\b(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})\b/;
+        // Patterns: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, DD MMM YYYY
+        const dateRegex = /(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})|(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4})/i;
         const dateMatch = text.match(dateRegex);
-        if (dateMatch && dateMatch[1]) {
-            let dateStr = dateMatch[1].replace(/\//g, '-').replace(/\./g, '-');
-            const parts = dateStr.split('-');
-            let validDate = '';
-            
-            // Attempt to normalize to YYYY-MM-DD
-            if (parts.length === 3) {
-                if (parts[0].length === 4) { // YYYY-MM-DD
-                    validDate = dateStr;
-                } else if (parts[2].length === 4) { // DD-MM-YYYY
-                    validDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
-                } else if (parts[2].length === 2) { // DD-MM-YY (Assume 20xx)
-                    validDate = `20${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
-                }
-            }
-            
-            if (validDate && !isNaN(Date.parse(validDate))) {
-                newFormState.invoiceDate = validDate;
+        
+        if (dateMatch && dateMatch[0]) {
+            let dateStr = dateMatch[0].replace(/[/.]/g, '-');
+            const parsedDate = new Date(dateStr);
+            if (!isNaN(parsedDate.getTime())) {
+                try {
+                    newFormState.invoiceDate = parsedDate.toISOString().split('T')[0];
+                    detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
+                } catch (e) { console.error("Date parse error", e); }
             }
         }
 
-        // 3. Find Supplier
-        // Simple fuzzy match against existing suppliers list
+        // 3. Find Supplier (Fuzzy Match against existing suppliers)
         for (const supplier of suppliers) {
             if (lowerText.includes(supplier.name.toLowerCase())) {
                 newFormState.supplierName = supplier.name;
-                break;
+                detectedInfo.push(`Supplier: ${supplier.name}`);
+                break; 
             }
+        }
+        
+        // 4. Try to find Total Amount (for user verification)
+        // Looks for "Total", "Grand Total", "Net Amount" followed by number
+        const totalRegex = /(?:grand total|net amount|total amount|total)\s*[:.-]?\s*₹?\s*([\d,]+\.?\d*)/i;
+        const totalMatch = text.match(totalRegex);
+        if (totalMatch && totalMatch[1]) {
+            detectedInfo.push(`Detected Total: ${totalMatch[1]}`);
         }
 
         setFormState(newFormState);
-        alert("Invoice scanned! Please verify the extracted details.");
+        
+        if (detectedInfo.length > 0) {
+            alert(`Invoice scanned! \n\nExtracted:\n${detectedInfo.join('\n')}\n\nPlease verify these details.`);
+        } else {
+            alert("Invoice scanned but no specific details could be confidently extracted. Please fill details manually.");
+        }
     };
 
     const filteredPurchases = useMemo(() => {
@@ -801,7 +810,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 ) : (
                                     <>
                                         <UploadIcon className="h-5 w-5" />
-                                        <span>Auto-Fill from Invoice</span>
+                                        <span>Auto-Fill from Invoice (OCR)</span>
                                     </>
                                 )}
                             </button>
