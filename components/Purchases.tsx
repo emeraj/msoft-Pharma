@@ -687,85 +687,141 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
         const newFormState = { ...formState };
         const detectedInfo: string[] = [];
+        const potentialItems: PurchaseLineItem[] = [];
 
-        // --- 1. Find Supplier (Heuristic: Check top 30% of lines for supplier names in DB) ---
-        // Only checking top lines prevents matching a product name that contains a supplier name.
-        const headerLines = lines.slice(0, Math.min(lines.length, 15)); 
-        for (const line of headerLines) {
-            const lineLower = line.toLowerCase();
-            const foundSupplier = suppliers.find(s => lineLower.includes(s.name.toLowerCase()));
-            if (foundSupplier) {
-                newFormState.supplierName = foundSupplier.name;
-                detectedInfo.push(`Supplier: ${foundSupplier.name}`);
-                break;
+        // Helper for cleaning amounts (remove currency symbols, commas)
+        const cleanAmount = (str: string) => parseFloat(str.replace(/[^0-9.]/g, ''));
+
+        // Regex patterns specifically targeting user-requested keywords
+        const invNoRegex = /(?:invoice\s*no\.?|bill\s*no\.?|inv\s*no\.?|invoice\s*#|bill\s*#)[:\s-]*([a-z0-9\/-]+)/i;
+        const dateRegex = /(?:date|dated)[:\s-]*(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{2,4}[-./]\d{1,2}[-./]\d{1,2})/i;
+        const totalRegex = /(?:grand\s*total|bill\s*amount|net\s*amount|total\s*payable|total)[:\s-]*[₹$]?\s*([\d,]+\.?\d*)/i;
+
+        let foundHeaderRowIndex = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // --- Header Extraction ---
+            
+            // Invoice No
+            if (!newFormState.invoiceNumber) {
+                const match = line.match(invNoRegex);
+                if (match && match[1]) {
+                    newFormState.invoiceNumber = match[1].trim();
+                    detectedInfo.push(`Invoice No: ${newFormState.invoiceNumber}`);
+                }
+            }
+
+            // Date
+            if (newFormState.invoiceDate === initialFormState.invoiceDate) {
+                const match = line.match(dateRegex);
+                if (match && match[1]) {
+                    try {
+                        const rawDate = match[1].replace(/[/.]/g, '-');
+                        const d = new Date(rawDate);
+                        if (!isNaN(d.getTime())) {
+                            newFormState.invoiceDate = d.toISOString().split('T')[0];
+                            detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
+                        }
+                    } catch (e) {}
+                }
+            }
+
+            // Supplier Match (Check if any existing supplier name is in the line)
+            if (!newFormState.supplierName) {
+                const supplier = suppliers.find(s => line.toLowerCase().includes(s.name.toLowerCase()));
+                if (supplier) {
+                    newFormState.supplierName = supplier.name;
+                    detectedInfo.push(`Supplier: ${supplier.name}`);
+                }
+            }
+
+            // --- Detect Table Header Row ---
+            // Look for keywords indicating start of items table
+            const lowerLine = line.toLowerCase();
+            const hasDesc = lowerLine.includes('description') || lowerLine.includes('particular') || lowerLine.includes('item') || lowerLine.includes('product');
+            const hasQty = lowerLine.includes('qty') || lowerLine.includes('quantity');
+            const hasRate = lowerLine.includes('rate') || lowerLine.includes('price');
+            const hasAmount = lowerLine.includes('amount') || lowerLine.includes('total');
+
+            // Ideally a header row has at least Description and one numerical column header
+            if (hasDesc && (hasQty || hasRate || hasAmount)) {
+                foundHeaderRowIndex = i;
             }
         }
 
-        // --- 2. Iterate text for Key Fields (Inv No, Date, Total) ---
-        
-        // Regexes optimized for common OCR errors (e.g., 'l' instead of '1') and whitespace
-        // "Invoice No", "Bill No", "Inv No", "Invoice #"
-        const invNoRegex = /(?:invoice|bill|inv)\s*(?:no\.?|#|number|id)[\s.:-]*([a-z0-9\/-]+)/i;
-        
-        // "Date", "Dated" - Supports DD/MM/YYYY, YYYY-MM-DD, DD-Mon-YYYY
-        const dateRegex = /(?:date|dated)[\s.:-]*(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{2,4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4})/i;
-        
-        // "Total", "Grand Total", "Bill Amount", "Net Amount", "Payable"
-        const amountRegex = /(?:grand\s*total|bill\s*amount|net\s*amount|total\s*payable|total)[\s.:-]*[₹$]?\s*([\d,]+\.?\d*)/i;
+        // --- Total Amount Extraction (Search from bottom up) ---
+        for (let i = lines.length - 1; i >= 0; i--) {
+            const match = lines[i].match(totalRegex);
+            if (match && match[1]) {
+                detectedInfo.push(`Detected Total: ${match[1]}`);
+                break; 
+            }
+        }
 
-        for (const line of lines) {
-            // Check Invoice Number
-            if (!newFormState.invoiceNumber) {
-                const invMatch = line.match(invNoRegex);
-                if (invMatch && invMatch[1]) {
-                    // Filter noise: sometimes 'No' is matched as the number
-                    if (invMatch[1].length > 1 && !['no', 'date'].includes(invMatch[1].toLowerCase())) {
-                        newFormState.invoiceNumber = invMatch[1].trim();
-                        detectedInfo.push(`Invoice No: ${newFormState.invoiceNumber}`);
+        // --- Line Item Extraction ---
+        if (foundHeaderRowIndex !== -1) {
+            // Process lines AFTER the header
+            for (let i = foundHeaderRowIndex + 1; i < lines.length; i++) {
+                const line = lines[i];
+                
+                // Stop if we hit footer keywords
+                if (line.match(/(?:total|subtotal|tax|gst|amount|rupees)/i)) break;
+
+                // Attempt to parse row: [Product Name] ... [Qty] [Rate] [Amount]
+                // Regex looks for: Start with anything (Name), then whitespace, then digits(Qty), whitespace, decimal(Rate), whitespace, decimal(Amount) end.
+                // This is a common pattern for simple invoice lines.
+                // We handle "Amount" being optional in capture if layout differs, but assume standard order.
+                
+                const itemMatch = line.match(/^(.+?)\s+(\d+)\s+([\d,.]+)\s+([\d,.]+)$/);
+                
+                if (itemMatch) {
+                    const desc = itemMatch[1].trim();
+                    const qty = parseInt(itemMatch[2]);
+                    const rate = cleanAmount(itemMatch[3]);
+                    // itemMatch[4] is amount, useful for validation if needed
+
+                    if (desc && qty > 0 && rate > 0) {
+                        // Check if this product exists in DB (Fuzzy match by name)
+                        const existingProduct = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
+                        
+                        potentialItems.push({
+                            isNewProduct: !existingProduct,
+                            productId: existingProduct?.id,
+                            productName: desc, // Use extracted name if new, or keep extracted text
+                            company: existingProduct?.company || (newFormState.supplierName || 'Unknown'),
+                            hsnCode: existingProduct?.hsnCode || '',
+                            gst: existingProduct?.gst || 0,
+                            batchNumber: 'BATCH-' + Date.now().toString().slice(-6), // Placeholder
+                            expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 7), // Default +1 year
+                            quantity: qty,
+                            mrp: rate * 1.2, // Heuristic: MRP = Rate + 20%
+                            purchasePrice: rate,
+                            discount: 0
+                        });
                     }
                 }
             }
-
-            // Check Date
-            if (!newFormState.invoiceDate || newFormState.invoiceDate === initialFormState.invoiceDate) {
-                const dateMatch = line.match(dateRegex);
-                if (dateMatch && dateMatch[1]) {
-                    try {
-                        const rawDate = dateMatch[1].replace(/[/.]/g, '-');
-                        const parsedDate = new Date(rawDate);
-                        if (!isNaN(parsedDate.getTime())) {
-                            newFormState.invoiceDate = parsedDate.toISOString().split('T')[0];
-                            detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
-                        }
-                    } catch (e) { /* ignore parse error */ }
-                }
-            }
         }
 
-        // --- 3. Find Amount (Search from BOTTOM up) ---
-        // Totals are usually at the bottom.
-        let detectedTotal = '';
-        for (let i = lines.length - 1; i >= 0; i--) {
-            const line = lines[i];
-            const amountMatch = line.match(amountRegex);
-            if (amountMatch && amountMatch[1]) {
-                detectedTotal = amountMatch[1];
-                // Convert to number to ensure it's valid
-                const val = parseFloat(detectedTotal.replace(/,/g, ''));
-                if (!isNaN(val) && val > 0) {
-                    detectedInfo.push(`Detected Total: ${detectedTotal}`);
-                    break; 
-                }
-            }
+        if (potentialItems.length > 0) {
+            newFormState.currentItems = potentialItems;
+            detectedInfo.push(`Extracted ${potentialItems.length} line items.`);
+        } else if (foundHeaderRowIndex !== -1) {
+             detectedInfo.push("Table header found, but couldn't parse line items reliably.");
         }
 
         setFormState(newFormState);
         
+        let alertMsg = `Invoice scanned!`;
         if (detectedInfo.length > 0) {
-            alert(`Invoice scanned! Please verify:\n\n${detectedInfo.join('\n')}\n\nNote: Line items (Product Name, Qty, Rate) must be entered manually or selected from the product list to ensure inventory accuracy.`);
+            alertMsg += `\n\nDetails Found:\n${detectedInfo.join('\n')}`;
         } else {
-            alert("Invoice scanned but specific details (Invoice No, Date, Total) could not be confidently identified. Please fill details manually.");
+            alertMsg += `\n\nCould not confidently extract details. Please fill manually.`;
         }
+        alertMsg += `\n\nPlease verify all fields before saving.`;
+        alert(alertMsg);
     };
 
     const filteredPurchases = useMemo(() => {
