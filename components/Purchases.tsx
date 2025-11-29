@@ -684,61 +684,87 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     const parseInvoiceText = (text: string) => {
-        const lowerText = text.toLowerCase();
+        const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
         const newFormState = { ...formState };
-        let detectedInfo = [];
+        const detectedInfo: string[] = [];
 
-        // 1. Find Invoice Number
-        // Common patterns: Invoice No: 123, Inv #123, Bill No. 123, Inv No.
-        const invRegex = /(?:invoice|bill|inv)\s*(?:no\.?|#|number|id)?\s*[:.-]?\s*([a-z0-9\-\/]+)/i;
-        const invMatch = text.match(invRegex);
-        if (invMatch && invMatch[1]) {
-            // Filter out common false positives
-            if (invMatch[1].length > 1 && !['no', 'date'].includes(invMatch[1].toLowerCase())) {
-                newFormState.invoiceNumber = invMatch[1].trim();
-                detectedInfo.push(`Invoice #: ${newFormState.invoiceNumber}`);
+        // --- 1. Find Supplier (Heuristic: Check top 30% of lines for supplier names in DB) ---
+        // Only checking top lines prevents matching a product name that contains a supplier name.
+        const headerLines = lines.slice(0, Math.min(lines.length, 15)); 
+        for (const line of headerLines) {
+            const lineLower = line.toLowerCase();
+            const foundSupplier = suppliers.find(s => lineLower.includes(s.name.toLowerCase()));
+            if (foundSupplier) {
+                newFormState.supplierName = foundSupplier.name;
+                detectedInfo.push(`Supplier: ${foundSupplier.name}`);
+                break;
             }
         }
 
-        // 2. Find Date
-        // Patterns: DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, DD MMM YYYY
-        const dateRegex = /(\d{1,2}[-./]\d{1,2}[-./]\d{2,4})|(\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4})/i;
-        const dateMatch = text.match(dateRegex);
+        // --- 2. Iterate text for Key Fields (Inv No, Date, Total) ---
         
-        if (dateMatch && dateMatch[0]) {
-            let dateStr = dateMatch[0].replace(/[/.]/g, '-');
-            const parsedDate = new Date(dateStr);
-            if (!isNaN(parsedDate.getTime())) {
-                try {
-                    newFormState.invoiceDate = parsedDate.toISOString().split('T')[0];
-                    detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
-                } catch (e) { console.error("Date parse error", e); }
+        // Regexes optimized for common OCR errors (e.g., 'l' instead of '1') and whitespace
+        // "Invoice No", "Bill No", "Inv No", "Invoice #"
+        const invNoRegex = /(?:invoice|bill|inv)\s*(?:no\.?|#|number|id)[\s.:-]*([a-z0-9\/-]+)/i;
+        
+        // "Date", "Dated" - Supports DD/MM/YYYY, YYYY-MM-DD, DD-Mon-YYYY
+        const dateRegex = /(?:date|dated)[\s.:-]*(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{2,4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4})/i;
+        
+        // "Total", "Grand Total", "Bill Amount", "Net Amount", "Payable"
+        const amountRegex = /(?:grand\s*total|bill\s*amount|net\s*amount|total\s*payable|total)[\s.:-]*[₹$]?\s*([\d,]+\.?\d*)/i;
+
+        for (const line of lines) {
+            // Check Invoice Number
+            if (!newFormState.invoiceNumber) {
+                const invMatch = line.match(invNoRegex);
+                if (invMatch && invMatch[1]) {
+                    // Filter noise: sometimes 'No' is matched as the number
+                    if (invMatch[1].length > 1 && !['no', 'date'].includes(invMatch[1].toLowerCase())) {
+                        newFormState.invoiceNumber = invMatch[1].trim();
+                        detectedInfo.push(`Invoice No: ${newFormState.invoiceNumber}`);
+                    }
+                }
+            }
+
+            // Check Date
+            if (!newFormState.invoiceDate || newFormState.invoiceDate === initialFormState.invoiceDate) {
+                const dateMatch = line.match(dateRegex);
+                if (dateMatch && dateMatch[1]) {
+                    try {
+                        const rawDate = dateMatch[1].replace(/[/.]/g, '-');
+                        const parsedDate = new Date(rawDate);
+                        if (!isNaN(parsedDate.getTime())) {
+                            newFormState.invoiceDate = parsedDate.toISOString().split('T')[0];
+                            detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
+                        }
+                    } catch (e) { /* ignore parse error */ }
+                }
             }
         }
 
-        // 3. Find Supplier (Fuzzy Match against existing suppliers)
-        for (const supplier of suppliers) {
-            if (lowerText.includes(supplier.name.toLowerCase())) {
-                newFormState.supplierName = supplier.name;
-                detectedInfo.push(`Supplier: ${supplier.name}`);
-                break; 
+        // --- 3. Find Amount (Search from BOTTOM up) ---
+        // Totals are usually at the bottom.
+        let detectedTotal = '';
+        for (let i = lines.length - 1; i >= 0; i--) {
+            const line = lines[i];
+            const amountMatch = line.match(amountRegex);
+            if (amountMatch && amountMatch[1]) {
+                detectedTotal = amountMatch[1];
+                // Convert to number to ensure it's valid
+                const val = parseFloat(detectedTotal.replace(/,/g, ''));
+                if (!isNaN(val) && val > 0) {
+                    detectedInfo.push(`Detected Total: ${detectedTotal}`);
+                    break; 
+                }
             }
-        }
-        
-        // 4. Try to find Total Amount (for user verification)
-        // Looks for "Total", "Grand Total", "Net Amount" followed by number
-        const totalRegex = /(?:grand total|net amount|total amount|total)\s*[:.-]?\s*₹?\s*([\d,]+\.?\d*)/i;
-        const totalMatch = text.match(totalRegex);
-        if (totalMatch && totalMatch[1]) {
-            detectedInfo.push(`Detected Total: ${totalMatch[1]}`);
         }
 
         setFormState(newFormState);
         
         if (detectedInfo.length > 0) {
-            alert(`Invoice scanned! \n\nExtracted:\n${detectedInfo.join('\n')}\n\nPlease verify these details.`);
+            alert(`Invoice scanned! Please verify:\n\n${detectedInfo.join('\n')}\n\nNote: Line items (Product Name, Qty, Rate) must be entered manually or selected from the product list to ensure inventory accuracy.`);
         } else {
-            alert("Invoice scanned but no specific details could be confidently extracted. Please fill details manually.");
+            alert("Invoice scanned but specific details (Invoice No, Date, Total) could not be confidently identified. Please fill details manually.");
         }
     };
 
