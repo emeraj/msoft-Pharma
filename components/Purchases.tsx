@@ -684,131 +684,199 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     const parseInvoiceText = (text: string) => {
+        console.log("Raw OCR Text:", text);
         const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
         const newFormState = { ...formState };
         const detectedInfo: string[] = [];
         const potentialItems: PurchaseLineItem[] = [];
 
-        // Helper for cleaning amounts (remove currency symbols, commas)
-        const cleanAmount = (str: string) => parseFloat(str.replace(/[^0-9.]/g, ''));
+        // --- Improved Header Extraction ---
+        
+        // Match: Invoice No, Bill No, Inv No, etc. followed by spacers and the ID
+        const invMatch = text.match(/(?:Invoice\s*No|Bill\s*No|Inv\s*No|Invoice\s*#|Bill\s*#)[\.:\s-]*([A-Za-z0-9\/-]+)/i);
+        if (invMatch && invMatch[1]) {
+            newFormState.invoiceNumber = invMatch[1].trim();
+            detectedInfo.push(`Invoice No: ${newFormState.invoiceNumber}`);
+        }
 
-        // Regex patterns specifically targeting user-requested keywords
-        const invNoRegex = /(?:invoice\s*no\.?|bill\s*no\.?|inv\s*no\.?|invoice\s*#|bill\s*#)[:\s-]*([a-z0-9\/-]+)/i;
-        const dateRegex = /(?:date|dated)[:\s-]*(\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{2,4}[-./]\d{1,2}[-./]\d{1,2})/i;
-        const totalRegex = /(?:grand\s*total|bill\s*amount|net\s*amount|total\s*payable|total)[:\s-]*[₹$]?\s*([\d,]+\.?\d*)/i;
+        // Match Date formats: DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD
+        const dateMatch = text.match(/(?:Date|Dated|Invoice\s*Date)[\.:\s-]*(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\d{4}[\/\.-]\d{1,2}[\/\.-]\d{1,2})/i);
+        if (dateMatch && dateMatch[1]) {
+            try {
+                // Normalize date separators
+                const rawDate = dateMatch[1].replace(/[\/.]/g, '-');
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                    newFormState.invoiceDate = d.toISOString().split('T')[0];
+                    detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
+                }
+            } catch (e) {}
+        }
 
-        let foundHeaderRowIndex = -1;
+        // Supplier Match
+        if (!newFormState.supplierName) {
+            const supplier = suppliers.find(s => text.toLowerCase().includes(s.name.toLowerCase()));
+            if (supplier) {
+                newFormState.supplierName = supplier.name;
+                detectedInfo.push(`Supplier: ${supplier.name}`);
+            }
+        }
+
+        // --- Intelligent Line Item Extraction ---
+        // Strategy: 
+        // 1. Skip lines until we find a table header (Description, Item Name, etc.)
+        // 2. Process lines. Identify numbers.
+        // 3. Check for arithmetic relationship: Qty * Rate ~= Amount
+        // 4. If math matches, we found a row!
+
+        let startProcessingItems = false;
+        const parseNum = (str: string) => {
+            if (!str) return NaN;
+            // Remove currency symbols, maintain dots, handle commas
+            const clean = str.replace(/[^0-9.]/g, ''); 
+            return parseFloat(clean);
+        };
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            
-            // --- Header Extraction ---
-            
-            // Invoice No
-            if (!newFormState.invoiceNumber) {
-                const match = line.match(invNoRegex);
-                if (match && match[1]) {
-                    newFormState.invoiceNumber = match[1].trim();
-                    detectedInfo.push(`Invoice No: ${newFormState.invoiceNumber}`);
-                }
-            }
-
-            // Date
-            if (newFormState.invoiceDate === initialFormState.invoiceDate) {
-                const match = line.match(dateRegex);
-                if (match && match[1]) {
-                    try {
-                        const rawDate = match[1].replace(/[/.]/g, '-');
-                        const d = new Date(rawDate);
-                        if (!isNaN(d.getTime())) {
-                            newFormState.invoiceDate = d.toISOString().split('T')[0];
-                            detectedInfo.push(`Date: ${newFormState.invoiceDate}`);
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            // Supplier Match (Check if any existing supplier name is in the line)
-            if (!newFormState.supplierName) {
-                const supplier = suppliers.find(s => line.toLowerCase().includes(s.name.toLowerCase()));
-                if (supplier) {
-                    newFormState.supplierName = supplier.name;
-                    detectedInfo.push(`Supplier: ${supplier.name}`);
-                }
-            }
-
-            // --- Detect Table Header Row ---
-            // Look for keywords indicating start of items table
             const lowerLine = line.toLowerCase();
-            const hasDesc = lowerLine.includes('description') || lowerLine.includes('particular') || lowerLine.includes('item') || lowerLine.includes('product');
-            const hasQty = lowerLine.includes('qty') || lowerLine.includes('quantity');
-            const hasRate = lowerLine.includes('rate') || lowerLine.includes('price');
-            const hasAmount = lowerLine.includes('amount') || lowerLine.includes('total');
 
-            // Ideally a header row has at least Description and one numerical column header
-            if (hasDesc && (hasQty || hasRate || hasAmount)) {
-                foundHeaderRowIndex = i;
+            // Detect Table Header
+            if (!startProcessingItems && (
+                lowerLine.includes('description') || 
+                lowerLine.includes('particular') || 
+                lowerLine.includes('product') || 
+                lowerLine.includes('item name') ||
+                (lowerLine.includes('qty') && lowerLine.includes('rate'))
+            )) {
+                startProcessingItems = true;
+                detectedInfo.push("Detected Item Table Start...");
+                continue; 
             }
-        }
 
-        // --- Total Amount Extraction (Search from bottom up) ---
-        for (let i = lines.length - 1; i >= 0; i--) {
-            const match = lines[i].match(totalRegex);
-            if (match && match[1]) {
-                detectedInfo.push(`Detected Total: ${match[1]}`);
-                break; 
+            // Stop at Footer keywords
+            if (startProcessingItems && (
+                lowerLine.match(/^(total|grand total|sub total|taxable|net amount|amount in words)/) ||
+                lowerLine.includes('total amount')
+            )) {
+                break;
             }
-        }
 
-        // --- Line Item Extraction ---
-        if (foundHeaderRowIndex !== -1) {
-            // Process lines AFTER the header
-            for (let i = foundHeaderRowIndex + 1; i < lines.length; i++) {
-                const line = lines[i];
-                
-                // Stop if we hit footer keywords
-                if (line.match(/(?:total|subtotal|tax|gst|amount|rupees)/i)) break;
+            // --- Row Parsing Logic ---
+            // Tokenize line by multiple spaces to separate columns better
+            const tokens = line.split(/\s+/);
+            if (tokens.length < 2) continue; 
 
-                // Attempt to parse row: [Product Name] ... [Qty] [Rate] [Amount]
-                // Regex looks for: Start with anything (Name), then whitespace, then digits(Qty), whitespace, decimal(Rate), whitespace, decimal(Amount) end.
-                // This is a common pattern for simple invoice lines.
-                // We handle "Amount" being optional in capture if layout differs, but assume standard order.
-                
-                const itemMatch = line.match(/^(.+?)\s+(\d+)\s+([\d,.]+)\s+([\d,.]+)$/);
-                
-                if (itemMatch) {
-                    const desc = itemMatch[1].trim();
-                    const qty = parseInt(itemMatch[2]);
-                    const rate = cleanAmount(itemMatch[3]);
-                    // itemMatch[4] is amount, useful for validation if needed
+            // Find all numbers in the line with their index
+            const numberCandidates: { value: number, index: number }[] = [];
+            tokens.forEach((t, idx) => {
+                // Check if it looks like a number (allow dots, commas, currency)
+                if (/^[\d,.]+$/.test(t.replace(/[₹$]/, ''))) {
+                    const val = parseNum(t);
+                    if (!isNaN(val)) {
+                        numberCandidates.push({ value: val, index: idx });
+                    }
+                }
+            });
 
-                    if (desc && qty > 0 && rate > 0) {
-                        // Check if this product exists in DB (Fuzzy match by name)
-                        const existingProduct = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
+            // We need at least one number (Amount)
+            if (numberCandidates.length === 0) continue;
+
+            let qty = 1;
+            let rate = 0;
+            let amount = 0;
+            let desc = "";
+            let matchFound = false;
+
+            // Strategy 1: Look for Qty * Rate = Amount relationship (Reverse order search)
+            for (let a = numberCandidates.length - 1; a >= 0; a--) {
+                const possibleAmount = numberCandidates[a];
+                
+                // Try to find Rate and Qty before Amount
+                for (let r = a - 1; r >= 0; r--) {
+                    const possibleRate = numberCandidates[r];
+                    
+                    // Check Qty before Rate
+                    for (let q = r - 1; q >= 0; q--) {
+                        const possibleQty = numberCandidates[q];
                         
-                        potentialItems.push({
-                            isNewProduct: !existingProduct,
-                            productId: existingProduct?.id,
-                            productName: desc, // Use extracted name if new, or keep extracted text
-                            company: existingProduct?.company || (newFormState.supplierName || 'Unknown'),
-                            hsnCode: existingProduct?.hsnCode || '',
-                            gst: existingProduct?.gst || 0,
-                            batchNumber: 'BATCH-' + Date.now().toString().slice(-6), // Placeholder
-                            expiryDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 7), // Default +1 year
-                            quantity: qty,
-                            mrp: rate * 1.2, // Heuristic: MRP = Rate + 20%
-                            purchasePrice: rate,
-                            discount: 0
-                        });
+                        // Check Math: Qty * Rate ~= Amount (allow 1.0 margin for rounding errors)
+                        const calcAmount = possibleQty.value * possibleRate.value;
+                        if (Math.abs(calcAmount - possibleAmount.value) < 1.0) {
+                            // MATCH FOUND!
+                            qty = possibleQty.value;
+                            rate = possibleRate.value;
+                            amount = possibleAmount.value;
+                            
+                            // Description is everything before Qty
+                            desc = tokens.slice(0, possibleQty.index).join(" ");
+                            matchFound = true;
+                            break;
+                        }
+                    }
+                    if (matchFound) break;
+                }
+                if (matchFound) break;
+            }
+
+            // Strategy 2: Fallback - Last number is Amount, prev is Rate. 
+            // Assume Qty = Amount / Rate (if result is close to integer)
+            if (!matchFound && numberCandidates.length >= 2) {
+                const lastNum = numberCandidates[numberCandidates.length - 1];
+                const prevNum = numberCandidates[numberCandidates.length - 2];
+                
+                amount = lastNum.value;
+                rate = prevNum.value;
+                
+                if (amount >= rate && rate > 0) {
+                    const calcQty = amount / rate;
+                    if (Math.abs(Math.round(calcQty) - calcQty) < 0.1) {
+                        qty = Math.round(calcQty);
+                        desc = tokens.slice(0, prevNum.index).join(" ");
+                        matchFound = true;
                     }
                 }
             }
+
+            // Strategy 3: Fallback - If table started, assume last number is Amount, Qty=1, Rate=Amount
+            if (!matchFound && startProcessingItems && numberCandidates.length >= 1) {
+                 const lastNum = numberCandidates[numberCandidates.length - 1];
+                 amount = lastNum.value;
+                 rate = amount;
+                 qty = 1;
+                 desc = tokens.slice(0, lastNum.index).join(" ");
+                 // Simple filter: Desc shouldn't be empty or just numbers
+                 if (desc.length > 2 && !/^\d+$/.test(desc)) {
+                     matchFound = true;
+                 }
+            }
+
+            if (matchFound && desc.length > 0) {
+                // Try to find matching existing product
+                const existingProduct = products.find(p => p.name.toLowerCase() === desc.toLowerCase());
+
+                 potentialItems.push({
+                    isNewProduct: !existingProduct,
+                    productId: existingProduct?.id,
+                    productName: desc,
+                    company: existingProduct?.company || (newFormState.supplierName || 'Unknown'),
+                    hsnCode: existingProduct?.hsnCode || '',
+                    gst: existingProduct?.gst || 0,
+                    batchNumber: 'BATCH', // Placeholder, OCR usually fails on this or it's complex
+                    expiryDate: '2025-12', // Placeholder
+                    quantity: qty,
+                    mrp: rate * 1.2, // Heuristic: MRP = Rate + 20%
+                    purchasePrice: rate,
+                    discount: 0
+                });
+            }
         }
 
+        // Try to find Total Amount if not found in loop
         if (potentialItems.length > 0) {
             newFormState.currentItems = potentialItems;
-            detectedInfo.push(`Extracted ${potentialItems.length} line items.`);
-        } else if (foundHeaderRowIndex !== -1) {
+            detectedInfo.push(`Found ${potentialItems.length} line items.`);
+        } else if (startProcessingItems) {
              detectedInfo.push("Table header found, but couldn't parse line items reliably.");
         }
 
