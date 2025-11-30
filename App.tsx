@@ -73,6 +73,7 @@ const App: React.FC = () => {
     remarkLine1: 'Thank you for your visit!',
     remarkLine2: 'Get Well Soon.',
     language: 'en',
+    mrpEditable: true,
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -184,6 +185,7 @@ const App: React.FC = () => {
         remarkLine1: 'Thank you for your visit!',
         remarkLine2: 'Get Well Soon.',
         language: 'en',
+        mrpEditable: true,
       });
       setDataLoading(!!currentUser); // Keep loading if user exists but owner not resolved
       setPermissionError(null);

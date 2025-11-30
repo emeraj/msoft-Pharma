@@ -85,7 +85,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
-        setConfig(systemConfig);
+        // Initialize config with mrpEditable defaulting to true if undefined
+        setConfig({
+            ...systemConfig,
+            mrpEditable: systemConfig.mrpEditable !== false
+        });
         if (activeTab !== 'language' && activeTab !== 'printers' && activeTab !== 'users') {
              setActiveTab('profile');
         }
@@ -138,7 +142,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     const { name, value } = e.target;
     
     setConfig(prev => {
-        const newConfig = { ...prev, [name]: value };
+        let finalValue: any = value;
+        
+        if (name === 'mrpEditable') {
+             finalValue = value === 'true';
+        }
+
+        const newConfig = { ...prev, [name]: finalValue };
         
         if (name === 'softwareMode') {
             if (value === 'Retail') {
@@ -357,6 +367,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 />
                                 <span className="font-medium text-slate-700 dark:text-slate-300">Retail</span>
                             </label>
+                        </div>
+                    </div>
+
+                    <div className="border-t dark:border-slate-700 pt-4">
+                        <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Billing Settings</h4>
+                        <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border dark:border-slate-600">
+                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">MRP Editable (Y/N)</label>
+                             <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="mrpEditable" 
+                                        value="true" 
+                                        checked={config.mrpEditable !== false} 
+                                        onChange={handleConfigChange}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
+                                    /> 
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">Yes</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="mrpEditable" 
+                                        value="false" 
+                                        checked={config.mrpEditable === false} 
+                                        onChange={handleConfigChange}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
+                                    /> 
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">No</span>
+                                </label>
+                             </div>
                         </div>
                     </div>
                     

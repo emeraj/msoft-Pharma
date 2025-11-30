@@ -147,6 +147,7 @@ export interface SystemConfig {
   remarkLine2?: string;
   printers?: PrinterProfile[];
   language?: string;
+  mrpEditable?: boolean;
 }
 
 // User Management Types

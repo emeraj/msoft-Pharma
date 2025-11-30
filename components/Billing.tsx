@@ -396,6 +396,7 @@ const EditBillItemModal: React.FC<EditBillItemModalProps> = ({ isOpen, onClose, 
     });
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const unitsPerStrip = item.unitsPerStrip || 1;
+    const isMrpEditable = systemConfig.mrpEditable !== false; // Default to true if undefined
 
     useEffect(() => {
         setFormState({ mrp: item.mrp, stripQty: item.stripQty, looseQty: item.looseQty });
@@ -448,9 +449,10 @@ const EditBillItemModal: React.FC<EditBillItemModalProps> = ({ isOpen, onClose, 
                             name="mrp" 
                             value={formState.mrp} 
                             onChange={handleChange} 
-                            className={modalInputStyle} 
+                            className={`${modalInputStyle} ${!isMrpEditable ? 'bg-slate-200 dark:bg-slate-700 cursor-not-allowed opacity-70' : ''}`} 
                             step="0.01" 
                             min="0.01"
+                            readOnly={!isMrpEditable}
                         />
                     </div>
                     
