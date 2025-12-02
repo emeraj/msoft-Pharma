@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
-    base: 'index.html',   // VERY IMPORTANT for Coolify
+    base: '/',   // VERY IMPORTANT for Coolify
     server: {
       port: 3000,
       host: '0.0.0.0',
