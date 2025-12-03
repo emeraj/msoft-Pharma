@@ -136,17 +136,21 @@ interface OcrPreviewModalProps {
     onClose: () => void;
     data: {
         supplierName: string;
+        supplierGstin?: string;
+        supplierAddress?: string;
         invoiceNumber: string;
         invoiceDate: string;
         items: PurchaseLineItem[];
     };
     suppliers: Supplier[];
-    onImport: (data: { supplierName: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => void;
+    onImport: (data: { supplierName: string; supplierGstin?: string; supplierAddress?: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => void;
     isPharmaMode: boolean;
 }
 
 const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data, suppliers, onImport, isPharmaMode }) => {
     const [supplierName, setSupplierName] = useState(data.supplierName);
+    const [supplierGstin, setSupplierGstin] = useState(data.supplierGstin || '');
+    const [supplierAddress, setSupplierAddress] = useState(data.supplierAddress || '');
     const [invoiceNumber, setInvoiceNumber] = useState(data.invoiceNumber);
     const [invoiceDate, setInvoiceDate] = useState(data.invoiceDate);
     const [items, setItems] = useState<(PurchaseLineItem & { selected: boolean })[]>([]);
@@ -154,6 +158,8 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     useEffect(() => {
         if (isOpen) {
             setSupplierName(data.supplierName);
+            setSupplierGstin(data.supplierGstin || '');
+            setSupplierAddress(data.supplierAddress || '');
             setInvoiceNumber(data.invoiceNumber);
             setInvoiceDate(data.invoiceDate);
             setItems(data.items.map(i => ({ ...i, selected: true })));
@@ -177,6 +183,8 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
         const selectedItems = items.filter(i => i.selected).map(({ selected, ...rest }) => rest);
         onImport({
             supplierName,
+            supplierGstin,
+            supplierAddress,
             invoiceNumber,
             invoiceDate,
             items: selectedItems
@@ -209,26 +217,48 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Verify Scanned Invoice" maxWidth="max-w-6xl">
             <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Supplier</label>
-                        <input 
-                            value={supplierName} 
-                            onChange={(e) => setSupplierName(e.target.value)} 
-                            className={formInputStyle} 
-                            list="supplier-list-ocr"
-                        />
-                        <datalist id="supplier-list-ocr">
-                            {suppliers.map(s => <option key={s.id} value={s.name} />)}
-                        </datalist>
+                <div className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Supplier Name</label>
+                            <input 
+                                value={supplierName} 
+                                onChange={(e) => setSupplierName(e.target.value)} 
+                                className={formInputStyle} 
+                                list="supplier-list-ocr"
+                            />
+                            <datalist id="supplier-list-ocr">
+                                {suppliers.map(s => <option key={s.id} value={s.name} />)}
+                            </datalist>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Invoice No</label>
+                            <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className={formInputStyle} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Date</label>
+                            <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={formInputStyle} />
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Invoice No</label>
-                        <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className={formInputStyle} />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Date</label>
-                        <input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} className={formInputStyle} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Supplier GSTIN</label>
+                            <input 
+                                value={supplierGstin} 
+                                onChange={(e) => setSupplierGstin(e.target.value)} 
+                                className={formInputStyle} 
+                                placeholder="Extracted GSTIN"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Supplier Address</label>
+                            <input 
+                                value={supplierAddress} 
+                                onChange={(e) => setSupplierAddress(e.target.value)} 
+                                className={formInputStyle} 
+                                placeholder="Extracted Address"
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -756,6 +786,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [isOcrPreviewOpen, setIsOcrPreviewOpen] = useState(false);
     const [ocrData, setOcrData] = useState<{
         supplierName: string;
+        supplierGstin?: string;
+        supplierAddress?: string;
         invoiceNumber: string;
         invoiceDate: string;
         items: PurchaseLineItem[];
@@ -950,9 +982,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
         const prompt = `Analyze this purchase invoice image carefully. Extract the following details:
         1. Supplier Name
-        2. Invoice Number
-        3. Invoice Date (Format: YYYY-MM-DD)
-        4. Line Items. For each item, extract:
+        2. Supplier GSTIN
+        3. Supplier Address
+        4. Invoice Number
+        5. Invoice Date (Format: YYYY-MM-DD)
+        6. Line Items. For each item, extract:
            - Product Name (Description)
            - HSN Code
            - Batch Number
@@ -975,6 +1009,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             type: 'OBJECT' as any,
             properties: {
                 supplierName: { type: 'STRING' as any },
+                supplierGstin: { type: 'STRING' as any },
+                supplierAddress: { type: 'STRING' as any },
                 invoiceNumber: { type: 'STRING' as any },
                 invoiceDate: { type: 'STRING' as any, description: "YYYY-MM-DD format" },
                 items: {
@@ -1039,6 +1075,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const processAiResult = (result: any) => {
         const currentData = {
             supplierName: result.supplierName || '',
+            supplierGstin: result.supplierGstin || '',
+            supplierAddress: result.supplierAddress || '',
             invoiceNumber: result.invoiceNumber || '',
             invoiceDate: normalizeDate(result.invoiceDate),
             items: [] as PurchaseLineItem[]
@@ -1049,7 +1087,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             s.name.toLowerCase().includes(result.supplierName?.toLowerCase() || '$$$') || 
             (result.supplierName && s.name.toLowerCase().includes(result.supplierName.toLowerCase()))
         );
-        if (matchedSupplier) currentData.supplierName = matchedSupplier.name;
+        
+        if (matchedSupplier) {
+            currentData.supplierName = matchedSupplier.name;
+            // Prefer DB details if available, else fallback to AI
+            if (matchedSupplier.gstin) currentData.supplierGstin = matchedSupplier.gstin;
+            if (matchedSupplier.address) currentData.supplierAddress = matchedSupplier.address;
+        }
 
         if (result.items && Array.isArray(result.items)) {
             currentData.items = result.items.map((item: any) => {
@@ -1097,13 +1141,41 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         setIsOcrPreviewOpen(true);
     };
 
-    const handleImportFromOcr = (data: { supplierName: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => {
-        setFormState({
-            supplierName: data.supplierName,
-            invoiceNumber: data.invoiceNumber,
-            invoiceDate: data.invoiceDate,
-            currentItems: [...formState.currentItems, ...data.items]
-        });
+    const handleImportFromOcr = (data: { supplierName: string; supplierGstin?: string; supplierAddress?: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => {
+        // Check if supplier already exists (Exact match)
+        const existingSupplier = suppliers.find(s => s.name.toLowerCase() === data.supplierName.trim().toLowerCase());
+        
+        const populateForm = (supplierName: string) => {
+            setFormState({
+                supplierName: supplierName,
+                invoiceNumber: data.invoiceNumber,
+                invoiceDate: data.invoiceDate,
+                currentItems: [...formState.currentItems, ...data.items]
+            });
+        };
+
+        if (!existingSupplier && data.supplierName.trim() !== '') {
+            // Create new supplier automatically using AI extracted data
+            const newSupplierData = {
+                name: data.supplierName.trim(),
+                address: data.supplierAddress || '',
+                phone: '', // Phone is usually not reliably extracted or present in generic location
+                gstin: data.supplierGstin || '',
+                openingBalance: 0
+            };
+            
+            // Add supplier and then populate form
+            onAddSupplier(newSupplierData).then((newSupplier) => {
+                if (newSupplier) {
+                    populateForm(newSupplier.name);
+                } else {
+                    // Fallback if creation fails for some reason
+                    populateForm(data.supplierName);
+                }
+            });
+        } else {
+            populateForm(data.supplierName);
+        }
     };
 
     const filteredPurchases = useMemo(() => {

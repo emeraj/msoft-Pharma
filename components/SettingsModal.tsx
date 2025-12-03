@@ -85,10 +85,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
-        // Initialize config with mrpEditable defaulting to true if undefined
+        // Initialize config with defaults if undefined
         setConfig({
             ...systemConfig,
-            mrpEditable: systemConfig.mrpEditable !== false
+            mrpEditable: systemConfig.mrpEditable !== false,
+            barcodeScannerOpenByDefault: systemConfig.barcodeScannerOpenByDefault !== false
         });
         if (activeTab !== 'language' && activeTab !== 'printers' && activeTab !== 'users') {
              setActiveTab('profile');
@@ -144,7 +145,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setConfig(prev => {
         let finalValue: any = value;
         
-        if (name === 'mrpEditable') {
+        if (name === 'mrpEditable' || name === 'barcodeScannerOpenByDefault') {
              finalValue = value === 'true';
         }
 
@@ -399,6 +400,40 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </label>
                              </div>
                         </div>
+                    </div>
+
+                    <div className="border-t dark:border-slate-700 pt-4">
+                        <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Scanner Settings</h4>
+                        <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border dark:border-slate-600">
+                             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Barcode Scanner Open (Y/N)</label>
+                             <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="barcodeScannerOpenByDefault" 
+                                        value="true" 
+                                        checked={config.barcodeScannerOpenByDefault !== false} 
+                                        onChange={handleConfigChange}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
+                                    /> 
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">Yes</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="barcodeScannerOpenByDefault" 
+                                        value="false" 
+                                        checked={config.barcodeScannerOpenByDefault === false} 
+                                        onChange={handleConfigChange}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
+                                    /> 
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">No</span>
+                                </label>
+                             </div>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-1">
+                            Only applicable in Retail mode.
+                        </p>
                     </div>
                     
                     <div className="border-t dark:border-slate-700 pt-4">

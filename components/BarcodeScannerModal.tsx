@@ -19,8 +19,15 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
   const lastScanRef = useRef<{text: string, time: number}>({text: '', time: 0});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Use a ref for the callback to prevent effect re-triggering on parent re-renders
+  const onScanSuccessRef = useRef(onScanSuccess);
+  useEffect(() => {
+    onScanSuccessRef.current = onScanSuccess;
+  }, [onScanSuccess]);
+
   useEffect(() => {
     let isCancelled = false;
+    let html5QrCode: any = null;
 
     const startScanner = async () => {
         // Add a delay to allow previous scanner instances to fully teardown and release the camera.
@@ -50,7 +57,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
                  }
             }
 
-            const html5QrCode = new Html5Qrcode(readerId);
+            html5QrCode = new Html5Qrcode(readerId);
             scannerRef.current = html5QrCode;
 
             // Configuration: High Res, Back Camera, 16:9 aspect ratio
@@ -100,7 +107,8 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
                         oscillator.stop(audioCtx.currentTime + 0.15);
                     } catch (e) {}
 
-                    onScanSuccess(decodedText);
+                    // Call the callback via ref
+                    onScanSuccessRef.current(decodedText);
                 },
                 (err: any) => {
                     // Ignore scan errors (common during scanning)
@@ -145,7 +153,20 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             }
 
         } catch (err: any) {
-            if (isCancelled) return;
+            if (isCancelled) {
+                // Ensure cleanup if cancelled during start failure or interruption
+                if (html5QrCode) {
+                    try { html5QrCode.clear(); } catch (e) {}
+                }
+                return;
+            }
+            
+            // Suppress specific "play() interrupted" error which happens on rapid unmounts
+            if (err?.name === 'NotAllowedError' || err?.message?.includes('play() request was interrupted')) {
+                 console.warn("Scanner start interrupted (benign):", err.message);
+                 return; 
+            }
+
             console.error("Scanner start error", err);
             
             let msg = "Could not start camera.";
@@ -168,6 +189,9 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             const scanner = scannerRef.current;
             scannerRef.current = null;
             
+            // Only stop if explicitly running. 
+            // If starting (pending), let the start promise handle cleanup via isCancelled check.
+            // This prevents "play() interrupted" errors when unmounting during start.
             if (isRunningRef.current) {
                 isRunningRef.current = false;
                 scanner.stop().then(() => {
@@ -175,12 +199,10 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
                 }).catch((err: any) => {
                     console.warn("Stop failed during cleanup", err); 
                 });
-            } else {
-                try { scanner.clear(); } catch(e) {}
             }
         }
     };
-  }, [onScanSuccess, readerId]);
+  }, [readerId]); // Removed onScanSuccess from dependencies to prevent restart on parent re-render
 
   return (
     <div className="relative w-full h-64 rounded-xl overflow-hidden bg-black border border-slate-700 shadow-sm group mb-4">

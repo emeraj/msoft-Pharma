@@ -637,6 +637,7 @@ const OrderSuccessModal: React.FC<{
 const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
+  const isMrpEditable = systemConfig.mrpEditable !== false; // Default to true if undefined
   const t = getTranslation(systemConfig.language);
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -650,9 +651,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const lastAddedBatchIdRef = useRef<string | null>(null);
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+  const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
-  // Open scanner by default in Retail mode
-  const [showScanner, setShowScanner] = useState(!isPharmaMode);
+  // Open scanner by default in Retail mode if config allows
+  const [showScanner, setShowScanner] = useState(!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false);
   
   // Printer Selection State
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
@@ -1204,8 +1206,25 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const handleStripQtyKeyDown = (e: React.KeyboardEvent, batchId: string) => {
         if (e.key === 'Enter') { e.preventDefault(); const tabInput = cartItemTabInputRefs.current.get(batchId); if (tabInput) { tabInput.focus(); tabInput.select(); } }
     };
-    const handleTabQtyKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); }
+    const handleTabQtyKeyDown = (e: React.KeyboardEvent, batchId: string) => {
+        if (e.key === 'Enter') { 
+            e.preventDefault(); 
+            if (isMrpEditable) {
+                const mrpInput = cartItemMrpInputRefs.current.get(batchId);
+                if (mrpInput) {
+                    mrpInput.focus();
+                    mrpInput.select();
+                    return;
+                }
+            }
+            searchInputRef.current?.focus(); 
+        }
+    };
+    const handleMrpKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            searchInputRef.current?.focus();
+        }
     };
 
     const resetBillingForm = () => {
@@ -1367,11 +1386,29 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                                     inputMode="numeric" 
                                     value={item.looseQty}
                                     onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)}
-                                    onKeyDown={handleTabQtyKeyDown}
+                                    onKeyDown={(e) => handleTabQtyKeyDown(e, item.batchId)}
                                     className={`w-14 p-1 text-center ${inputStyle}`}
                                 />
                             </td>
-                            <td className="px-2 py-3">₹{item.mrp.toFixed(2)}</td>
+                            <td className="px-2 py-3">
+                                {isMrpEditable ? (
+                                    <input
+                                        ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }}
+                                        type="number"
+                                        step="0.01"
+                                        value={item.mrp}
+                                        onChange={(e) => updateCartItemDetails(item.batchId, {
+                                            mrp: parseFloat(e.target.value) || 0,
+                                            stripQty: item.stripQty,
+                                            looseQty: item.looseQty
+                                        })}
+                                        onKeyDown={handleMrpKeyDown}
+                                        className={`w-20 p-1 text-center ${inputStyle}`}
+                                    />
+                                ) : (
+                                    <span>₹{item.mrp.toFixed(2)}</span>
+                                )}
+                            </td>
                             <td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td>
                             <td className="px-2 py-3">
                                 <div className="flex items-center gap-2">

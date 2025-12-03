@@ -148,6 +148,7 @@ export interface SystemConfig {
   printers?: PrinterProfile[];
   language?: string;
   mrpEditable?: boolean;
+  barcodeScannerOpenByDefault?: boolean;
 }
 
 // User Management Types

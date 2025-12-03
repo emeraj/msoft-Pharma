@@ -74,6 +74,7 @@ const App: React.FC = () => {
     remarkLine2: 'Get Well Soon.',
     language: 'en',
     mrpEditable: true,
+    barcodeScannerOpenByDefault: true,
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -186,6 +187,7 @@ const App: React.FC = () => {
         remarkLine2: 'Get Well Soon.',
         language: 'en',
         mrpEditable: true,
+        barcodeScannerOpenByDefault: true,
       });
       setDataLoading(!!currentUser); // Keep loading if user exists but owner not resolved
       setPermissionError(null);
