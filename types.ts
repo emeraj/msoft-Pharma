@@ -145,6 +145,7 @@ export interface SystemConfig {
   invoicePrintingFormat: 'A4' | 'A5' | 'Thermal'; // Kept for backward compatibility or fallback
   remarkLine1?: string;
   remarkLine2?: string;
+  bankDetails?: string;
   printers?: PrinterProfile[];
   language?: string;
   mrpEditable?: boolean;

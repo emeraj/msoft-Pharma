@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Check if the authenticated user is the owner of the data path
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Check if the authenticated user is a registered operator for the owner (userId)
+    // Matches if a document exists in the owner's subUsers collection with the operator's UID
+    function isOperator(userId) {
+      return request.auth != null && exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid));
+    }
+
+    // 1. User Mappings
+    // Used to map an Operator UID to their Owner UID
+    match /userMappings/{mappingId} {
+      allow read: if request.auth != null && request.auth.uid == mappingId;
+      allow write: if request.auth != null; 
+    }
+
+    // 2. User Data Scope
+    match /users/{userId} {
+      
+      // Admin/Owner Collections (Protected Config)
+      match /subUsers/{subUserId} {
+        // Owner can manage operators. Operators can read their own record (to check permissions).
+        allow read: if isOwner(userId) || (request.auth != null && request.auth.uid == subUserId);
+        allow write: if isOwner(userId);
+      }
+      
+      match /companyProfile/{document=**} {
+        allow read: if isOwner(userId) || isOperator(userId);
+        allow write: if isOwner(userId);
+      }
+      
+      match /systemConfig/{document=**} {
+        allow read: if isOwner(userId) || isOperator(userId);
+        allow write: if isOwner(userId);
+      }
+      
+      match /gstRates/{document=**} {
+        allow read: if isOwner(userId) || isOperator(userId);
+        allow write: if isOwner(userId);
+      }
+
+      // Operational Collections (Read/Write for both Owner and Operator)
+      // Granular permissions (e.g., canBill, canInventory) are enforced in the UI Application Logic.
+      // Firestore rules here provide the data-level access to the store for valid team members.
+      
+      match /products/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /bills/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /purchases/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /suppliers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /payments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /companies/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+    }
+  }
+}

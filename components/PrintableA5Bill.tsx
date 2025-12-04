@@ -280,6 +280,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                         <div style={{ marginTop: '5mm', fontStyle: 'italic', fontSize: '9pt' }}>
                             {systemConfig.remarkLine1 && <p style={{ margin: 0 }}>{systemConfig.remarkLine1}</p>}
                             {systemConfig.remarkLine2 && <p style={{ margin: '1mm 0 0 0' }}>{systemConfig.remarkLine2}</p>}
+                            {systemConfig.bankDetails && <p style={{ margin: '1mm 0 0 0', fontWeight: 'bold' }}>Bank Details: {systemConfig.bankDetails}</p>}
                         </div>
                     </div>
                     {showUpiQr && (

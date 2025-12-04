@@ -439,7 +439,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="border-t dark:border-slate-700 pt-4">
                         <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Bill Footer Remarks</h4>
                         <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                            Customize the two lines of text that appear at the bottom of printed bills.
+                            Customize the text that appears at the bottom of printed bills.
                         </p>
                         <div className="space-y-4">
                             <div>
@@ -462,6 +462,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                     onChange={handleConfigChange}
                                     className={formInputStyle}
                                     placeholder="e.g., Get Well Soon."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Bank Detail (Line 3)</label>
+                                <input
+                                    type="text"
+                                    name="bankDetails"
+                                    value={config.bankDetails || ''}
+                                    onChange={handleConfigChange}
+                                    className={formInputStyle}
+                                    placeholder="e.g., Bank Name, Acc No, IFSC"
                                 />
                             </div>
                         </div>
