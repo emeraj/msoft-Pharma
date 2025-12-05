@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile } from '../types';
+import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, HomeIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, HomeIcon, PlusIcon, UserCircleIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; // For A4
@@ -17,12 +17,14 @@ import { getTranslation } from '../utils/translationHelper';
 interface BillingProps {
   products: Product[];
   bills: Bill[];
+  customers: Customer[];
   companyProfile: CompanyProfile;
   systemConfig: SystemConfig;
   onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
   editingBill?: Bill | null;
   onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => Promise<Bill | null>;
   onCancelEdit?: () => void;
+  onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
@@ -633,8 +635,56 @@ const OrderSuccessModal: React.FC<{
     );
 };
 
+const AddCustomerModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
+    initialName: string;
+}> = ({ isOpen, onClose, onAddCustomer, initialName }) => {
+    const [name, setName] = useState(initialName);
+    const [phone, setPhone] = useState('');
+    const [address, setAddress] = useState('');
 
-const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit }) => {
+    useEffect(() => {
+        if(isOpen) {
+            setName(initialName);
+            setPhone('');
+            setAddress('');
+        }
+    }, [isOpen, initialName]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        await onAddCustomer({ name, phone, address });
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Add New Customer">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name*</label>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} className={modalInputStyle} required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mobile</label>
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={modalInputStyle} />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
+                    <input type="text" value={address} onChange={e => setAddress(e.target.value)} className={modalInputStyle} />
+                </div>
+                <div className="flex justify-end gap-2 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Save Customer</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; // Default to true if undefined
@@ -642,7 +692,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
 
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
+  
+  // Customer State
   const [customerName, setCustomerName] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
+  const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
+
   const [doctorName, setDoctorName] = useState('');
   const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
   const [substituteOptions, setSubstituteOptions] = useState<Product[]>([]);
@@ -652,6 +708,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+
+  // Payment Mode
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'Credit'>('Cash');
 
   // Open scanner by default in Retail mode if config allows
   const [showScanner, setShowScanner] = useState(!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false);
@@ -717,13 +776,41 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     if (editingBill) {
       setCart(editingBill.items);
       setCustomerName(editingBill.customerName);
+      // Try to find if this customer name maps to a known customer
+      const existingCust = customers.find(c => c.id === editingBill.customerId || c.name === editingBill.customerName);
+      setSelectedCustomer(existingCust || null);
+      
       setDoctorName(editingBill.doctorName || '');
+      if (editingBill.paymentMode) {
+          setPaymentMode(editingBill.paymentMode);
+      }
     } else {
       setCart([]);
       setCustomerName('');
+      setSelectedCustomer(null);
       setDoctorName('');
+      setPaymentMode('Cash');
     }
-  }, [editingBill]);
+  }, [editingBill, customers]);
+
+  const customerSuggestions = useMemo(() => {
+      if (!customerName) return [];
+      return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5);
+  }, [customerName, customers]);
+
+  const handleSelectCustomer = (customer: Customer) => {
+      setCustomerName(customer.name);
+      setSelectedCustomer(customer);
+      setShowCustomerSuggestions(false);
+  };
+
+  const handleAddNewCustomer = async (custData: Omit<Customer, 'id' | 'balance'>) => {
+      const newCust = await onAddCustomer(custData);
+      if (newCust) {
+          setCustomerName(newCust.name);
+          setSelectedCustomer(newCust);
+      }
+  };
 
   const doctorList = useMemo(() => {
     const doctors = new Set<string>();
@@ -1001,7 +1088,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const doReset = () => {
         setCart([]);
         setCustomerName('');
+        setSelectedCustomer(null);
         setDoctorName('');
+        setPaymentMode('Cash');
         if (onCancelEdit && isEditing) {
             onCancelEdit();
         }
@@ -1102,15 +1191,31 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
   const handleSaveBill = useCallback(async (shouldPrint: boolean) => {
     if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
     
+    // Enforce customer selection for Credit bills
+    if (systemConfig.maintainCustomerLedger && paymentMode === 'Credit' && !selectedCustomer) {
+        alert("For credit bills, please select a registered customer.");
+        return;
+    }
+
     let savedBill: Bill | null = null;
     const isUpdate = isEditing && editingBill;
     
+    const billData = { 
+        date: isUpdate ? editingBill.date : new Date().toISOString(), 
+        customerName: customerName || t.billing.walkInCustomer, 
+        customerId: selectedCustomer?.id, // Link bill to customer
+        doctorName: doctorName.trim(), 
+        items: cart, 
+        subTotal, 
+        totalGst, 
+        grandTotal,
+        paymentMode 
+    };
+
     // 1. Save Logic
     if (isUpdate && onUpdateBill) {
-        const billData = { date: editingBill.date, customerName: customerName || t.billing.walkInCustomer, doctorName: doctorName.trim(), items: cart, subTotal, totalGst, grandTotal, billNumber: editingBill.billNumber };
-        savedBill = await onUpdateBill(editingBill.id, billData, editingBill);
+        savedBill = await onUpdateBill(editingBill.id, { ...billData, billNumber: editingBill.billNumber }, editingBill);
     } else if (!isUpdate && onGenerateBill) {
-        const billData = { date: new Date().toISOString(), customerName: customerName || t.billing.walkInCustomer, doctorName: doctorName.trim(), items: cart, subTotal, totalGst, grandTotal };
         savedBill = await onGenerateBill(billData);
     }
 
@@ -1146,7 +1251,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         console.error("Failed to save/update bill."); 
         alert("There was an error saving the bill. Please try again."); 
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig, executePrint, t]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig, executePrint, t, paymentMode]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1230,7 +1335,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
     const resetBillingForm = () => {
         setCart([]);
         setCustomerName('');
+        setSelectedCustomer(null);
         setDoctorName('');
+        setPaymentMode('Cash');
         if (onCancelEdit && isEditing) {
             onCancelEdit();
         }
@@ -1437,18 +1544,53 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
       <div className="lg:col-span-1">
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
-                <div>
+                <div className="relative">
                     <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">
                         {isPharmaMode ? t.billing.patientName : t.billing.customerName}
                     </label>
-                    <input
-                        type="text"
-                        id="customerName"
-                        value={customerName}
-                        onChange={e => setCustomerName(e.target.value)}
-                        placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer}
-                        className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
-                    />
+                    <div className="flex gap-2">
+                        <div className="relative flex-grow">
+                            <input
+                                type="text"
+                                id="customerName"
+                                value={customerName}
+                                onChange={e => {
+                                    setCustomerName(e.target.value);
+                                    setSelectedCustomer(null); // Reset selection on manual type
+                                }}
+                                onFocus={() => setShowCustomerSuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)}
+                                placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer}
+                                className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
+                                autoComplete="off"
+                            />
+                            {showCustomerSuggestions && customerSuggestions.length > 0 && (
+                                <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                    {customerSuggestions.map(customer => (
+                                        <li 
+                                            key={customer.id} 
+                                            onClick={() => handleSelectCustomer(customer)}
+                                            className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200"
+                                        >
+                                            {customer.name} <span className="text-xs text-slate-500">({customer.phone || 'No Phone'})</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <button 
+                            onClick={() => setAddCustomerModalOpen(true)}
+                            className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                            title="Add New Customer"
+                        >
+                            <PlusIcon className="h-5 w-5" />
+                        </button>
+                    </div>
+                    {selectedCustomer && (
+                        <div className="mt-1 text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+                            <UserCircleIcon className="h-3 w-3" /> Selected: {selectedCustomer.name}
+                        </div>
+                    )}
                 </div>
                 {isPharmaMode && (
                     <div>
@@ -1467,6 +1609,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                         </datalist>
                     </div>
                 )}
+                
                 <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300">
                     <div className="flex justify-between">
                         <span>{t.billing.subtotal}</span>
@@ -1481,6 +1624,36 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
+                
+                {systemConfig.maintainCustomerLedger && (
+                    <div className="py-2">
+                        <label className="block text-sm font-medium text-slate-800 dark:text-slate-200 mb-1">Payment Mode</label>
+                        <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    name="paymentMode" 
+                                    value="Cash" 
+                                    checked={paymentMode === 'Cash'} 
+                                    onChange={() => setPaymentMode('Cash')}
+                                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full"
+                                /> 
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    name="paymentMode" 
+                                    value="Credit" 
+                                    checked={paymentMode === 'Credit'} 
+                                    onChange={() => setPaymentMode('Credit')}
+                                    className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full"
+                                /> 
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span>
+                            </label>
+                        </div>
+                    </div>
+                )}
                 
                 <div className="pt-2 flex gap-2">
                     <button 
@@ -1582,6 +1755,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, onGenerateBill, comp
         printerName={connectingPrinterInfo.name} 
         printerId={connectingPrinterInfo.id} 
       />
+      
+      <AddCustomerModal 
+        isOpen={isAddCustomerModalOpen}
+        onClose={() => setAddCustomerModalOpen(false)}
+        onAddCustomer={handleAddNewCustomer}
+        initialName={customerName}
+      />
+
       <style>{`
         @keyframes fade-in-down {
             0% { opacity: 0; transform: translateY(-10px); }

@@ -89,7 +89,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setConfig({
             ...systemConfig,
             mrpEditable: systemConfig.mrpEditable !== false,
-            barcodeScannerOpenByDefault: systemConfig.barcodeScannerOpenByDefault !== false
+            barcodeScannerOpenByDefault: systemConfig.barcodeScannerOpenByDefault !== false,
+            maintainCustomerLedger: systemConfig.maintainCustomerLedger === true,
         });
         if (activeTab !== 'language' && activeTab !== 'printers' && activeTab !== 'users') {
              setActiveTab('profile');
@@ -145,7 +146,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setConfig(prev => {
         let finalValue: any = value;
         
-        if (name === 'mrpEditable' || name === 'barcodeScannerOpenByDefault') {
+        if (name === 'mrpEditable' || name === 'barcodeScannerOpenByDefault' || name === 'maintainCustomerLedger') {
              finalValue = value === 'true';
         }
 
@@ -373,7 +374,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     <div className="border-t dark:border-slate-700 pt-4">
                         <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Billing Settings</h4>
-                        <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border dark:border-slate-600">
+                        
+                        {/* MRP Editable */}
+                        <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border dark:border-slate-600 mb-3">
                              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">MRP Editable (Y/N)</label>
                              <div className="flex gap-4">
                                 <label className="flex items-center gap-2 cursor-pointer">
@@ -393,6 +396,38 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                         name="mrpEditable" 
                                         value="false" 
                                         checked={config.mrpEditable === false} 
+                                        onChange={handleConfigChange}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
+                                    /> 
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">No</span>
+                                </label>
+                             </div>
+                        </div>
+
+                        {/* Maintain Customer Ledger */}
+                        <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border dark:border-slate-600">
+                             <div className="flex flex-col">
+                                 <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Maintain Customer Ledger? (Y/N)</label>
+                                 <span className="text-xs text-slate-500 dark:text-slate-400">Enables credit sales tracking for customers.</span>
+                             </div>
+                             <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="maintainCustomerLedger" 
+                                        value="true" 
+                                        checked={config.maintainCustomerLedger === true} 
+                                        onChange={handleConfigChange}
+                                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
+                                    /> 
+                                    <span className="text-sm text-slate-700 dark:text-slate-300">Yes</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="maintainCustomerLedger" 
+                                        value="false" 
+                                        checked={config.maintainCustomerLedger !== true} 
                                         onChange={handleConfigChange}
                                         className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 dark:border-slate-500 dark:bg-slate-700 dark:checked:bg-indigo-500"
                                     /> 

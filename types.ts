@@ -44,11 +44,13 @@ export interface Bill {
   billNumber: string;
   date: string; // ISO string
   customerName: string;
+  customerId?: string; // Link to Customer document
   doctorName?: string;
   items: CartItem[];
   subTotal: number;
   totalGst: number;
   grandTotal: number;
+  paymentMode?: 'Cash' | 'Credit';
 }
 
 // New Types for Purchase Module
@@ -97,6 +99,25 @@ export interface Supplier {
   openingBalance: number;
 }
 
+export interface Customer {
+  id: string; // Firestore Document ID
+  name: string;
+  phone?: string;
+  address?: string;
+  balance: number; // +ve for Debit (Receivable), -ve for Credit (Payable)
+}
+
+// Payment from Customer
+export interface CustomerPayment {
+  id: string;
+  customerId: string;
+  customerName: string;
+  date: string;
+  amount: number;
+  method: 'Cash' | 'UPI' | 'Other';
+  notes?: string;
+}
+
 // New type for Supplier Payments
 export interface Payment {
   id: string; // Firestore Document ID
@@ -116,7 +137,7 @@ export interface GstRate {
 
 
 // New Types for Reports
-export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit';
+export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit';
 
 export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
@@ -150,6 +171,7 @@ export interface SystemConfig {
   language?: string;
   mrpEditable?: boolean;
   barcodeScannerOpenByDefault?: boolean;
+  maintainCustomerLedger?: boolean;
 }
 
 // User Management Types

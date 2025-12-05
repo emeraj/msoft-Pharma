@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -55,6 +56,8 @@ service cloud.firestore {
       match /suppliers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /payments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /companies/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /customers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /customerPayments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
     }
   }
 }
