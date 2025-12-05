@@ -1,9 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import type { Customer, Bill, CustomerPayment } from '../types';
+import ReactDOM from 'react-dom/client';
+import type { Customer, Bill, CustomerPayment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, UserCircleIcon, PlusIcon } from './icons/Icons';
+import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon } from './icons/Icons';
+import PrintableCustomerLedger from './PrintableCustomerLedger';
 
 // Helper for CSV Export
 const exportToCsv = (filename: string, data: any[]) => {
@@ -41,13 +43,14 @@ interface CustomerLedgerProps {
   customers: Customer[];
   bills: Bill[];
   payments: CustomerPayment[];
+  companyProfile: CompanyProfile;
   onAddPayment: (payment: Omit<CustomerPayment, 'id'>) => Promise<void>;
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, onAddPayment }) => {
+const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -66,16 +69,14 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
   const customerTransactions = useMemo(() => {
     if (!selectedCustomer) return [];
     
-    // Debit: Sales Bills (Credit Bills usually, but we list all for history or just Credit ones? Standard ledger shows all if account is maintained)
-    // Actually, usually only Credit bills affect ledger balance if we track strictly.
-    // However, the `balance` field in Firestore is the source of truth.
-    // We should show transactions that *affected* the balance ideally.
-    // For simplicity, let's show all Credit bills for this customer.
-    
-    const customerBills = bills.filter(b => 
-        (b.customerId === selectedCustomer.id) || 
-        (!b.customerId && b.customerName.toLowerCase() === selectedCustomer.name.toLowerCase() && b.paymentMode === 'Credit')
-    ).map(b => ({
+    // Only show bills where paymentMode is 'Credit'.
+    // Cash bills do not affect the ledger balance.
+    const customerBills = bills.filter(b => {
+        const isThisCustomer = (b.customerId === selectedCustomer.id) || 
+                               (!b.customerId && b.customerName.toLowerCase() === selectedCustomer.name.toLowerCase());
+        
+        return isThisCustomer && b.paymentMode === 'Credit';
+    }).map(b => ({
         date: new Date(b.date),
         type: 'Bill',
         ref: b.billNumber,
@@ -104,6 +105,54 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
           'Balance': c.balance.toFixed(2)
       }));
       exportToCsv('customer_ledger_summary', data);
+  };
+
+  const handleExportPdf = () => {
+        if (!selectedCustomer) return;
+        
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.title = ' ';
+            const style = printWindow.document.createElement('style');
+            style.innerHTML = `
+                @page { 
+                    size: A4;
+                    margin: 0; 
+                }
+                body {
+                    margin: 0;
+                }
+            `;
+            printWindow.document.head.appendChild(style);
+            
+            const printRoot = document.createElement('div');
+            printWindow.document.body.appendChild(printRoot);
+            
+            const root = ReactDOM.createRoot(printRoot);
+            
+            // Format transactions for the printable component
+            const printableTransactions = customerTransactions.map(tx => ({
+                date: tx.date,
+                particulars: `${tx.type} - ${tx.ref}`,
+                debit: tx.debit,
+                credit: tx.credit,
+                type: tx.type as any
+            }));
+
+            root.render(
+                <PrintableCustomerLedger
+                    customer={selectedCustomer}
+                    transactions={printableTransactions}
+                    companyProfile={companyProfile}
+                />
+            );
+            
+            setTimeout(() => {
+                printWindow.focus();
+                printWindow.print();
+                printWindow.close();
+            }, 1000);
+        }
   };
 
   const handleSavePayment = async (e: React.FormEvent) => {
@@ -229,8 +278,14 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                       </table>
                   </div>
                   
-                  <div className="flex justify-end pt-2">
-                      <button onClick={() => setSelectedCustomer(null)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg hover:bg-slate-300">Close</button>
+                  <div className="flex justify-end pt-2 gap-3">
+                      <button 
+                        onClick={handleExportPdf}
+                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors border dark:border-slate-600"
+                      >
+                          <PrinterIcon className="h-5 w-5" /> Export to PDF
+                      </button>
+                      <button onClick={() => setSelectedCustomer(null)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 dark:text-slate-200">Close</button>
                   </div>
               </div>
           </Modal>
@@ -277,7 +332,7 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                       />
                   </div>
                   <div className="flex justify-end gap-3 pt-4">
-                      <button type="button" onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button>
+                      <button type="button" onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200">Cancel</button>
                       <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Save Payment</button>
                   </div>
               </form>

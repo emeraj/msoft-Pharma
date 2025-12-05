@@ -1200,10 +1200,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
     let savedBill: Bill | null = null;
     const isUpdate = isEditing && editingBill;
     
-    const billData = { 
+    const billData: any = { 
         date: isUpdate ? editingBill.date : new Date().toISOString(), 
         customerName: customerName || t.billing.walkInCustomer, 
-        customerId: selectedCustomer?.id, // Link bill to customer
+        customerId: selectedCustomer ? selectedCustomer.id : null, // Fix: undefined causes Firestore error
         doctorName: doctorName.trim(), 
         items: cart, 
         subTotal, 
@@ -1544,6 +1544,37 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
       <div className="lg:col-span-1">
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
+                
+                {systemConfig.maintainCustomerLedger && (
+                    <div className="pb-4 border-b dark:border-slate-700">
+                        <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Payment Mode</label>
+                        <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    name="paymentMode" 
+                                    value="Cash" 
+                                    checked={paymentMode === 'Cash'} 
+                                    onChange={() => setPaymentMode('Cash')}
+                                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full"
+                                /> 
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="radio" 
+                                    name="paymentMode" 
+                                    value="Credit" 
+                                    checked={paymentMode === 'Credit'} 
+                                    onChange={() => setPaymentMode('Credit')}
+                                    className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full"
+                                /> 
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span>
+                            </label>
+                        </div>
+                    </div>
+                )}
+
                 <div className="relative">
                     <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">
                         {isPharmaMode ? t.billing.patientName : t.billing.customerName}
@@ -1624,36 +1655,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
-                
-                {systemConfig.maintainCustomerLedger && (
-                    <div className="py-2">
-                        <label className="block text-sm font-medium text-slate-800 dark:text-slate-200 mb-1">Payment Mode</label>
-                        <div className="flex gap-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="paymentMode" 
-                                    value="Cash" 
-                                    checked={paymentMode === 'Cash'} 
-                                    onChange={() => setPaymentMode('Cash')}
-                                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full"
-                                /> 
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="paymentMode" 
-                                    value="Credit" 
-                                    checked={paymentMode === 'Credit'} 
-                                    onChange={() => setPaymentMode('Credit')}
-                                    className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full"
-                                /> 
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span>
-                            </label>
-                        </div>
-                    </div>
-                )}
                 
                 <div className="pt-2 flex gap-2">
                     <button 

@@ -939,6 +939,7 @@ service cloud.firestore {
                 customers={customers}
                 bills={bills}
                 payments={customerPayments}
+                companyProfile={companyProfile}
                 onAddPayment={async (paymentData) => {
                     if (!dataOwnerId) return;
                     const batch = writeBatch(db);
