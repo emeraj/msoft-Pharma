@@ -167,7 +167,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             </button>
           </div>
         </div>
-         <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700 overflow-x-auto">
+         <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
             {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
             {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
             {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
