@@ -259,6 +259,12 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                             <span>Total GST:</span>
                             <span>₹{bill.totalGst.toFixed(2)}</span>
                         </div>
+                        {bill.roundOff !== undefined && Math.abs(bill.roundOff) > 0.005 && (
+                            <div style={styles.totalsRow}>
+                                <span>Round Off:</span>
+                                <span>{bill.roundOff > 0 ? '+' : ''}{bill.roundOff.toFixed(2)}</span>
+                            </div>
+                        )}
                         <div style={styles.grandTotalRow}>
                             <span>Grand Total:</span>
                             <span>₹{bill.grandTotal.toFixed(2)}</span>

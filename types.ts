@@ -46,10 +46,13 @@ export interface Bill {
   customerName: string;
   customerId?: string; // Link to Customer document
   doctorName?: string;
+  salesmanId?: string;
+  salesmanName?: string;
   items: CartItem[];
   subTotal: number;
   totalGst: number;
   grandTotal: number;
+  roundOff?: number;
   paymentMode?: 'Cash' | 'Credit';
 }
 
@@ -107,6 +110,11 @@ export interface Customer {
   balance: number; // +ve for Debit (Receivable), -ve for Credit (Payable)
 }
 
+export interface Salesman {
+  id: string;
+  name: string;
+}
+
 // Payment from Customer
 export interface CustomerPayment {
   id: string;
@@ -137,7 +145,7 @@ export interface GstRate {
 
 
 // New Types for Reports
-export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit';
+export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit' | 'salesmanReport';
 
 export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
@@ -172,6 +180,7 @@ export interface SystemConfig {
   mrpEditable?: boolean;
   barcodeScannerOpenByDefault?: boolean;
   maintainCustomerLedger?: boolean;
+  enableSalesman?: boolean;
 }
 
 // User Management Types

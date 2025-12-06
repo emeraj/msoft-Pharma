@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate, UserPermissions, SubUser, Customer, CustomerPayment } from './types';
+import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate, UserPermissions, SubUser, Customer, CustomerPayment, Salesman } from './types';
 import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory from './components/Inventory';
@@ -36,6 +36,7 @@ import PaymentEntry from './components/PaymentEntry';
 import SalesDashboard from './components/SalesDashboard';
 import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 import GstMaster from './components/GstMaster';
+import SalesmanReport from './components/SalesmanReport';
 
 const initialCompanyProfile: CompanyProfile = {
   name: 'Medico - Retail',
@@ -63,6 +64,7 @@ const App: React.FC = () => {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [salesmen, setSalesmen] = useState<Salesman[]>([]);
   const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
   const [gstRates, setGstRates] = useState<GstRate[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
@@ -79,6 +81,7 @@ const App: React.FC = () => {
     mrpEditable: true,
     barcodeScannerOpenByDefault: true,
     maintainCustomerLedger: false,
+    enableSalesman: false,
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -183,6 +186,7 @@ const App: React.FC = () => {
       setSuppliers([]);
       setPayments([]);
       setCustomers([]);
+      setSalesmen([]);
       setCustomerPayments([]);
       setGstRates([]);
       setCompanyProfile(initialCompanyProfile);
@@ -195,6 +199,7 @@ const App: React.FC = () => {
         mrpEditable: true,
         barcodeScannerOpenByDefault: true,
         maintainCustomerLedger: false,
+        enableSalesman: false,
       });
       setDataLoading(!!currentUser); // Keep loading if user exists but owner not resolved
       setPermissionError(null);
@@ -239,6 +244,7 @@ const App: React.FC = () => {
         createListener('payments', setPayments),
         createListener('gstRates', setGstRates),
         createListener('customers', setCustomers),
+        createListener('salesmen', setSalesmen),
         createListener('customerPayments', setCustomerPayments),
     ];
 
@@ -349,6 +355,7 @@ service cloud.firestore {
       match /companies/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /customers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /customerPayments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /salesmen/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
     }
   }
 }`}
@@ -526,7 +533,7 @@ service cloud.firestore {
       if (view === 'inventory') return userPermissions.canInventory;
       if (view === 'purchases') return userPermissions.canPurchase;
       if (view === 'paymentEntry') return userPermissions.canPayment;
-      if (['dashboard', 'daybook', 'suppliersLedger', 'customerLedger', 'salesReport', 'companyWiseSale', 'companyWiseBillWiseProfit'].includes(view)) return userPermissions.canReports;
+      if (['dashboard', 'daybook', 'suppliersLedger', 'customerLedger', 'salesReport', 'companyWiseSale', 'companyWiseBillWiseProfit', 'salesmanReport'].includes(view)) return userPermissions.canReports;
       return false;
   };
 
@@ -560,6 +567,7 @@ service cloud.firestore {
                 products={products} 
                 bills={bills}
                 customers={customers}
+                salesmen={salesmen}
                 companyProfile={companyProfile}
                 systemConfig={systemConfig}
                 onAddCustomer={async (custData) => {
@@ -571,6 +579,17 @@ service cloud.firestore {
                         return { id: newCustRef.id, ...newCustomer };
                     } catch (e) {
                         console.error("Error adding customer:", e);
+                        return null;
+                    }
+                }}
+                onAddSalesman={async (salesmanData) => {
+                    if (!dataOwnerId) return null;
+                    try {
+                        const newSalesmanRef = doc(collection(db, `users/${dataOwnerId}/salesmen`));
+                        await setDoc(newSalesmanRef, salesmanData);
+                        return { id: newSalesmanRef.id, ...salesmanData };
+                    } catch(e) {
+                        console.error("Error adding salesman", e);
                         return null;
                     }
                 }}
@@ -963,6 +982,7 @@ service cloud.firestore {
             {activeView === 'salesReport' && canAccess('salesReport') && <SalesReport bills={bills} />}
             {activeView === 'companyWiseSale' && canAccess('companyWiseSale') && <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />}
             {activeView === 'companyWiseBillWiseProfit' && canAccess('companyWiseBillWiseProfit') && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
+            {activeView === 'salesmanReport' && canAccess('salesmanReport') && <SalesmanReport bills={bills} salesmen={salesmen} />}
           </>
         )}
       </main>
@@ -987,7 +1007,7 @@ service cloud.firestore {
         systemConfig={systemConfig}
         onSystemConfigChange={handleSystemConfigChange}
         onBackupData={() => {
-            const data = { products, bills, purchases, companies, suppliers, payments, customers, customerPayments, companyProfile, systemConfig };
+            const data = { products, bills, purchases, companies, suppliers, payments, customers, customerPayments, companyProfile, systemConfig, salesmen };
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');

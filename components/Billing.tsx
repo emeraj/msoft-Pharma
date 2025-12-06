@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer } from '../types';
+import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, HomeIcon, PlusIcon, UserCircleIcon } from './icons/Icons';
@@ -18,6 +18,7 @@ interface BillingProps {
   products: Product[];
   bills: Bill[];
   customers: Customer[];
+  salesmen?: Salesman[]; // New prop
   companyProfile: CompanyProfile;
   systemConfig: SystemConfig;
   onGenerateBill: (bill: Omit<Bill, 'id' | 'billNumber'>) => Promise<Bill | null>;
@@ -25,6 +26,7 @@ interface BillingProps {
   onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => Promise<Bill | null>;
   onCancelEdit?: () => void;
   onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
+  onAddSalesman?: (salesman: Omit<Salesman, 'id'>) => Promise<Salesman | null>; // New prop
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
@@ -156,6 +158,9 @@ const generateEscPosBill = (bill: Bill, profile: CompanyProfile, config: SystemC
     // --- Totals ---
     addRow('Subtotal:', bill.subTotal.toFixed(2));
     addRow('Total GST:', bill.totalGst.toFixed(2));
+    if (bill.roundOff && Math.abs(bill.roundOff) > 0.005) {
+        addRow('Round Off:', (bill.roundOff > 0 ? '+' : '') + bill.roundOff.toFixed(2));
+    }
     addText('-'.repeat(PRINTER_WIDTH) + '\n');
     
     addBytes([ESC, 69, 1]); // Bold On
@@ -684,7 +689,38 @@ const AddCustomerModal: React.FC<{
     );
 };
 
-const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer }) => {
+const AddSalesmanModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAddSalesman: (salesman: Omit<Salesman, 'id'>) => Promise<Salesman | null>;
+}> = ({ isOpen, onClose, onAddSalesman }) => {
+    const [name, setName] = useState('');
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        await onAddSalesman({ name });
+        setName('');
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Add Salesman">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Salesman Name*</label>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} className={modalInputStyle} required autoFocus />
+                </div>
+                <div className="flex justify-end gap-2 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Save</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; // Default to true if undefined
@@ -698,6 +734,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
+
+  // Salesman State
+  const [selectedSalesmanId, setSelectedSalesmanId] = useState<string>('');
+  const [isAddSalesmanModalOpen, setAddSalesmanModalOpen] = useState(false);
 
   const [doctorName, setDoctorName] = useState('');
   const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
@@ -784,12 +824,18 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
       if (editingBill.paymentMode) {
           setPaymentMode(editingBill.paymentMode);
       }
+      if (editingBill.salesmanId) {
+          setSelectedSalesmanId(editingBill.salesmanId);
+      } else {
+          setSelectedSalesmanId('');
+      }
     } else {
       setCart([]);
       setCustomerName('');
       setSelectedCustomer(null);
       setDoctorName('');
       setPaymentMode('Cash');
+      setSelectedSalesmanId('');
     }
   }, [editingBill, customers]);
 
@@ -809,6 +855,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
       if (newCust) {
           setCustomerName(newCust.name);
           setSelectedCustomer(newCust);
+      }
+  };
+
+  const handleAddNewSalesman = async (data: Omit<Salesman, 'id'>) => {
+      if (onAddSalesman) {
+          const newSalesman = await onAddSalesman(data);
+          if (newSalesman) {
+              setSelectedSalesmanId(newSalesman.id);
+          }
       }
   };
 
@@ -1023,7 +1078,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
     setSubstituteModalOpen(true);
   };
   
-  const { subTotal, totalGst, grandTotal } = useMemo(() => {
+  const { subTotal, totalGst, grandTotal, roundOff } = useMemo(() => {
     let subTotal = 0;
     let totalGst = 0;
     cart.forEach(item => {
@@ -1031,8 +1086,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
       subTotal += basePrice;
       totalGst += item.total - basePrice;
     });
-    const grandTotal = subTotal + totalGst;
-    return { subTotal, totalGst, grandTotal };
+    const totalAmount = subTotal + totalGst;
+    const grandTotal = Math.round(totalAmount);
+    const roundOff = grandTotal - totalAmount;
+    
+    return { subTotal, totalGst, grandTotal, roundOff };
   }, [cart]);
 
   const printViaReactNative = async (bill: Bill, printer: PrinterProfile) => {
@@ -1069,6 +1127,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         await printerAPI.printText("-".repeat(42) + "\n", {});
         await printRow("Subtotal:", bill.subTotal.toFixed(2));
         await printRow("GST:", bill.totalGst.toFixed(2));
+        if (bill.roundOff && Math.abs(bill.roundOff) > 0.005) {
+            await printRow("Round Off:", (bill.roundOff > 0 ? "+" : "") + bill.roundOff.toFixed(2));
+        }
         await printerAPI.printText("\n", {});
         await printerAPI.printText(`Grand Total:       ${bill.grandTotal.toFixed(2)}\n`, { fonttype: 1, widthtimes: 1, heigthtimes: 1 });
         await printerAPI.printText("-".repeat(42) + "\n", {});
@@ -1091,6 +1152,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         setSelectedCustomer(null);
         setDoctorName('');
         setPaymentMode('Cash');
+        setSelectedSalesmanId('');
         if (onCancelEdit && isEditing) {
             onCancelEdit();
         }
@@ -1200,6 +1262,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
     let savedBill: Bill | null = null;
     const isUpdate = isEditing && editingBill;
     
+    // Find salesman name
+    const salesmanName = salesmen?.find(s => s.id === selectedSalesmanId)?.name;
+
     const billData: any = { 
         date: isUpdate ? editingBill.date : new Date().toISOString(), 
         customerName: customerName || t.billing.walkInCustomer, 
@@ -1209,7 +1274,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         subTotal, 
         totalGst, 
         grandTotal,
-        paymentMode 
+        roundOff,
+        paymentMode,
+        salesmanId: selectedSalesmanId || null,
+        salesmanName: salesmanName || null,
     };
 
     // 1. Save Logic
@@ -1251,7 +1319,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         console.error("Failed to save/update bill."); 
         alert("There was an error saving the bill. Please try again."); 
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, onGenerateBill, systemConfig, executePrint, t, paymentMode]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, roundOff, onGenerateBill, systemConfig, executePrint, t, paymentMode, selectedSalesmanId, salesmen]);
   
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1338,6 +1406,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         setSelectedCustomer(null);
         setDoctorName('');
         setPaymentMode('Cash');
+        setSelectedSalesmanId('');
         if (onCancelEdit && isEditing) {
             onCancelEdit();
         }
@@ -1545,35 +1614,63 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
                 
-                {systemConfig.maintainCustomerLedger && (
-                    <div className="pb-4 border-b dark:border-slate-700">
-                        <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Payment Mode</label>
-                        <div className="flex gap-4">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="paymentMode" 
-                                    value="Cash" 
-                                    checked={paymentMode === 'Cash'} 
-                                    onChange={() => setPaymentMode('Cash')}
-                                    className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full"
-                                /> 
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer">
-                                <input 
-                                    type="radio" 
-                                    name="paymentMode" 
-                                    value="Credit" 
-                                    checked={paymentMode === 'Credit'} 
-                                    onChange={() => setPaymentMode('Credit')}
-                                    className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full"
-                                /> 
-                                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span>
-                            </label>
+                {/* Top Section: Payment Mode and Salesman */}
+                <div className={`pb-4 border-b dark:border-slate-700 ${systemConfig.maintainCustomerLedger && systemConfig.enableSalesman ? 'grid grid-cols-2 gap-4' : ''}`}>
+                    {systemConfig.maintainCustomerLedger && (
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Payment Mode</label>
+                            <div className="flex gap-2 flex-wrap">
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="paymentMode" 
+                                        value="Cash" 
+                                        checked={paymentMode === 'Cash'} 
+                                        onChange={() => setPaymentMode('Cash')}
+                                        className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full"
+                                    /> 
+                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span>
+                                </label>
+                                <label className="flex items-center gap-1 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="paymentMode" 
+                                        value="Credit" 
+                                        checked={paymentMode === 'Credit'} 
+                                        onChange={() => setPaymentMode('Credit')}
+                                        className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full"
+                                    /> 
+                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span>
+                                </label>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+
+                    {systemConfig.enableSalesman && (
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Salesman</label>
+                            <div className="flex gap-1">
+                                <select 
+                                    value={selectedSalesmanId} 
+                                    onChange={(e) => setSelectedSalesmanId(e.target.value)}
+                                    className="w-full p-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-sm"
+                                >
+                                    <option value="">Select</option>
+                                    {salesmen?.map(s => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                </select>
+                                <button 
+                                    onClick={() => setAddSalesmanModalOpen(true)}
+                                    className="p-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                                    title="Add Salesman"
+                                >
+                                    <PlusIcon className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
 
                 <div className="relative">
                     <label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">
@@ -1650,6 +1747,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
                         <span>{t.billing.totalGst}</span>
                         <span>₹{totalGst.toFixed(2)}</span>
                     </div>
+                    {/* Add Round Off Display */}
+                    {Math.abs(roundOff) > 0.005 && (
+                        <div className="flex justify-between text-sm text-slate-500 dark:text-slate-400">
+                            <span>Round Off</span>
+                            <span>{roundOff > 0 ? '+' : ''}{roundOff.toFixed(2)}</span>
+                        </div>
+                    )}
                     <div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2">
                         <span>{t.billing.grandTotal}</span>
                         <span>₹{grandTotal.toFixed(2)}</span>
@@ -1762,6 +1866,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, onGenerat
         onClose={() => setAddCustomerModalOpen(false)}
         onAddCustomer={handleAddNewCustomer}
         initialName={customerName}
+      />
+
+      <AddSalesmanModal 
+        isOpen={isAddSalesmanModalOpen}
+        onClose={() => setAddSalesmanModalOpen(false)}
+        onAddSalesman={handleAddNewSalesman}
       />
 
       <style>{`

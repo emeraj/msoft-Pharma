@@ -58,6 +58,7 @@ service cloud.firestore {
       match /companies/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /customers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
       match /customerPayments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      match /salesmen/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
     }
   }
 }

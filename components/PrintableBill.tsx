@@ -120,6 +120,12 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile, sys
                   <span>Total GST</span>
                   <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>₹{(bill.totalGst || 0).toFixed(2)}</span>
                 </div>
+                {bill.roundOff !== undefined && Math.abs(bill.roundOff) > 0.005 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1mm' }}>
+                        <span>Round Off</span>
+                        <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>{bill.roundOff > 0 ? '+' : ''}{bill.roundOff.toFixed(2)}</span>
+                    </div>
+                )}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',

@@ -146,6 +146,9 @@ const ThermalPrintableBill: React.FC<{ bill: Bill; companyProfile: CompanyProfil
             <div style={{...styles.subHeader}}>
                 <PaddedRow left="Subtotal:" right={(bill.subTotal || 0).toFixed(2)} />
                 <PaddedRow left="Total GST:" right={(bill.totalGst || 0).toFixed(2)} />
+                {bill.roundOff !== undefined && Math.abs(bill.roundOff) > 0.005 && (
+                    <PaddedRow left="Round Off:" right={`${bill.roundOff > 0 ? '+' : ''}${bill.roundOff.toFixed(2)}`} />
+                )}
             </div>
             
             <div style={styles.line}>{line}</div>
