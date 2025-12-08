@@ -8,6 +8,7 @@ import UserManagement from './UserManagement';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { auth } from '../firebase';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -23,7 +24,7 @@ interface SettingsModalProps {
   onDeleteGstRate: (id: string, rateValue: number) => void;
 }
 
-type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language' | 'users';
+type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language' | 'users' | 'security';
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
@@ -42,6 +43,13 @@ const languages = [
     { code: 'or', label: 'Odia (ଓଡ଼ିଆ)' },
     { code: 'ur', label: 'Urdu (اردو)' },
 ];
+
+// Security/Lock Icon
+const LockClosedIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+  </svg>
+);
 
 const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; icon: React.ReactNode; }> = ({ label, isActive, onClick, icon }) => (
     <button
@@ -82,6 +90,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   // User Management State
   const [subUsers, setSubUsers] = useState<SubUser[]>([]);
 
+  // Password Change State
+  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
+  const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: ''}>({ type: '', msg: '' });
+
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
@@ -93,9 +105,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             maintainCustomerLedger: systemConfig.maintainCustomerLedger === true,
             enableSalesman: systemConfig.enableSalesman === true,
         });
-        if (activeTab !== 'language' && activeTab !== 'printers' && activeTab !== 'users') {
+        if (activeTab !== 'language' && activeTab !== 'printers' && activeTab !== 'users' && activeTab !== 'security') {
              setActiveTab('profile');
         }
+        setPasswords({ current: '', new: '', confirm: '' });
+        setPasswordStatus({ type: '', msg: '' });
         fetchSubUsers();
     }
   }, [companyProfile, systemConfig, isOpen]);
@@ -222,6 +236,50 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       const newConfig = { ...config, printers: updatedPrinters };
       setConfig(newConfig);
       onSystemConfigChange(newConfig);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setPasswordStatus({ type: '', msg: '' });
+
+      if (passwords.new !== passwords.confirm) {
+          setPasswordStatus({ type: 'error', msg: 'New passwords do not match.' });
+          return;
+      }
+
+      if (passwords.new.length < 6) {
+          setPasswordStatus({ type: 'error', msg: 'Password must be at least 6 characters.' });
+          return;
+      }
+
+      const user = auth.currentUser;
+      if (!user || !user.email) {
+          setPasswordStatus({ type: 'error', msg: 'User not found.' });
+          return;
+      }
+
+      try {
+          // Re-authenticate
+          const credential = EmailAuthProvider.credential(user.email, passwords.current);
+          await reauthenticateWithCredential(user, credential);
+          
+          // Update Password
+          await updatePassword(user, passwords.new);
+          
+          setPasswordStatus({ type: 'success', msg: 'Password updated successfully!' });
+          setPasswords({ current: '', new: '', confirm: '' });
+      } catch (error: any) {
+          console.error("Password change error", error);
+          let msg = "Failed to update password.";
+          if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+              msg = "Incorrect current password.";
+          } else if (error.code === 'auth/weak-password') {
+              msg = "Password is too weak.";
+          } else if (error.code === 'auth/requires-recent-login') {
+              msg = "Please log out and log in again to perform this action.";
+          }
+          setPasswordStatus({ type: 'error', msg });
+      }
   };
 
   const renderContent = () => {
@@ -677,6 +735,67 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 onRefresh={fetchSubUsers}
               />
           );
+      case 'security':
+          return (
+              <div className="space-y-6 animate-fade-in">
+                  <div>
+                      <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">Change Password</h4>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                          For security, you must enter your current password before creating a new one.
+                      </p>
+                      
+                      <form onSubmit={handleChangePassword} className="space-y-4 max-w-md p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Current Password</label>
+                              <input 
+                                  type="password" 
+                                  required
+                                  value={passwords.current}
+                                  onChange={e => setPasswords({...passwords, current: e.target.value})}
+                                  className={formInputStyle} 
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">New Password</label>
+                              <input 
+                                  type="password" 
+                                  required
+                                  minLength={6}
+                                  value={passwords.new}
+                                  onChange={e => setPasswords({...passwords, new: e.target.value})}
+                                  className={formInputStyle} 
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Confirm New Password</label>
+                              <input 
+                                  type="password" 
+                                  required
+                                  minLength={6}
+                                  value={passwords.confirm}
+                                  onChange={e => setPasswords({...passwords, confirm: e.target.value})}
+                                  className={formInputStyle} 
+                              />
+                          </div>
+                          
+                          {passwordStatus.msg && (
+                              <div className={`text-sm p-2 rounded ${passwordStatus.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {passwordStatus.msg}
+                              </div>
+                          )}
+
+                          <div className="flex justify-end pt-2">
+                              <button 
+                                  type="submit" 
+                                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                              >
+                                  Update Password
+                              </button>
+                          </div>
+                      </form>
+                  </div>
+              </div>
+          );
     }
   };
 
@@ -688,6 +807,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <TabButton label="Shop Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
             <TabButton label="User Mgmt" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Security" isActive={activeTab === 'security'} onClick={() => setActiveTab('security')} icon={<LockClosedIcon className="h-5 w-5" />} />
             <TabButton label="Printers" isActive={activeTab === 'printers'} onClick={() => setActiveTab('printers')} icon={<PrinterIcon className="h-5 w-5" />} />
             <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<DownloadIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />

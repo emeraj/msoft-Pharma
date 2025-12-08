@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { SubUser, UserPermissions } from '../types';
 import { PlusIcon, TrashIcon, CheckCircleIcon, XIcon, PencilIcon } from './icons/Icons';
-import { initializeApp, deleteApp, getApp } from 'firebase/app';
+import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 import { firebaseConfig, db } from '../firebase';
 import { doc, setDoc, collection, deleteDoc, getDoc, updateDoc } from 'firebase/firestore';
@@ -75,50 +75,44 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
           // --- CREATE LOGIC ---
           // 1. Create User in Firebase Auth using a secondary app instance
           // We use a secondary instance so we don't log out the current Admin
+          // NOTE: We do not delete the app instance to avoid "Transaction aborted" errors 
+          // caused by interrupting IndexedDB operations during cleanup.
           let secondaryApp;
           try {
-            secondaryApp = initializeApp(firebaseConfig, "Secondary");
-          } catch (e) {
-            // App might already exist if previously initialized
             secondaryApp = getApp("Secondary");
+          } catch (e) {
+            secondaryApp = initializeApp(firebaseConfig, "Secondary");
           }
           
           const secondaryAuth = getAuth(secondaryApp);
           
-          try {
-            const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
-            const newUid = userCredential.user.uid;
-            
-            await updateProfile(userCredential.user, { displayName: formData.name });
-            await signOut(secondaryAuth); // Clean up session immediately
+          const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
+          const newUid = userCredential.user.uid;
+          
+          await updateProfile(userCredential.user, { displayName: formData.name });
+          await signOut(secondaryAuth); // Clean up session immediately
 
-            // 2. Create SubUser record in Admin's collection
-            const subUser: SubUser = {
-              id: newUid,
-              name: formData.name,
-              email: formData.email,
-              role: 'operator',
-              permissions: permissions,
-              createdAt: new Date().toISOString()
-            };
+          // 2. Create SubUser record in Admin's collection
+          const subUser: SubUser = {
+            id: newUid,
+            name: formData.name,
+            email: formData.email,
+            role: 'operator',
+            permissions: permissions,
+            createdAt: new Date().toISOString()
+          };
 
-            await setDoc(doc(db, `users/${currentUserUid}/subUsers`, newUid), subUser);
+          await setDoc(doc(db, `users/${currentUserUid}/subUsers`, newUid), subUser);
 
-            // 3. Create Global Mapping for Login Resolution
-            await setDoc(doc(db, 'userMappings', newUid), {
-              ownerId: currentUserUid,
-              role: 'operator'
-            });
+          // 3. Create Global Mapping for Login Resolution
+          await setDoc(doc(db, 'userMappings', newUid), {
+            ownerId: currentUserUid,
+            role: 'operator'
+          });
 
-            alert('Operator created successfully!');
-            onRefresh();
-            resetForm();
-          } finally {
-             // Cleanup secondary app to avoid "duplicate app" errors
-             if (secondaryApp) {
-                 await deleteApp(secondaryApp);
-             }
-          }
+          alert('Operator created successfully!');
+          onRefresh();
+          resetForm();
       }
 
     } catch (error: any) {
@@ -126,6 +120,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
       let msg = "Failed to save user.";
       if (error.code === 'auth/email-already-in-use') msg = "Email is already in use.";
       if (error.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
+      if (error.message && error.message.includes('transaction was aborted')) msg = "Browser storage error. Please refresh and try again.";
       alert(msg);
     } finally {
       setIsLoading(false);

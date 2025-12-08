@@ -145,7 +145,7 @@ export interface GstRate {
 
 
 // New Types for Reports
-export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit' | 'salesmanReport';
+export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit' | 'salesmanReport' | 'chequePrint';
 
 export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
@@ -169,6 +169,22 @@ export interface PrinterProfile {
   connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt';
 }
 
+export interface ChequeLayoutField {
+  x: number; // in mm
+  y: number; // in mm
+  visible: boolean;
+  fontSize?: number;
+  width?: number;
+}
+
+export interface ChequeLayout {
+  date: ChequeLayoutField;
+  payeeName: ChequeLayoutField;
+  amountWords: ChequeLayoutField;
+  amountNumber: ChequeLayoutField;
+  acPayee: ChequeLayoutField;
+}
+
 export interface SystemConfig {
   softwareMode: 'Retail' | 'Pharma';
   invoicePrintingFormat: 'A4' | 'A5' | 'Thermal'; // Kept for backward compatibility or fallback
@@ -181,6 +197,7 @@ export interface SystemConfig {
   barcodeScannerOpenByDefault?: boolean;
   maintainCustomerLedger?: boolean;
   enableSalesman?: boolean;
+  chequeLayout?: ChequeLayout;
 }
 
 // User Management Types

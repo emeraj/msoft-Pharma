@@ -37,6 +37,7 @@ import SalesDashboard from './components/SalesDashboard';
 import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 import GstMaster from './components/GstMaster';
 import SalesmanReport from './components/SalesmanReport';
+import ChequePrint from './components/ChequePrint';
 
 const initialCompanyProfile: CompanyProfile = {
   name: 'Medico - Retail',
@@ -533,7 +534,7 @@ service cloud.firestore {
       if (view === 'inventory') return userPermissions.canInventory;
       if (view === 'purchases') return userPermissions.canPurchase;
       if (view === 'paymentEntry') return userPermissions.canPayment;
-      if (['dashboard', 'daybook', 'suppliersLedger', 'customerLedger', 'salesReport', 'companyWiseSale', 'companyWiseBillWiseProfit', 'salesmanReport'].includes(view)) return userPermissions.canReports;
+      if (['dashboard', 'daybook', 'suppliersLedger', 'customerLedger', 'salesReport', 'companyWiseSale', 'companyWiseBillWiseProfit', 'salesmanReport', 'chequePrint'].includes(view)) return userPermissions.canReports;
       return false;
   };
 
@@ -983,6 +984,13 @@ service cloud.firestore {
             {activeView === 'companyWiseSale' && canAccess('companyWiseSale') && <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />}
             {activeView === 'companyWiseBillWiseProfit' && canAccess('companyWiseBillWiseProfit') && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
             {activeView === 'salesmanReport' && canAccess('salesmanReport') && <SalesmanReport bills={bills} salesmen={salesmen} />}
+            
+            {activeView === 'chequePrint' && canAccess('chequePrint') && (
+                <ChequePrint 
+                    systemConfig={systemConfig}
+                    onUpdateConfig={handleSystemConfigChange}
+                />
+            )}
           </>
         )}
       </main>
