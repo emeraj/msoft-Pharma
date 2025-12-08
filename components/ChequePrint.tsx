@@ -239,7 +239,7 @@ const ChequePrint: React.FC<ChequePrintProps> = ({ systemConfig, onUpdateConfig 
                     {/* The Cheque Canvas */}
                     <div 
                         ref={canvasRef}
-                        className="relative bg-teal-50 shadow-lg border border-slate-300 print:border-none print:shadow-none print:bg-white"
+                        className="relative bg-teal-50 shadow-lg border border-slate-300 print:border-none print:shadow-none print:bg-white text-black"
                         style={{
                             width: '203mm',
                             height: '89mm',
@@ -249,32 +249,32 @@ const ChequePrint: React.FC<ChequePrintProps> = ({ systemConfig, onUpdateConfig 
                         }}
                     >
                         {formData.acPayee && renderField('acPayee', (
-                            <div className="border-b-2 border-l-2 border-black transform -rotate-12 px-2 text-sm font-bold w-max" style={{ height: '15mm', borderTop: '2px solid black' }}>
+                            <div className="border-b-2 border-l-2 border-black transform -rotate-12 px-2 text-sm font-bold w-max text-black" style={{ height: '15mm', borderTop: '2px solid black' }}>
                                 <div className="border-b-2 border-black w-full absolute top-1 left-0"></div>
                                 <span className="relative top-2">A/c Payee</span>
                             </div>
                         ))}
 
                         {renderField('date', (
-                            <div className="font-bold text-lg tracking-widest bg-yellow-300/30 print:bg-transparent px-1">
+                            <div className="font-bold text-lg tracking-widest bg-yellow-300/30 print:bg-transparent px-1 text-black">
                                 {formattedDate}
                             </div>
                         ))}
 
                         {renderField('payeeName', (
-                            <div className="font-bold text-lg w-max min-w-[200px] print:min-w-0">
+                            <div className="font-bold text-lg w-max min-w-[200px] print:min-w-0 text-black">
                                 {formData.name || 'Payee Name'}
                             </div>
                         ))}
 
                         {renderField('amountWords', (
-                            <div className="font-medium text-md w-full max-w-[120mm] leading-tight">
+                            <div className="font-medium text-md w-full max-w-[120mm] leading-tight text-black">
                                 {amountWords}
                             </div>
                         ))}
 
                         {renderField('amountNumber', (
-                            <div className="font-bold text-xl">
+                            <div className="font-bold text-xl text-black">
                                 {formattedAmount}
                             </div>
                         ))}
@@ -283,7 +283,7 @@ const ChequePrint: React.FC<ChequePrintProps> = ({ systemConfig, onUpdateConfig 
             </div>
 
             {/* Print-only section */}
-            <div className="hidden print:block absolute top-0 left-0">
+            <div className="hidden print:block absolute top-0 left-0 text-black">
                  <div 
                     style={{
                         width: '203mm',

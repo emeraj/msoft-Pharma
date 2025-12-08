@@ -797,6 +797,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
+    // Supplier Keyboard Navigation State
+    const [activeSupplierIndex, setActiveSupplierIndex] = useState(-1);
+    const activeSupplierRef = useRef<HTMLLIElement>(null);
+
     useEffect(() => {
         if (editingPurchase) {
             setFormState({
@@ -820,6 +824,21 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         return suppliers.some(s => s.name.toLowerCase() === formState.supplierName.trim().toLowerCase());
     }, [formState.supplierName, suppliers]);
 
+    // Reset supplier index when search term changes
+    useEffect(() => {
+        setActiveSupplierIndex(-1);
+    }, [formState.supplierName]);
+
+    // Scroll active supplier item into view
+    useEffect(() => {
+        if (showSupplierSuggestions && activeSupplierIndex !== -1) {
+             activeSupplierRef.current?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+            });
+        }
+    }, [activeSupplierIndex, showSupplierSuggestions]);
+
     const handleSelectSupplier = (name: string) => {
         setFormState(prev => ({ ...prev, supplierName: name }));
         setShowSupplierSuggestions(false);
@@ -835,6 +854,36 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         if (newSupplier) {
             setFormState(prev => ({ ...prev, supplierName: newSupplier.name }));
             setSupplierModalOpen(false);
+        }
+    };
+
+    const handleSupplierKeyDown = (e: React.KeyboardEvent) => {
+        const showAddOption = !exactMatch && formState.supplierName.trim().length > 0;
+        const totalItems = supplierSuggestions.length + (showAddOption ? 1 : 0);
+
+        if (totalItems === 0) return;
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                setActiveSupplierIndex(prev => (prev + 1) % totalItems);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setActiveSupplierIndex(prev => (prev - 1 + totalItems) % totalItems);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (activeSupplierIndex >= 0 && activeSupplierIndex < supplierSuggestions.length) {
+                    handleSelectSupplier(supplierSuggestions[activeSupplierIndex].name);
+                } else if (showAddOption && activeSupplierIndex === supplierSuggestions.length) {
+                    handleOpenSupplierModal();
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                setShowSupplierSuggestions(false);
+                break;
         }
     };
 
@@ -1262,6 +1311,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                             onChange={e => setFormState(prev => ({...prev, supplierName: e.target.value}))}
                             onFocus={() => setShowSupplierSuggestions(true)}
                             onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)}
+                            onKeyDown={handleSupplierKeyDown}
                             placeholder="Search or Add Supplier*" 
                             className={formInputStyle} 
                             required
@@ -1269,13 +1319,32 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                         />
                          {showSupplierSuggestions && formState.supplierName.length > 0 && (
                           <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                              {supplierSuggestions.map(s => (
-                                  <li key={s.id} onClick={() => handleSelectSupplier(s.name)} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-slate-800 dark:text-slate-200">
+                              {supplierSuggestions.map((s, index) => (
+                                  <li 
+                                    key={s.id} 
+                                    ref={index === activeSupplierIndex ? activeSupplierRef : null}
+                                    onClick={() => handleSelectSupplier(s.name)} 
+                                    onMouseEnter={() => setActiveSupplierIndex(index)}
+                                    className={`px-4 py-2 cursor-pointer text-slate-800 dark:text-slate-200 ${
+                                        index === activeSupplierIndex 
+                                        ? 'bg-indigo-200 dark:bg-indigo-700' 
+                                        : 'hover:bg-indigo-100 dark:hover:bg-indigo-900'
+                                    }`}
+                                  >
                                       {s.name}
                                   </li>
                               ))}
                               {!exactMatch && formState.supplierName.trim().length > 0 && (
-                                  <li onClick={handleOpenSupplierModal} className="px-4 py-2 cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900 text-green-600 dark:text-green-400 font-semibold">
+                                  <li 
+                                    ref={supplierSuggestions.length === activeSupplierIndex ? activeSupplierRef : null}
+                                    onClick={handleOpenSupplierModal} 
+                                    onMouseEnter={() => setActiveSupplierIndex(supplierSuggestions.length)}
+                                    className={`px-4 py-2 cursor-pointer font-semibold text-green-600 dark:text-green-400 ${
+                                        supplierSuggestions.length === activeSupplierIndex
+                                        ? 'bg-green-100 dark:bg-green-900/50'
+                                        : 'hover:bg-indigo-100 dark:hover:bg-indigo-900'
+                                    }`}
+                                  >
                                       <PlusIcon className="h-4 w-4 inline mr-2"/> Add new supplier: "{formState.supplierName.trim()}"
                                   </li>
                               )}
