@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon, AdjustmentsIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import { GoogleGenAI } from "@google/genai";
 
@@ -769,7 +769,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         supplierName: '',
         invoiceNumber: '',
         invoiceDate: new Date().toISOString().split('T')[0],
-        currentItems: [] as PurchaseLineItem[]
+        currentItems: [] as PurchaseLineItem[],
+        roundOff: 0
     };
     
     const [formState, setFormState] = useState(initialFormState);
@@ -800,13 +801,29 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [activeSupplierIndex, setActiveSupplierIndex] = useState(-1);
     const activeSupplierRef = useRef<HTMLLIElement>(null);
 
+    // Helper function to calculate line item total
+    const calculateLineTotal = (item: PurchaseLineItem) => {
+        const amount = item.purchasePrice * item.quantity;
+        const discountAmount = amount * ((item.discount || 0) / 100);
+        const taxableAmount = amount - discountAmount;
+        const taxAmount = taxableAmount * (item.gst / 100);
+        return taxableAmount + taxAmount;
+    };
+
     useEffect(() => {
         if (editingPurchase) {
+            // Calculate derived roundOff for legacy records if field doesn't exist
+            const itemsSum = editingPurchase.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+            const existingRoundOff = editingPurchase.roundOff !== undefined 
+                ? editingPurchase.roundOff 
+                : (editingPurchase.totalAmount - itemsSum);
+
             setFormState({
                 supplierName: editingPurchase.supplier,
                 invoiceNumber: editingPurchase.invoiceNumber,
                 invoiceDate: new Date(editingPurchase.invoiceDate).toISOString().split('T')[0],
                 currentItems: editingPurchase.items || [],
+                roundOff: parseFloat(existingRoundOff.toFixed(2))
             });
             window.scrollTo(0, 0); // Scroll to top to see the form
         } else {
@@ -906,23 +923,24 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         }
     };
 
-    // Helper function to calculate line item total
-    const calculateLineTotal = (item: PurchaseLineItem) => {
-        const amount = item.purchasePrice * item.quantity;
-        const discountAmount = amount * ((item.discount || 0) / 100);
-        const taxableAmount = amount - discountAmount;
-        const taxAmount = taxableAmount * (item.gst / 100);
-        return taxableAmount + taxAmount;
-    };
-
-    const totalAmount = useMemo(() => {
+    const itemsTotal = useMemo(() => {
         return formState.currentItems.reduce((total, item) => total + calculateLineTotal(item), 0);
     }, [formState.currentItems]);
+
+    const totalAmount = useMemo(() => {
+        return itemsTotal + (parseFloat(formState.roundOff.toString()) || 0);
+    }, [itemsTotal, formState.roundOff]);
     
     const resetForm = () => {
         setEditingPurchase(null);
         setFormState(initialFormState);
         setItemToEdit(null);
+    };
+
+    const handleAutoRound = () => {
+        const rounded = Math.round(itemsTotal);
+        const diff = rounded - itemsTotal;
+        setFormState(prev => ({ ...prev, roundOff: parseFloat(diff.toFixed(2)) }));
     };
 
     const handleSavePurchase = () => {
@@ -940,7 +958,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             invoiceNumber: formState.invoiceNumber, 
             invoiceDate: formState.invoiceDate, 
             items: formState.currentItems,
-            totalAmount
+            totalAmount,
+            roundOff: parseFloat(formState.roundOff.toString()) || 0
         };
 
         if (editingPurchase && editingPurchase.id) {
@@ -1361,6 +1380,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     )}
                 </div>
             }>
+                {/* ... (Existing Supplier/Invoice inputs) ... */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
@@ -1472,11 +1492,40 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                 </tbody>
                             </table>
                          </div>
-                         <div className="flex flex-col sm:flex-row justify-end items-center mt-4 gap-4">
-                            <div className="text-xl font-bold text-slate-800 dark:text-slate-200">
-                                <span>Total Amount: </span>
-                                <span>₹{totalAmount.toFixed(2)}</span>
+                         
+                         <div className="mt-4 flex flex-col sm:flex-row justify-end items-end sm:items-center gap-4 border-t dark:border-slate-700 pt-4">
+                            <div className="flex flex-col gap-2 w-full sm:w-auto">
+                                <div className="flex justify-between items-center text-sm text-slate-600 dark:text-slate-400 gap-8">
+                                    <span>Items Total:</span>
+                                    <span>₹{itemsTotal.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between items-center gap-4">
+                                    <label className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Round Off:</label>
+                                    <div className="flex gap-1">
+                                        <input 
+                                            type="number" 
+                                            step="0.01" 
+                                            value={formState.roundOff} 
+                                            onChange={e => setFormState({...formState, roundOff: parseFloat(e.target.value) || 0})}
+                                            className="w-20 p-1 text-right border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-sm"
+                                        />
+                                        <button 
+                                            onClick={handleAutoRound}
+                                            className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded text-xs font-semibold hover:bg-indigo-200"
+                                            title="Auto Round to nearest Integer"
+                                        >
+                                            Auto
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between items-center text-xl font-bold text-slate-800 dark:text-slate-200 border-t dark:border-slate-600 pt-2 mt-1">
+                                    <span>Grand Total:</span>
+                                    <span>₹{totalAmount.toFixed(2)}</span>
+                                </div>
                             </div>
+                         </div>
+
+                         <div className="flex flex-col sm:flex-row justify-end items-center mt-4 gap-4">
                             {editingPurchase && (
                                 <button type="button" onClick={resetForm} className="bg-slate-500 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-slate-600 transition-colors w-full sm:w-auto">
                                     Cancel Edit

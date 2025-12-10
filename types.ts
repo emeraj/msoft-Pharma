@@ -86,6 +86,7 @@ export interface Purchase {
   supplier: string;
   items: PurchaseLineItem[];
   totalAmount: number;
+  roundOff?: number;
 }
 
 export interface Company {
