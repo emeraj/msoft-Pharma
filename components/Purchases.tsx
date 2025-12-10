@@ -1188,7 +1188,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     company: existingProduct?.company || (currentData.supplierName || 'Unknown Company'),
                     hsnCode: existingProduct?.hsnCode || item.hsnCode || '',
                     gst: existingProduct?.gst || parseNumber(item.gst) || 0,
-                    batchNumber: item.batchNumber || 'BATCH',
+                    batchNumber: item.batchNumber || (isPharmaMode ? 'BATCH' : 'DEFAULT'),
                     expiryDate: item.expiryDate || '2025-12',
                     quantity: qty || 1,
                     mrp: mrp,
@@ -1229,11 +1229,35 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         const existingSupplier = suppliers.find(s => s.name.toLowerCase() === data.supplierName.trim().toLowerCase());
         
         const populateForm = (supplierName: string) => {
-            setFormState({
-                supplierName: supplierName,
-                invoiceNumber: data.invoiceNumber,
-                invoiceDate: data.invoiceDate,
-                currentItems: [...formState.currentItems, ...data.items]
+            setFormState(prev => {
+                const mergedItems = [...prev.currentItems];
+                
+                data.items.forEach(newItem => {
+                    // Check for duplicate item based on Product Name and Batch
+                    const index = mergedItems.findIndex(existing => 
+                        existing.productName.toLowerCase().trim() === newItem.productName.toLowerCase().trim() && 
+                        existing.batchNumber.toLowerCase().trim() === newItem.batchNumber.toLowerCase().trim()
+                    );
+
+                    if (index !== -1) {
+                        // If exists, sum the quantities
+                        mergedItems[index] = {
+                            ...mergedItems[index],
+                            quantity: mergedItems[index].quantity + newItem.quantity
+                        };
+                    } else {
+                        // If new, push to list
+                        mergedItems.push(newItem);
+                    }
+                });
+
+                return {
+                    ...prev,
+                    supplierName: supplierName,
+                    invoiceNumber: data.invoiceNumber,
+                    invoiceDate: data.invoiceDate,
+                    currentItems: mergedItems
+                };
             });
         };
 
