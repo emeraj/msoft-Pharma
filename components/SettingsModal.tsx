@@ -92,7 +92,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Password Change State
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
-  const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: ''}>({ type: '', msg: '' });
+  const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: string}>({ type: '', msg: '' });
 
   useEffect(() => {
     if (isOpen) {

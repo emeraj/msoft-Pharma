@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
 import Card from './common/Card';
@@ -1131,18 +1130,40 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             items: [] as PurchaseLineItem[]
         };
 
-        // Try to match Supplier from DB
-        const matchedSupplier = suppliers.find(s => 
-            s.name.toLowerCase().includes(result.supplierName?.toLowerCase() || '$$$') || 
-            (result.supplierName && s.name.toLowerCase().includes(result.supplierName.toLowerCase()))
-        );
+        // Enhanced Supplier Matching Logic
+        let matchedSupplier: Supplier | undefined;
+
+        // 1. Try GSTIN match (Highest Priority)
+        if (result.supplierGstin) {
+            const searchGstin = result.supplierGstin.trim().toLowerCase();
+            // Filter suppliers that actually have a GSTIN to avoid empty string matches
+            matchedSupplier = suppliers.find(s => s.gstin && s.gstin.trim().toLowerCase() === searchGstin);
+        }
+
+        // 2. Try Exact Name Match
+        if (!matchedSupplier && result.supplierName) {
+            const searchName = result.supplierName.trim().toLowerCase();
+            matchedSupplier = suppliers.find(s => s.name.trim().toLowerCase() === searchName);
+        }
+
+        // 3. Try Fuzzy Name Match (Lowest Priority)
+        if (!matchedSupplier && result.supplierName) {
+             const searchName = result.supplierName.trim().toLowerCase();
+             matchedSupplier = suppliers.find(s => 
+                s.name.toLowerCase().includes(searchName) || 
+                searchName.includes(s.name.toLowerCase())
+             );
+        }
         
         if (matchedSupplier) {
             currentData.supplierName = matchedSupplier.name;
-            // Prefer DB details if available, else fallback to AI
+            // Prefer DB details if available
             if (matchedSupplier.gstin) currentData.supplierGstin = matchedSupplier.gstin;
             if (matchedSupplier.address) currentData.supplierAddress = matchedSupplier.address;
         }
+
+        // Note: Duplicate check removed from here to allow preview/editing. 
+        // It is now handled in handleImportFromOcr.
 
         if (result.items && Array.isArray(result.items)) {
             currentData.items = result.items.map((item: any) => {
@@ -1191,6 +1212,19 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     const handleImportFromOcr = (data: { supplierName: string; supplierGstin?: string; supplierAddress?: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => {
+        // Check if purchase already exists before importing to form
+        const exists = purchases.some(p => {
+            const dbDate = new Date(p.invoiceDate).toISOString().split('T')[0];
+            return p.invoiceNumber.trim().toLowerCase() === data.invoiceNumber.trim().toLowerCase() &&
+                   p.supplier.trim().toLowerCase() === data.supplierName.trim().toLowerCase() &&
+                   dbDate === data.invoiceDate;
+        });
+
+        if (exists) {
+            alert("Invoice already exist");
+            return;
+        }
+
         // Check if supplier already exists (Exact match)
         const existingSupplier = suppliers.find(s => s.name.toLowerCase() === data.supplierName.trim().toLowerCase());
         

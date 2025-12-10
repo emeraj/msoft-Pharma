@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate, UserPermissions, SubUser, Customer, CustomerPayment, Salesman } from './types';
 import Header from './components/Header';
@@ -787,6 +786,15 @@ service cloud.firestore {
                     batch.set(purchaseRef, purchaseData);
                     
                     for (const item of purchaseData.items) {
+                        const newBatch: Batch = {
+                            id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            batchNumber: item.batchNumber,
+                            expiryDate: item.expiryDate,
+                            stock: item.quantity * (item.unitsPerStrip || (item.productId ? products.find(p=>p.id===item.productId)?.unitsPerStrip : 1) || 1),
+                            mrp: item.mrp,
+                            purchasePrice: item.purchasePrice
+                        };
+
                         if (item.isNewProduct) {
                             let productId = item.productId;
                             if (!productId) {
@@ -797,12 +805,13 @@ service cloud.firestore {
                                     company: item.company,
                                     hsnCode: item.hsnCode,
                                     gst: item.gst,
-                                    batches: []
+                                    batches: [newBatch] // Add batch directly
                                 };
                                 if(item.barcode) newProduct.barcode = item.barcode;
                                 if(item.composition) newProduct.composition = item.composition;
                                 if(item.unitsPerStrip) newProduct.unitsPerStrip = item.unitsPerStrip;
                                 if(item.isScheduleH) newProduct.isScheduleH = item.isScheduleH;
+                                
                                 batch.set(newProductRef, newProduct);
                                 
                                 const companyExists = companies.some(c => c.name.toLowerCase() === item.company.toLowerCase());
@@ -810,27 +819,13 @@ service cloud.firestore {
                                      const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
                                      batch.set(newCompanyRef, { name: item.company });
                                 }
+                            } else {
+                                // Fallback if somehow ID exists for 'new'
+                                const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
+                                batch.update(productRef, { batches: arrayUnion(newBatch) });
                             }
-                            const newBatch: Batch = {
-                                id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                                batchNumber: item.batchNumber,
-                                expiryDate: item.expiryDate,
-                                stock: item.quantity * (item.unitsPerStrip || 1),
-                                mrp: item.mrp,
-                                purchasePrice: item.purchasePrice
-                            };
-                            const productRef = doc(db, `users/${dataOwnerId}/products`, productId!);
-                            if (item.productId) batch.update(productRef, { batches: arrayUnion(newBatch) });
                         } else {
                              if (item.productId) {
-                                const newBatch: Batch = {
-                                    id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                                    batchNumber: item.batchNumber,
-                                    expiryDate: item.expiryDate,
-                                    stock: item.quantity * (item.unitsPerStrip || (products.find(p=>p.id===item.productId)?.unitsPerStrip) || 1),
-                                    mrp: item.mrp,
-                                    purchasePrice: item.purchasePrice
-                                };
                                 const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
                                 batch.update(productRef, { batches: arrayUnion(newBatch) });
                              }

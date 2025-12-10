@@ -856,6 +856,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
           setCustomerName(newCust.name);
           setSelectedCustomer(newCust);
       }
+      return newCust;
   };
 
   const handleAddNewSalesman = async (data: Omit<Salesman, 'id'>) => {
@@ -864,7 +865,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
           if (newSalesman) {
               setSelectedSalesmanId(newSalesman.id);
           }
+          return newSalesman;
       }
+      return null;
   };
 
   const doctorList = useMemo(() => {
