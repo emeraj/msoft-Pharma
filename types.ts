@@ -4,6 +4,7 @@ export interface Batch {
   batchNumber: string;
   expiryDate: string; // YYYY-MM format
   stock: number; // Total stock in smallest unit (e.g., tablets)
+  openingStock?: number; // Initial stock quantity
   mrp: number; // MRP per strip/box
   purchasePrice: number;
 }
@@ -200,6 +201,7 @@ export interface SystemConfig {
   enableSalesman?: boolean;
   chequeLayout?: ChequeLayout;
   aiInvoiceUsageCount?: number;
+  aiInvoiceQuota?: number; // Configurable limit for AI usage
   isPremium?: boolean;
 }
 

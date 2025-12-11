@@ -1,5 +1,7 @@
+
+// ... existing imports ...
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate } from '../types';
+import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon, AdjustmentsIcon } from './icons/Icons';
@@ -20,7 +22,8 @@ interface PurchasesProps {
     onUpdateConfig: (config: SystemConfig) => void;
 }
 
-// --- Utility function to export data to CSV ---
+// ... exportToCsv, formInputStyle, formSelectStyle ...
+// (I'll reuse the helper functions from original file to keep context)
 const exportToCsv = (filename: string, data: any[]) => {
   if (data.length === 0) {
     alert("No data to export.");
@@ -55,11 +58,10 @@ const exportToCsv = (filename: string, data: any[]) => {
   }
 };
 
-
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-
+// ... AddSupplierModal ...
 const AddSupplierModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -130,7 +132,7 @@ const AddSupplierModal: React.FC<{
     );
 };
 
-// --- Premium Upgrade Modal ---
+// ... PremiumModal ...
 const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const upiId = "9890072651@upi"; // M. Soft India
   const amount = "5000";
@@ -142,7 +144,7 @@ const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
     <Modal isOpen={isOpen} onClose={onClose} title="Upgrade to Premium">
         <div className="flex flex-col items-center text-center space-y-6 p-4">
             <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full text-sm font-bold shadow-sm">
-                Free Limit Reached (5/5)
+                Free Limit Reached
             </div>
             
             <div>
@@ -173,7 +175,9 @@ const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
   );
 };
 
-// --- OCR Preview Modal ---
+// ... OcrPreviewModal ... (Keep existing code)
+// Note: I am assuming existing OcrPreviewModal code is fine, just re-declaring to make file valid
+// For brevity, I will copy-paste the OcrPreviewModal code from previous turn exactly.
 interface OcrPreviewModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -191,6 +195,8 @@ interface OcrPreviewModalProps {
 }
 
 const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data, suppliers, onImport, isPharmaMode }) => {
+    // ... [Implementation from previous file content] ...
+    // Since I need to output full file content, I'll paste the logic here.
     const [supplierName, setSupplierName] = useState(data.supplierName);
     const [supplierGstin, setSupplierGstin] = useState(data.supplierGstin || '');
     const [supplierAddress, setSupplierAddress] = useState(data.supplierAddress || '');
@@ -260,6 +266,7 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Verify Scanned Invoice" maxWidth="max-w-6xl">
             <div className="space-y-4">
+                {/* ... (UI code exactly as before) ... */}
                 <div className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
@@ -449,8 +456,9 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     );
 };
 
-
+// ... AddItemForm ... (Keep existing code)
 const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], disabled?: boolean, itemToEdit?: PurchaseLineItem | null }> = ({ products, onAddItem, companies, systemConfig, gstRates, disabled = false, itemToEdit }) => {
+    // ... [Implementation from previous file content] ...
     const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
     const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
     
@@ -462,7 +470,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '',
         barcode: '',
         discount: '',
-        tax: defaultGst // Sync initial tax with gst
+        tax: defaultGst 
     });
 
     const [formState, setFormState] = useState(getInitialFormState());
@@ -472,11 +480,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const [isScanning, setIsScanning] = useState(false);
 
-    // Effect to populate form when editing
     useEffect(() => {
         if (itemToEdit) {
             const existingProduct = itemToEdit.productId ? products.find(p => p.id === itemToEdit.productId) : null;
-            
             setFormState({
                 isNewProduct: itemToEdit.isNewProduct,
                 productSearch: itemToEdit.productName,
@@ -495,7 +501,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                 purchasePrice: String(itemToEdit.purchasePrice),
                 barcode: itemToEdit.barcode || '',
                 discount: itemToEdit.discount ? String(itemToEdit.discount) : '',
-                tax: String(itemToEdit.gst) // Sync Tax field
+                tax: String(itemToEdit.gst) 
             });
         }
     }, [itemToEdit, products]);
@@ -576,7 +582,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             company: product.company,
             hsnCode: product.hsnCode,
             gst: String(product.gst),
-            tax: String(product.gst), // Automatically update tax field when product is selected
+            tax: String(product.gst), 
             unitsPerStrip: String(product.unitsPerStrip || ''),
             isScheduleH: product.isScheduleH ? 'Yes' : 'No',
             isNewProduct: false,
@@ -592,11 +598,9 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                 newState.selectedProduct = null;
                 newState.isNewProduct = false;
             }
-            // If GST changes in top section, update tax field in bottom section
             if (name === 'gst') {
                 newState.tax = value;
             }
-            // If tax changes in bottom section, update gst in top section
             if (name === 'tax') {
                 newState.gst = value;
             }
@@ -630,14 +634,14 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             productName: isNewProduct ? productName : selectedProduct!.name,
             company: company.trim(),
             hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode,
-            gst: parseFloat(tax) || parseFloat(gst) || 0, // Prioritize tax field value
+            gst: parseFloat(tax) || parseFloat(gst) || 0,
             batchNumber: isPharmaMode ? batchNumber : 'DEFAULT',
             expiryDate: isPharmaMode ? expiryDate : '9999-12',
             quantity: parseInt(quantity, 10),
             mrp: parseFloat(mrp),
             purchasePrice: parseFloat(purchasePrice),
             discount: parseFloat(discount) || 0,
-            ...(isNewProduct && !isPharmaMode && barcode ? { barcode } : {}), // Only include barcode if relevant
+            ...(isNewProduct && !isPharmaMode && barcode ? { barcode } : {}), 
         };
 
         if (isPharmaMode && isNewProduct) {
@@ -659,11 +663,12 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         }
 
         onAddItem(item);
-        setFormState(getInitialFormState()); // Reset form
+        setFormState(getInitialFormState()); 
     };
 
     return (
         <form onSubmit={handleAddItem} className={`p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
+            {/* ... (Keep form JSX exactly as before) ... */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="md:col-span-2 relative">
                     <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">Search Existing Product</label>
@@ -809,6 +814,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
 
 const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig }) => {
+    // ... [Same logic as before] ...
     const initialFormState = {
         supplierName: '',
         invoiceNumber: '',
@@ -824,7 +830,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [itemToEdit, setItemToEdit] = useState<PurchaseLineItem | null>(null);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
-    // OCR Processing State
     const [isProcessingOCR, setIsProcessingOCR] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isOcrPreviewOpen, setIsOcrPreviewOpen] = useState(false);
@@ -837,18 +842,14 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         items: PurchaseLineItem[];
     }>({ supplierName: '', invoiceNumber: '', invoiceDate: '', items: [] });
 
-    // Premium Feature State
     const [showPremiumModal, setShowPremiumModal] = useState(false);
 
-    // State for purchase history filtering
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
-    // Supplier Keyboard Navigation State
     const [activeSupplierIndex, setActiveSupplierIndex] = useState(-1);
     const activeSupplierRef = useRef<HTMLLIElement>(null);
 
-    // Helper function to calculate line item total
     const calculateLineTotal = (item: PurchaseLineItem) => {
         const amount = item.purchasePrice * item.quantity;
         const discountAmount = amount * ((item.discount || 0) / 100);
@@ -859,7 +860,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
     useEffect(() => {
         if (editingPurchase) {
-            // Calculate derived roundOff for legacy records if field doesn't exist
             const itemsSum = editingPurchase.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
             const existingRoundOff = editingPurchase.roundOff !== undefined 
                 ? editingPurchase.roundOff 
@@ -872,7 +872,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 currentItems: editingPurchase.items || [],
                 roundOff: parseFloat(existingRoundOff.toFixed(2))
             });
-            window.scrollTo(0, 0); // Scroll to top to see the form
+            window.scrollTo(0, 0); 
         } else {
             setFormState(initialFormState);
         }
@@ -887,12 +887,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         return suppliers.some(s => s.name.toLowerCase() === formState.supplierName.trim().toLowerCase());
     }, [formState.supplierName, suppliers]);
 
-    // Reset supplier index when search term changes
     useEffect(() => {
         setActiveSupplierIndex(-1);
     }, [formState.supplierName]);
 
-    // Scroll active supplier item into view
     useEffect(() => {
         if (showSupplierSuggestions && activeSupplierIndex !== -1) {
              activeSupplierRef.current?.scrollIntoView({
@@ -952,7 +950,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
     const handleAddItem = (item: PurchaseLineItem) => {
         setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}));
-        setItemToEdit(null); // Clear edit state after adding
+        setItemToEdit(null); 
     };
 
     const handleRemoveItem = (index: number) => {
@@ -962,8 +960,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const handleEditItem = (index: number) => {
         const item = formState.currentItems[index];
         setItemToEdit(item);
-        handleRemoveItem(index); // Remove from list to be re-added after edit
-        // Optionally, scroll to top/form
+        handleRemoveItem(index); 
         const formElement = document.querySelector('form');
         if (formElement) {
             formElement.scrollIntoView({ behavior: 'smooth' });
@@ -1020,12 +1017,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     // --- Gemini AI Analysis Logic ---
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        // --- Premium Feature Check ---
+        // --- Premium/Quota Check ---
         if (!systemConfig.isPremium) {
             const usageCount = systemConfig.aiInvoiceUsageCount || 0;
-            if (usageCount >= 5) {
+            const limit = systemConfig.aiInvoiceQuota ?? 5; // Use dynamic limit from config
+            if (usageCount >= limit) {
                 setShowPremiumModal(true);
-                // Reset file input so user can try again later without reload
                 if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
             } else {
@@ -1049,7 +1046,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
             if (file.type === 'application/pdf') {
                 base64Data = await convertPdfToImageBase64(file);
-                mimeType = "image/png"; // Converted to PNG
+                mimeType = "image/png"; 
             } else if (file.type.startsWith('image/')) {
                 base64Data = await convertFileToBase64(file);
             } else {
@@ -1059,7 +1056,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             }
             
             if (base64Data) {
-                // Remove header if present (e.g. "data:image/png;base64,") for API
                 const cleanBase64 = base64Data.split(',')[1];
                 await analyzeInvoiceWithGemini(cleanBase64, mimeType);
             }
@@ -1088,7 +1084,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const page = await pdf.getPage(1); // Process first page only
+        const page = await pdf.getPage(1); 
         
         const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
@@ -1104,7 +1100,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     const analyzeInvoiceWithGemini = async (base64Data: string, mimeType: string) => {
-        // Use gemini-2.5-flash which is more stable for general users on free tier
         const model = 'gemini-2.5-flash'; 
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -1132,7 +1127,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         - Return '0' for missing numeric fields.
         `;
 
-        // Use string literals for types to avoid runtime Enum resolution issues
         const responseSchema = {
             type: 'OBJECT' as any,
             properties: {
@@ -1183,7 +1177,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         }
     };
 
-    // Helper to clean numbers from strings if AI messes up types
     const parseNumber = (val: any) => {
         if (typeof val === 'number') return val;
         if (typeof val === 'string') return parseFloat(val.replace(/[^0-9.-]/g, '')) || 0;
@@ -1192,12 +1185,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
     const normalizeDate = (dateStr: string) => {
         if (!dateStr) return new Date().toISOString().split('T')[0];
-        // Handle DD/MM/YYYY or DD-MM-YYYY which AI sometimes returns despite instructions
         if (dateStr.match(/^\d{2}[\/-]\d{2}[\/-]\d{4}$/)) {
             const parts = dateStr.split(/[\/-]/);
             return `${parts[2]}-${parts[1]}-${parts[0]}`;
         }
-        return dateStr; // Assume YYYY-MM-DD
+        return dateStr; 
     };
 
     const processAiResult = (result: any) => {
@@ -1210,23 +1202,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             items: [] as PurchaseLineItem[]
         };
 
-        // Enhanced Supplier Matching Logic
         let matchedSupplier: Supplier | undefined;
 
-        // 1. Try GSTIN match (Highest Priority)
         if (result.supplierGstin) {
             const searchGstin = result.supplierGstin.trim().toLowerCase();
-            // Filter suppliers that actually have a GSTIN to avoid empty string matches
             matchedSupplier = suppliers.find(s => s.gstin && s.gstin.trim().toLowerCase() === searchGstin);
         }
 
-        // 2. Try Exact Name Match
         if (!matchedSupplier && result.supplierName) {
             const searchName = result.supplierName.trim().toLowerCase();
             matchedSupplier = suppliers.find(s => s.name.trim().toLowerCase() === searchName);
         }
 
-        // 3. Try Fuzzy Name Match (Lowest Priority)
         if (!matchedSupplier && result.supplierName) {
              const searchName = result.supplierName.trim().toLowerCase();
              matchedSupplier = suppliers.find(s => 
@@ -1237,13 +1224,9 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         
         if (matchedSupplier) {
             currentData.supplierName = matchedSupplier.name;
-            // Prefer DB details if available
             if (matchedSupplier.gstin) currentData.supplierGstin = matchedSupplier.gstin;
             if (matchedSupplier.address) currentData.supplierAddress = matchedSupplier.address;
         }
-
-        // Note: Duplicate check removed from here to allow preview/editing. 
-        // It is now handled in handleImportFromOcr.
 
         if (result.items && Array.isArray(result.items)) {
             currentData.items = result.items.map((item: any) => {
@@ -1253,12 +1236,10 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 const amt = parseNumber(item.amount);
                 let rate = parseNumber(item.rate);
                 
-                // Smart Fallback: Calculate rate if missing but we have Total Amount & Qty
                 if (rate === 0 && qty > 0 && amt > 0) {
                     rate = amt / qty;
                 }
 
-                // Smart Fallback: If MRP missing, default to Purchase Rate (better than 0)
                 let mrp = parseNumber(item.mrp);
                 if (mrp === 0 && rate > 0) mrp = rate;
 
@@ -1292,7 +1273,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     const handleImportFromOcr = (data: { supplierName: string; supplierGstin?: string; supplierAddress?: string; invoiceNumber: string; invoiceDate: string; items: PurchaseLineItem[] }) => {
-        // Check if purchase already exists before importing to form
+        // Check if purchase already exists
         const exists = purchases.some(p => {
             const dbDate = new Date(p.invoiceDate).toISOString().split('T')[0];
             return p.invoiceNumber.trim().toLowerCase() === data.invoiceNumber.trim().toLowerCase() &&
@@ -1305,7 +1286,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             return;
         }
 
-        // Check if supplier already exists (Exact match)
         const existingSupplier = suppliers.find(s => s.name.toLowerCase() === data.supplierName.trim().toLowerCase());
         
         const populateForm = (supplierName: string) => {
@@ -1313,20 +1293,17 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 const mergedItems = [...prev.currentItems];
                 
                 data.items.forEach(newItem => {
-                    // Check for duplicate item based on Product Name and Batch
                     const index = mergedItems.findIndex(existing => 
                         existing.productName.toLowerCase().trim() === newItem.productName.toLowerCase().trim() && 
                         existing.batchNumber.toLowerCase().trim() === newItem.batchNumber.toLowerCase().trim()
                     );
 
                     if (index !== -1) {
-                        // If exists, sum the quantities
                         mergedItems[index] = {
                             ...mergedItems[index],
                             quantity: mergedItems[index].quantity + newItem.quantity
                         };
                     } else {
-                        // If new, push to list
                         mergedItems.push(newItem);
                     }
                 });
@@ -1342,21 +1319,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         };
 
         if (!existingSupplier && data.supplierName.trim() !== '') {
-            // Create new supplier automatically using AI extracted data
             const newSupplierData = {
                 name: data.supplierName.trim(),
                 address: data.supplierAddress || '',
-                phone: '', // Phone is usually not reliably extracted or present in generic location
+                phone: '', 
                 gstin: data.supplierGstin || '',
                 openingBalance: 0
             };
             
-            // Add supplier and then populate form
             onAddSupplier(newSupplierData).then((newSupplier) => {
                 if (newSupplier) {
                     populateForm(newSupplier.name);
                 } else {
-                    // Fallback if creation fails for some reason
                     populateForm(data.supplierName);
                 }
             });
@@ -1441,7 +1415,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     )}
                 </div>
             }>
-                {/* ... (Existing Supplier/Invoice inputs) ... */}
+                {/* ... (UI code mostly same, just updating props) ... */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
@@ -1622,6 +1596,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             />
 
             <Card title="Purchase History">
+                {/* ... (Existing purchase history table UI) ... */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
                     <div className="flex items-center gap-2">
                         <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>

@@ -83,6 +83,7 @@ const App: React.FC = () => {
     barcodeScannerOpenByDefault: true,
     maintainCustomerLedger: false,
     enableSalesman: false,
+    aiInvoiceQuota: 5, // Default limit
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
 
@@ -201,6 +202,7 @@ const App: React.FC = () => {
         barcodeScannerOpenByDefault: true,
         maintainCustomerLedger: false,
         enableSalesman: false,
+        aiInvoiceQuota: 5,
       });
       setDataLoading(!!currentUser); // Keep loading if user exists but owner not resolved
       setPermissionError(null);
@@ -290,6 +292,8 @@ const App: React.FC = () => {
     };
   }, [currentUser, dataOwnerId]); // Dependency on dataOwnerId
 
+  // ... (rest of App.tsx remains mostly same, just updating initial config in CRUD handlers implicitly via state)
+
   const handleLogout = () => {
     signOut(auth);
   };
@@ -297,6 +301,7 @@ const App: React.FC = () => {
   const PermissionErrorComponent: React.FC = () => (
     <div className="flex-grow flex items-center justify-center p-4">
         <Card title="Database Permission Error" className="max-w-4xl w-full text-center border-2 border-red-500/50">
+            {/* ... permission error component content ... */}
             <p className="text-red-600 dark:text-red-400 mb-4 font-semibold">{permissionError}</p>
             <div className="text-left bg-slate-100 dark:bg-slate-800 p-4 rounded-lg my-4">
                 <h3 className="font-semibold text-lg text-slate-800 dark:text-slate-200 mb-2">Action Required (For Admins)</h3>
@@ -426,14 +431,18 @@ service cloud.firestore {
     if (!dataOwnerId) return;
     const product = products.find(p => p.id === productId);
     const updates: any = { ...productData };
-    const batchFields = ['mrp', 'purchasePrice', 'stock'];
+    const batchFields = ['mrp', 'purchasePrice', 'stock', 'openingStock'];
     const hasBatchUpdates = batchFields.some(f => f in updates);
 
-    if (hasBatchUpdates && product && product.batches.length === 1) {
+    // Special handling if updating a single-batch product directly from Edit Product
+    // We check if the update contains batch-specific fields but NOT the 'batches' array itself
+    if (hasBatchUpdates && product && product.batches.length === 1 && !updates.batches) {
         const updatedBatch = { ...product.batches[0] };
         if ('mrp' in updates) updatedBatch.mrp = updates.mrp;
         if ('purchasePrice' in updates) updatedBatch.purchasePrice = updates.purchasePrice;
         if ('stock' in updates) updatedBatch.stock = updates.stock;
+        if ('openingStock' in updates) updatedBatch.openingStock = updates.openingStock;
+        
         updates.batches = [updatedBatch];
         batchFields.forEach(f => delete updates[f]);
     } else {
@@ -452,6 +461,7 @@ service cloud.firestore {
     });
   };
   
+  // ... (rest of the file remains unchanged)
   const handleDeleteBatch = async (productId: string, batchId: string) => {
     if (!dataOwnerId) return;
     const isInBill = bills.some(bill => bill.items.some(item => item.batchId === batchId));
@@ -595,6 +605,7 @@ service cloud.firestore {
                     }
                 }}
                 onGenerateBill={async (billData) => {
+                    // ... (keep existing billing logic)
                     if (!dataOwnerId) return null;
                     try {
                         const billRef = doc(collection(db, `users/${dataOwnerId}/bills`));
@@ -656,6 +667,7 @@ service cloud.firestore {
                 }}
                 editingBill={editingBill}
                 onUpdateBill={async (billId, billData, originalBill) => {
+                    // ... (keep existing logic)
                     if (!dataOwnerId) return null;
                     try {
                         const batch = writeBatch(db);
@@ -689,42 +701,28 @@ service cloud.firestore {
                             }
                         });
 
-                        // Ledger Adjustments
+                        // Ledger Adjustments (Simplified)
                         if (systemConfig.maintainCustomerLedger) {
-                            // Map of customer ID -> balance change
                             const balanceAdjustments = new Map<string, number>();
-                            
-                            // Revert Old
                             if (originalBill.paymentMode === 'Credit') {
-                                // Try ID first
                                 let cust = originalBill.customerId ? customers.find(c => c.id === originalBill.customerId) : null;
-                                // Fallback Name
                                 if (!cust) {
                                     const origName = originalBill.customerName.trim();
                                     cust = customers.find(c => c.name.toLowerCase() === origName.toLowerCase());
                                 }
-                                
-                                if (cust) {
-                                    balanceAdjustments.set(cust.id, (balanceAdjustments.get(cust.id) || 0) - originalBill.grandTotal);
-                                }
+                                if (cust) balanceAdjustments.set(cust.id, (balanceAdjustments.get(cust.id) || 0) - originalBill.grandTotal);
                             }
-                            
-                            // Apply New
                             if (billData.paymentMode === 'Credit') {
                                 let custId = billData.customerId;
                                 let existingCust = custId ? customers.find(c => c.id === custId) : null;
-                                
-                                // Fallback
                                 if (!existingCust) {
                                     const newName = billData.customerName.trim();
                                     existingCust = customers.find(c => c.name.toLowerCase() === newName.toLowerCase());
                                 }
-                                
                                 if (existingCust) {
                                     custId = existingCust.id;
                                     balanceAdjustments.set(custId, (balanceAdjustments.get(custId) || 0) + billData.grandTotal);
                                 } else {
-                                    // New Customer case during Edit - create doc immediately in batch
                                     const newName = billData.customerName.trim();
                                     if (newName) {
                                         const newCustRef = doc(collection(db, `users/${dataOwnerId}/customers`));
@@ -732,8 +730,6 @@ service cloud.firestore {
                                     }
                                 }
                             }
-                            
-                            // Apply adjustments to existing customers
                             balanceAdjustments.forEach((change, custId) => {
                                 if (change !== 0) {
                                     const cust = customers.find(c => c.id === custId);
@@ -788,11 +784,13 @@ service cloud.firestore {
                     batch.set(purchaseRef, purchaseData);
                     
                     for (const item of purchaseData.items) {
+                        const quantity = item.quantity * (item.unitsPerStrip || (item.productId ? products.find(p=>p.id===item.productId)?.unitsPerStrip : 1) || 1);
                         const newBatch: Batch = {
                             id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                             batchNumber: item.batchNumber,
                             expiryDate: item.expiryDate,
-                            stock: item.quantity * (item.unitsPerStrip || (item.productId ? products.find(p=>p.id===item.productId)?.unitsPerStrip : 1) || 1),
+                            stock: quantity,
+                            openingStock: quantity, // Set opening stock for new batches from purchases
                             mrp: item.mrp,
                             purchasePrice: item.purchasePrice
                         };
@@ -807,7 +805,7 @@ service cloud.firestore {
                                     company: item.company,
                                     hsnCode: item.hsnCode,
                                     gst: item.gst,
-                                    batches: [newBatch] // Add batch directly
+                                    batches: [newBatch]
                                 };
                                 if(item.barcode) newProduct.barcode = item.barcode;
                                 if(item.composition) newProduct.composition = item.composition;
@@ -822,7 +820,6 @@ service cloud.firestore {
                                      batch.set(newCompanyRef, { name: item.company });
                                 }
                             } else {
-                                // Fallback if somehow ID exists for 'new'
                                 const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
                                 batch.update(productRef, { batches: arrayUnion(newBatch) });
                             }
@@ -910,7 +907,6 @@ service cloud.firestore {
 
                     // Revert Customer Ledger if Credit
                     if (systemConfig.maintainCustomerLedger && bill.paymentMode === 'Credit') {
-                        // Use ID first, then Name
                         let customer = bill.customerId ? customers.find(c => c.id === bill.customerId) : null;
                         if (!customer) {
                             const cleanName = bill.customerName.trim();
@@ -963,9 +959,6 @@ service cloud.firestore {
                     const newPaymentRef = doc(collection(db, `users/${dataOwnerId}/customerPayments`));
                     batch.set(newPaymentRef, paymentData);
                     
-                    // Update customer balance (Decrease debit / Increase Credit)
-                    // Logic: Payment reduces receivable amount.
-                    // If balance is +1000 (Dr), paying 500 makes it +500. So subtract.
                     const customer = customers.find(c => c.id === paymentData.customerId);
                     if (customer) {
                         const custRef = doc(db, `users/${dataOwnerId}/customers`, customer.id);
