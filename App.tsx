@@ -816,18 +816,23 @@ service cloud.firestore {
                 }}
                 onAddPurchase={async (purchaseData) => {
                     if (!dataOwnerId) return;
+                    
+                    // Sanitize purchaseData: prevent 'undefined' values which crash Firestore set()
+                    // JSON.parse(JSON.stringify(obj)) removes undefined fields
+                    const cleanPurchaseData = JSON.parse(JSON.stringify(purchaseData));
+
                     const batch = writeBatch(db);
                     const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
-                    batch.set(purchaseRef, purchaseData);
                     
-                    for (const item of purchaseData.items) {
+                    // Iterate over items to create/update products and update item references in the purchase payload
+                    for (const item of cleanPurchaseData.items) {
                         const newBatch: Batch = {
                             id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            batchNumber: item.batchNumber,
-                            expiryDate: item.expiryDate,
+                            batchNumber: item.batchNumber || '', 
+                            expiryDate: item.expiryDate || '',   
                             stock: item.quantity * (item.unitsPerStrip || (item.productId ? products.find(p=>p.id===item.productId)?.unitsPerStrip : 1) || 1),
-                            mrp: item.mrp,
-                            purchasePrice: item.purchasePrice
+                            mrp: item.mrp || 0,
+                            purchasePrice: item.purchasePrice || 0
                         };
 
                         if (item.isNewProduct) {
@@ -835,12 +840,18 @@ service cloud.firestore {
                             if (!productId) {
                                 const newProductRef = doc(collection(db, `users/${dataOwnerId}/products`));
                                 productId = newProductRef.id;
+                                
+                                // UPDATE ITEM WITH NEW PRODUCT ID FOR PURCHASE RECORD LINKING
+                                item.productId = productId;
+                                item.isNewProduct = false;
+                                item.batchId = newBatch.id; // Store generated Batch ID in purchase item
+
                                 const newProduct: any = {
-                                    name: item.productName,
-                                    company: item.company,
-                                    hsnCode: item.hsnCode,
-                                    gst: item.gst,
-                                    batches: [newBatch] // Add batch directly
+                                    name: item.productName || 'Unknown Product',
+                                    company: item.company || 'Unknown Company',
+                                    hsnCode: item.hsnCode || '', 
+                                    gst: item.gst || 0,
+                                    batches: [newBatch] 
                                 };
                                 if(item.barcode) newProduct.barcode = item.barcode;
                                 if(item.composition) newProduct.composition = item.composition;
@@ -850,7 +861,7 @@ service cloud.firestore {
                                 batch.set(newProductRef, newProduct);
                                 
                                 const companyExists = companies.some(c => c.name.toLowerCase() === item.company.toLowerCase());
-                                if (!companyExists) {
+                                if (!companyExists && item.company) {
                                      const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
                                      batch.set(newCompanyRef, { name: item.company });
                                 }
@@ -858,26 +869,106 @@ service cloud.firestore {
                                 // Fallback if somehow ID exists for 'new'
                                 const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
                                 batch.update(productRef, { batches: arrayUnion(newBatch) });
+                                item.batchId = newBatch.id; // Store generated Batch ID
                             }
                         } else {
                              if (item.productId) {
                                 const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
                                 batch.update(productRef, { batches: arrayUnion(newBatch) });
+                                item.batchId = newBatch.id; // Store generated Batch ID in purchase item
                              }
                         }
                     }
+                    
+                    // SAVE PURCHASE AFTER ITEM UPDATE
+                    batch.set(purchaseRef, cleanPurchaseData);
+
                     await batch.commit();
                 }}
                 onUpdatePurchase={async (id, data) => {
                     if (!dataOwnerId) return;
+                    const cleanData = JSON.parse(JSON.stringify(data));
                     const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, id);
-                    await updateDoc(purchaseRef, data);
+                    await updateDoc(purchaseRef, cleanData);
                 }}
                 onDeletePurchase={async (purchase) => {
                     if (!dataOwnerId) return;
-                    if (!window.confirm("Delete this purchase record? Stock will NOT be automatically reverted.")) return;
+                    if (!window.confirm("Delete this purchase record? Stock will be reverted.")) return;
+                    
+                    const batch = writeBatch(db);
                     const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, purchase.id);
-                    await deleteDoc(purchaseRef);
+                    batch.delete(purchaseRef);
+
+                    // Group items by product to minimize reads
+                    const productMap = new Map<string, typeof purchase.items>(); // productId -> items
+                    
+                    for (const item of purchase.items) {
+                        if (item.productId) {
+                            const list = productMap.get(item.productId) || [];
+                            list.push(item);
+                            productMap.set(item.productId, list);
+                        }
+                    }
+
+                    // Perform updates
+                    for (const [productId, itemsToRemove] of productMap.entries()) {
+                        const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
+                        const productSnap = await getDoc(productRef);
+                        if (productSnap.exists()) {
+                            const productData = productSnap.data() as Product;
+                            let currentBatches = [...productData.batches];
+                            let changed = false;
+
+                            for (const item of itemsToRemove) {
+                                // 1. Try Strict Match (New System)
+                                if (item.batchId) {
+                                    const idx = currentBatches.findIndex(b => b.id === item.batchId);
+                                    if (idx !== -1) {
+                                        currentBatches.splice(idx, 1);
+                                        changed = true;
+                                        continue;
+                                    }
+                                }
+
+                                // 2. Legacy Match (Last-In Preference)
+                                // Search backwards to find the most recently added batch matching details
+                                // This helps avoid deleting 'Opening Stock' which would be at the beginning of the array
+                                let bestMatchIndex = -1;
+                                for (let i = currentBatches.length - 1; i >= 0; i--) {
+                                    const b = currentBatches[i];
+                                    if (b.batchNumber === item.batchNumber && b.expiryDate === item.expiryDate) {
+                                        bestMatchIndex = i;
+                                        break; // Found the last one, stop
+                                    }
+                                }
+
+                                if (bestMatchIndex !== -1) {
+                                    const targetBatch = currentBatches[bestMatchIndex];
+                                    const qtyToRemove = item.quantity * (item.unitsPerStrip || productData.unitsPerStrip || 1);
+                                    
+                                    // Subtract stock
+                                    targetBatch.stock -= qtyToRemove;
+                                    
+                                    // If stock is depleted (or negative due to sales inconsistencies), remove the batch
+                                    // This assumes that if we are deleting the source of the stock, the batch shouldn't exist 
+                                    // unless it had MORE stock than what we bought (e.g. merged stock).
+                                    if (targetBatch.stock <= 0) {
+                                        currentBatches.splice(bestMatchIndex, 1);
+                                    } else {
+                                        // Update the batch with reduced stock
+                                        currentBatches[bestMatchIndex] = targetBatch;
+                                    }
+                                    changed = true;
+                                }
+                            }
+                            
+                            if (changed) {
+                                batch.update(productRef, { batches: currentBatches });
+                            }
+                        }
+                    }
+
+                    await batch.commit();
                 }}
                 onAddSupplier={async (supplierData) => {
                     if (!dataOwnerId) return null;

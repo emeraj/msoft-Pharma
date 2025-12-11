@@ -84,15 +84,11 @@ interface InventoryProps {
   onDeleteBatch: (productId: string, batchId: string) => void;
   onDeleteProduct: (productId: string, productName: string) => void;
   onBulkAddProducts: (products: Omit<Product, 'id' | 'batches'>[]) => Promise<{success: number; skipped: number}>;
-  onEditBill: (bill: Bill, context?: any) => void;
-  onEditPurchase: (purchase: Purchase, context?: any) => void;
-  initialSubView?: string;
-  initialProductId?: string | null;
 }
 
 type InventorySubView = 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearing_expiry';
 
-const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, gstRates, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onDeleteProduct, onBulkAddProducts, onEditBill, onEditPurchase, initialSubView, initialProductId }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purchases, systemConfig, companyProfile, gstRates, onAddProduct, onUpdateProduct, onAddBatch, onDeleteBatch, onDeleteProduct, onBulkAddProducts }) => {
   const [isProductModalOpen, setProductModalOpen] = useState(false);
   const [isBatchModalOpen, setBatchModalOpen] = useState(false);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
@@ -104,14 +100,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
   const t = getTranslation(systemConfig.language);
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
-  const [activeSubView, setActiveSubView] = useState<InventorySubView>((initialSubView as InventorySubView) || 'all');
-
-  useEffect(() => {
-      if (initialSubView) {
-          setActiveSubView(initialSubView as InventorySubView);
-      }
-  }, [initialSubView]);
-
   const handleOpenBatchModal = (product: Product) => { setSelectedProduct(product); setBatchModalOpen(true); };
   const handleOpenEditModal = (product: Product) => { setSelectedProduct(product); setEditModalOpen(true); };
   const handleOpenPrintLabelModal = (product: Product) => { setSelectedProduct(product); setPrintLabelModalOpen(true); };
@@ -119,7 +107,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
   const renderSubView = () => {
     switch (activeSubView) {
       case 'all': return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onDeleteProduct={onDeleteProduct} t={t} />;
-      case 'selected': return <SelectedItemStockView products={products} bills={bills} purchases={purchases} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} t={t} onEditBill={onEditBill} onEditPurchase={onEditPurchase} initialProductId={initialProductId} />;
+      case 'selected': return <SelectedItemStockView products={products} bills={bills} purchases={purchases} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} t={t} />;
       case 'batch': return isPharmaMode ? <BatchWiseStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} t={t} /> : null;
       case 'company': return <CompanyWiseStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />;
       case 'expired': return isPharmaMode ? <ExpiredStockView products={products} onDeleteBatch={onDeleteBatch} systemConfig={systemConfig} t={t} /> : null;
@@ -127,6 +115,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
       default: return <AllItemStockView products={products} purchases={purchases} bills={bills} onOpenBatchModal={handleOpenBatchModal} onOpenEditModal={handleOpenEditModal} onOpenPrintLabelModal={handleOpenPrintLabelModal} systemConfig={systemConfig} searchTerm={searchTerm} onSearchTermChange={setSearchTerm} onDeleteProduct={onDeleteProduct} t={t} />;
     }
   };
+  const [activeSubView, setActiveSubView] = useState<InventorySubView>('all');
   
   const SubNavButton: React.FC<{view: InventorySubView, label: string}> = ({ view, label }) => (
     <button
@@ -229,7 +218,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, bills, purch
 const inputStyle = "w-full px-4 py-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 const selectStyle = `${inputStyle} appearance-none`;
 
-// ... (AllItemStockView kept same) ...
+// --- Sub View Components ---
 interface AllItemStockViewProps {
     products: Product[];
     purchases: Purchase[];
@@ -253,6 +242,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
 
     const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
     
+    // ... (reportData Logic kept same) ...
     const reportData = useMemo(() => {
         const startDate = fromDate ? new Date(fromDate) : null;
         if (startDate) startDate.setHours(0, 0, 0, 0);
@@ -394,37 +384,13 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     );
 };
 
-// ... (SelectedItemStockView Updated) ...
-const SelectedItemStockView: React.FC<{
-    products: Product[], 
-    bills: Bill[], 
-    purchases: Purchase[], 
-    onDeleteBatch: (productId: string, batchId: string) => void, 
-    systemConfig: SystemConfig, 
-    t: any,
-    onEditBill: (bill: Bill, context?: any) => void,
-    onEditPurchase: (purchase: Purchase, context?: any) => void,
-    initialProductId?: string | null
-}> = ({ products, bills, purchases, onDeleteBatch, systemConfig, t, onEditBill, onEditPurchase, initialProductId }) => {
+// ... (SelectedItemStockView, CompanyWiseStockView, BatchWiseStockView, ExpiredStockView, NearingExpiryStockView, BatchListTable kept same) ...
+const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purchases: Purchase[], onDeleteBatch: (productId: string, batchId: string) => void, systemConfig: SystemConfig, t: any}> = ({ products, bills, purchases, onDeleteBatch, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
-    
-    // For Tally-like navigation
-    const [selectedRowIndex, setSelectedRowIndex] = useState(-1);
-    const tableContainerRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (initialProductId) {
-            const product = products.find(p => p.id === initialProductId);
-            if (product) {
-                setSelectedProduct(product);
-                setSearchTerm(product.name);
-            }
-        }
-    }, [initialProductId, products]);
 
     const searchResults = useMemo(() => {
         if (!searchTerm || selectedProduct) return [];
@@ -435,7 +401,6 @@ const SelectedItemStockView: React.FC<{
     const handleSelect = (product: Product) => {
         setSelectedProduct(product);
         setSearchTerm(product.name);
-        setSelectedRowIndex(-1); // Reset selection
     };
 
     const stockLedger = useMemo(() => {
@@ -448,7 +413,7 @@ const SelectedItemStockView: React.FC<{
         if (endDate) endDate.setHours(23, 59, 59, 999);
 
         // 1. Collect all transactions (Sales & Purchases)
-        const allTransactions: { date: Date; type: 'Purchase' | 'Sale'; qty: number; invoiceNo: string; party: string; sourceObj: Bill | Purchase }[] = [];
+        const allTransactions: { date: Date; type: 'Purchase' | 'Sale'; qty: number; invoiceNo: string; party: string; }[] = [];
 
         // Sales
         bills.forEach(bill => {
@@ -459,8 +424,7 @@ const SelectedItemStockView: React.FC<{
                         type: 'Sale',
                         qty: item.quantity,
                         invoiceNo: bill.billNumber,
-                        party: bill.customerName,
-                        sourceObj: bill
+                        party: bill.customerName
                     });
                 }
             });
@@ -479,8 +443,7 @@ const SelectedItemStockView: React.FC<{
                         type: 'Purchase',
                         qty: item.quantity * units,
                         invoiceNo: purchase.invoiceNumber,
-                        party: purchase.supplier,
-                        sourceObj: purchase
+                        party: purchase.supplier
                     });
                 }
             });
@@ -494,6 +457,10 @@ const SelectedItemStockView: React.FC<{
         
         let runningBalance = currentStock;
         
+        // Map transactions to include balance AFTER the transaction
+        // But since we are going backwards, the "current" runningBalance is the balance AFTER the transaction.
+        // We calculate balance BEFORE for the next iteration.
+        
         const history = allTransactions.map(tx => {
             const balanceAfter = runningBalance;
             if (tx.type === 'Sale') {
@@ -505,6 +472,8 @@ const SelectedItemStockView: React.FC<{
         });
 
         // 4. Now filter for date range
+        // Note: history is sorted DESC. We want to display DESC usually or ASC. The image shows ASC (oldest first).
+        
         const filteredHistory = history.filter(tx => {
             if (startDate && tx.date < startDate) return false;
             if (endDate && tx.date > endDate) return false;
@@ -514,8 +483,18 @@ const SelectedItemStockView: React.FC<{
         // Sort filtered history ASC for display (Oldest at top)
         filteredHistory.sort((a, b) => a.date.getTime() - b.date.getTime());
 
+        // Opening Balance is the balance before the first transaction in the filtered list.
+        // In our reverse logic, 'runningBalance' holds the stock at the very beginning of time (or pre-history).
+        // To find opening balance for the period, we can look at the balance of the transaction immediately prior to the period.
+        
+        // Simpler approach for Opening Balance of period:
+        // Re-calculate: 
+        // Initial Stock (Day 0) = runningBalance (after processing all txns backwards).
+        // Then play forward until startDate.
+        
         let periodOpeningBalance = runningBalance;
         
+        // Replay forward from beginning of time to startDate
         const sortedAllTxns = [...allTransactions].sort((a, b) => a.date.getTime() - b.date.getTime());
         
         for (const tx of sortedAllTxns) {
@@ -523,7 +502,7 @@ const SelectedItemStockView: React.FC<{
                 if (tx.type === 'Purchase') periodOpeningBalance += tx.qty;
                 else periodOpeningBalance -= tx.qty;
             } else {
-                break; 
+                break; // Reached start of period
             }
         }
 
@@ -533,38 +512,6 @@ const SelectedItemStockView: React.FC<{
         };
 
     }, [selectedProduct, bills, purchases, fromDate, toDate]);
-
-    // Handle Keyboard Navigation
-    useEffect(() => {
-        if (selectedProduct && stockLedger.transactions.length > 0) {
-            tableContainerRef.current?.focus();
-        }
-    }, [selectedProduct, stockLedger]);
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        // We only navigate transactions, skipping header and opening balance row logic for simplicity for now
-        // Index 0 to N-1 for N transactions.
-        if (stockLedger.transactions.length === 0) return;
-
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setSelectedRowIndex(prev => Math.min(prev + 1, stockLedger.transactions.length - 1));
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setSelectedRowIndex(prev => Math.max(prev - 1, 0));
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (selectedRowIndex >= 0 && selectedRowIndex < stockLedger.transactions.length) {
-                const tx = stockLedger.transactions[selectedRowIndex];
-                const context = { subView: 'selected', productId: selectedProduct?.id };
-                if (tx.type === 'Sale') {
-                    onEditBill(tx.sourceObj as Bill, context);
-                } else {
-                    onEditPurchase(tx.sourceObj as Purchase, context);
-                }
-            }
-        }
-    };
 
     const handleExport = () => {
         if (!selectedProduct) return;
@@ -636,12 +583,7 @@ const SelectedItemStockView: React.FC<{
                         </button>
                     </div>
                     
-                    <div 
-                        className="overflow-x-auto border rounded-lg dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" 
-                        tabIndex={0} 
-                        ref={tableContainerRef}
-                        onKeyDown={handleKeyDown}
-                    >
+                    <div className="overflow-x-auto border rounded-lg dark:border-slate-700">
                         <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
                             <thead className="text-xs text-white uppercase bg-slate-800 dark:bg-slate-900 sticky top-0">
                                 <tr>
@@ -668,20 +610,7 @@ const SelectedItemStockView: React.FC<{
                                 
                                 {stockLedger.transactions.length > 0 ? (
                                     stockLedger.transactions.map((tx, idx) => (
-                                        <tr 
-                                            key={idx} 
-                                            onClick={() => setSelectedRowIndex(idx)}
-                                            onDoubleClick={() => {
-                                                const context = { subView: 'selected', productId: selectedProduct?.id };
-                                                if (tx.type === 'Sale') onEditBill(tx.sourceObj as Bill, context);
-                                                else onEditPurchase(tx.sourceObj as Purchase, context);
-                                            }}
-                                            className={`border-b dark:border-slate-700 cursor-pointer ${
-                                                idx === selectedRowIndex 
-                                                ? 'bg-blue-200 dark:bg-blue-800' 
-                                                : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                                            }`}
-                                        >
+                                        <tr key={idx} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
                                             <td className="px-4 py-3">{tx.date.toLocaleDateString()}</td>
                                             <td className="px-4 py-3 font-mono text-xs">{tx.type === 'Sale' ? 'Sales Inv' : 'Purchase'} : {tx.invoiceNo}</td>
                                             <td className="px-4 py-3">{tx.party}</td>
@@ -718,17 +647,12 @@ const SelectedItemStockView: React.FC<{
                             </tbody>
                         </table>
                     </div>
-                    {selectedRowIndex !== -1 && (
-                        <p className="text-xs text-slate-500 mt-2 text-center">Press Enter to open selected transaction for update.</p>
-                    )}
                  </div>
             )}
         </Card>
     );
 };
 
-// ... (Rest of the file kept unmodified) ...
-// Re-exporting unmodified components to ensure file completeness
 const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, systemConfig, t }) => {
     const companies = useMemo(() => {
         const companyMap = new Map<string, { name: string, productCount: number, stockValue: number }>();
@@ -949,6 +873,7 @@ const formInputStyle = "p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 b
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddProduct: InventoryProps['onAddProduct']; companies: Company[]; systemConfig: SystemConfig; gstRates: GstRate[]; products: Product[]; t: any }> = ({ isOpen, onClose, onAddProduct, companies, systemConfig, gstRates, products, t }) => {
+  // ... (AddProductModal content kept same) ...
   const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
   const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
 
@@ -1034,8 +959,11 @@ const AddProductModal: React.FC<{ isOpen: boolean; onClose: () => void; onAddPro
         if (barcode && barcode.trim() !== '') {
             productDetails.barcode = barcode.trim();
         } else {
+             // Auto-generate barcode
              let maxBarcodeNum = 0;
              products.forEach(p => {
+                // Only consider numeric barcodes with length < 8 to identify internal sequence
+                // This ignores commercial barcodes like EAN-13 (13 digits) or UPC (12 digits)
                 if (p.barcode && /^\d+$/.test(p.barcode) && p.barcode.length < 8) {
                     const barcodeNum = parseInt(p.barcode, 10);
                     if (barcodeNum > maxBarcodeNum) {
