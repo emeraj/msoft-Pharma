@@ -150,13 +150,13 @@ const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void; usageCount:
                     Increase Your AI Invoice Quota
                 </h3>
                 <p className="text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
-                    Automate your purchase entry with AI. Pay to get 100 additional AI invoice scans.
+                    Automate your purchase entry with AI. Pay to get Unlimited additional AI invoice scans.
                 </p>
             </div>
             
             <div className="border-2 border-indigo-500 rounded-2xl p-6 bg-white shadow-xl transform transition-transform hover:scale-105">
                 <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto mb-4" />
-                <p className="font-bold text-2xl text-indigo-700">₹5,000 <span className="text-sm font-normal text-slate-500">/ 100 Scans</span></p>
+                <p className="font-bold text-2xl text-indigo-700">₹5,000 <span className="text-sm font-normal text-slate-500">/ Unlimited</span></p>
             </div>
 
             <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1 bg-slate-100 dark:bg-slate-700/50 p-4 rounded-lg w-full max-w-sm">
