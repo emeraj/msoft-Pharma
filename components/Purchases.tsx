@@ -131,42 +131,40 @@ const AddSupplierModal: React.FC<{
 };
 
 // --- Premium Upgrade Modal ---
-const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void; usageCount: number; quota: number; }> = ({ isOpen, onClose, usageCount, quota }) => {
-  const upiId = "emeraj@oksbi"; // Syed Meraj
+const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+  const upiId = "9890072651@upi"; // M. Soft India
   const amount = "5000";
-  const name = "Syed Meraj";
+  const name = "M. Soft India";
   const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Top-up AI Quota">
+    <Modal isOpen={isOpen} onClose={onClose} title="Upgrade to Premium">
         <div className="flex flex-col items-center text-center space-y-6 p-4">
             <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full text-sm font-bold shadow-sm">
-                Quota Reached ({usageCount}/{quota})
+                Free Limit Reached (5/5)
             </div>
             
             <div>
                 <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">
-                    Increase Your AI Invoice Quota
+                    Unlock Unlimited AI Invoices
                 </h3>
                 <p className="text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
-                    Automate your purchase entry with AI. Pay to get Unlimited additional AI invoice scans.
+                    Automate your purchase entry with AI. Upgrade now to enjoy unlimited auto-fills.
                 </p>
             </div>
             
             <div className="border-2 border-indigo-500 rounded-2xl p-6 bg-white shadow-xl transform transition-transform hover:scale-105">
                 <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto mb-4" />
-                <p className="font-bold text-2xl text-indigo-700">₹5,000 <span className="text-sm font-normal text-slate-500">/ Unlimited</span></p>
+                <p className="font-bold text-2xl text-indigo-700">₹5,000 <span className="text-sm font-normal text-slate-500">/ Year</span></p>
             </div>
 
-            <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1 bg-slate-100 dark:bg-slate-700/50 p-4 rounded-lg w-full max-w-sm">
-                <div>
-                    <p className="font-bold text-red-500 dark:text-red-400">Important:</p>
-                    <p>After payment, please send the screenshot to Admin to update your quota.</p>
-                    <p className="font-bold text-lg text-slate-800 dark:text-slate-200 mt-1">Call/WhatsApp: 9890072651</p>
-                </div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
+                <p className="font-medium text-slate-700 dark:text-slate-300">Scan to pay via UPI</p>
+                <p>After payment, please contact support to activate your license.</p>
+                <p className="font-bold text-lg text-slate-800 dark:text-slate-200 mt-2">Call/WhatsApp: 9890072651</p>
             </div>
-
+            
             <button onClick={onClose} className="bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-8 py-3 rounded-lg font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors w-full sm:w-auto">
                 Close
             </button>
@@ -1025,9 +1023,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         // --- Premium Feature Check ---
         if (!systemConfig.isPremium) {
             const usageCount = systemConfig.aiInvoiceUsageCount || 0;
-            const limit = systemConfig.aiInvoiceQuota || 5; // Default free limit is 5
-            
-            if (usageCount >= limit) {
+            if (usageCount >= 5) {
                 setShowPremiumModal(true);
                 // Reset file input so user can try again later without reload
                 if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1622,9 +1618,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
 
             <PremiumModal 
                 isOpen={showPremiumModal} 
-                onClose={() => setShowPremiumModal(false)}
-                usageCount={systemConfig.aiInvoiceUsageCount || 0}
-                quota={systemConfig.aiInvoiceQuota || 5}
+                onClose={() => setShowPremiumModal(false)} 
             />
 
             <Card title="Purchase History">

@@ -200,7 +200,6 @@ export interface SystemConfig {
   enableSalesman?: boolean;
   chequeLayout?: ChequeLayout;
   aiInvoiceUsageCount?: number;
-  aiInvoiceQuota?: number; // Configurable quota limit
   isPremium?: boolean;
 }
 
