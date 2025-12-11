@@ -166,11 +166,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
              finalValue = value === 'true';
         }
         
-        if (name === 'aiInvoiceQuota') {
-            finalValue = parseInt(value, 10);
-            if (isNaN(finalValue) || finalValue < 0) finalValue = 0;
-        }
-
         const newConfig = { ...prev, [name]: finalValue };
         
         if (name === 'softwareMode') {
@@ -383,22 +378,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                              </div>
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-1">Only applicable in Retail mode.</p>
-                    </div>
-                    
-                    <div className="border-t dark:border-slate-700 pt-4">
-                        <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">AI Invoice Settings</h4>
-                        <div className="p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg border dark:border-slate-600">
-                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">AI Invoice Quota (Limit)</label>
-                             <input
-                                type="number"
-                                name="aiInvoiceQuota"
-                                value={config.aiInvoiceQuota || 0}
-                                onChange={handleConfigChange}
-                                className={formInputStyle}
-                                min="0"
-                             />
-                             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Set the maximum number of AI invoice scans allowed.</p>
-                        </div>
                     </div>
                     
                     <div className="border-t dark:border-slate-700 pt-4">
