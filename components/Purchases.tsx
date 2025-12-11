@@ -17,6 +17,7 @@ interface PurchasesProps {
     onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
     onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
+    onUpdateConfig: (config: SystemConfig) => void;
 }
 
 // --- Utility function to export data to CSV ---
@@ -127,6 +128,75 @@ const AddSupplierModal: React.FC<{
             </form>
         </Modal>
     );
+};
+
+// --- Premium Upgrade Modal ---
+const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void; onActivate: (code: string) => boolean }> = ({ isOpen, onClose, onActivate }) => {
+  const [activationCode, setActivationCode] = useState('');
+  const upiId = "9890072651@upi"; // M. Soft India
+  const amount = "5000";
+  const name = "M. Soft India";
+  const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
+
+  const handleActivate = () => {
+      const success = onActivate(activationCode);
+      if (success) {
+          alert("Premium Activated Successfully!");
+          onClose();
+      } else {
+          alert("Invalid Activation Code");
+      }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Upgrade to Premium">
+        <div className="flex flex-col items-center text-center space-y-6 p-4">
+            <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full text-sm font-bold shadow-sm">
+                Free Limit Reached (5/5)
+            </div>
+            
+            <div>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-2">
+                    Unlock Unlimited AI Invoices
+                </h3>
+                <p className="text-slate-600 dark:text-slate-400 max-w-sm mx-auto">
+                    Automate your purchase entry with AI. Upgrade now to enjoy unlimited auto-fills.
+                </p>
+            </div>
+            
+            <div className="border-2 border-indigo-500 rounded-2xl p-6 bg-white shadow-xl transform transition-transform hover:scale-105">
+                <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto mb-4" />
+                <p className="font-bold text-2xl text-indigo-700">₹5,000 <span className="text-sm font-normal text-slate-500">/ Year</span></p>
+            </div>
+
+            <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
+                <p className="font-medium text-slate-700 dark:text-slate-300">Scan to pay via UPI</p>
+                <p>After payment, contact support to get your activation code.</p>
+                <p className="font-bold text-lg text-slate-800 dark:text-slate-200 mt-2">Call/WhatsApp: 9890072651</p>
+            </div>
+            
+            <div className="w-full pt-4 border-t dark:border-slate-700">
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={activationCode}
+                        onChange={(e) => setActivationCode(e.target.value)}
+                        placeholder="Enter Activation Code"
+                        className="flex-grow p-2 border border-slate-300 rounded-md"
+                    />
+                    <button onClick={handleActivate} className="bg-green-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-green-700">
+                        Activate
+                    </button>
+                </div>
+            </div>
+
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-sm underline">
+                Close
+            </button>
+        </div>
+    </Modal>
+  );
 };
 
 // --- OCR Preview Modal ---
@@ -764,7 +834,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 };
 
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig }) => {
     const initialFormState = {
         supplierName: '',
         invoiceNumber: '',
@@ -792,6 +862,9 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         invoiceDate: string;
         items: PurchaseLineItem[];
     }>({ supplierName: '', invoiceNumber: '', invoiceDate: '', items: [] });
+
+    // Premium Feature State
+    const [showPremiumModal, setShowPremiumModal] = useState(false);
 
     // State for purchase history filtering
     const [fromDate, setFromDate] = useState('');
@@ -973,6 +1046,20 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     // --- Gemini AI Analysis Logic ---
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        // --- Premium Feature Check ---
+        if (!systemConfig.isPremium) {
+            const usageCount = systemConfig.aiInvoiceUsageCount || 0;
+            if (usageCount >= 5) {
+                setShowPremiumModal(true);
+                // Reset file input so user can try again later without reload
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                return;
+            } else {
+                // Increment Usage Count
+                onUpdateConfig({ ...systemConfig, aiInvoiceUsageCount: usageCount + 1 });
+            }
+        }
+
         const file = event.target.files?.[0];
         if (!file) return;
 
@@ -1345,6 +1432,14 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         exportToCsv(filename, exportData);
     };
 
+    const handleActivatePremium = (code: string) => {
+        if (code === "MEDICO100") {
+            onUpdateConfig({ ...systemConfig, isPremium: true });
+            return true;
+        }
+        return false;
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <Card title={
@@ -1553,6 +1648,12 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                 suppliers={suppliers}
                 onImport={handleImportFromOcr}
                 isPharmaMode={isPharmaMode}
+            />
+
+            <PremiumModal 
+                isOpen={showPremiumModal} 
+                onClose={() => setShowPremiumModal(false)}
+                onActivate={handleActivatePremium}
             />
 
             <Card title="Purchase History">

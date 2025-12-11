@@ -199,6 +199,8 @@ export interface SystemConfig {
   maintainCustomerLedger?: boolean;
   enableSalesman?: boolean;
   chequeLayout?: ChequeLayout;
+  aiInvoiceUsageCount?: number;
+  isPremium?: boolean;
 }
 
 // User Management Types

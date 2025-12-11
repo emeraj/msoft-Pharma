@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import type { AppView, Product, Batch, Bill, Purchase, PurchaseLineItem, CompanyProfile, Company, Supplier, Payment, CartItem, SystemConfig, GstRate, UserPermissions, SubUser, Customer, CustomerPayment, Salesman } from './types';
 import Header from './components/Header';
@@ -779,6 +780,7 @@ service cloud.firestore {
                 suppliers={suppliers}
                 systemConfig={systemConfig}
                 gstRates={gstRates}
+                onUpdateConfig={handleSystemConfigChange}
                 onAddPurchase={async (purchaseData) => {
                     if (!dataOwnerId) return;
                     const batch = writeBatch(db);
