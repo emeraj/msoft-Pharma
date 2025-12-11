@@ -85,6 +85,14 @@ const App: React.FC = () => {
     enableSalesman: false,
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+
+  // Navigation State to handle "Return To" logic
+  const [returnView, setReturnView] = useState<AppView>('daybook');
+  const [inventoryViewState, setInventoryViewState] = useState<{
+      subView?: string;
+      productId?: string | null;
+  }>({});
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -111,6 +119,9 @@ const App: React.FC = () => {
         setActiveView(event.state.view);
         if (event.state.view !== 'billing') {
             setEditingBill(null);
+        }
+        if (event.state.view !== 'purchases') {
+            setEditingPurchase(null);
         }
       } 
     };
@@ -750,7 +761,10 @@ service cloud.firestore {
                         return { ...billData, id: billId } as Bill;
                     } catch (e) { console.error(e); return null; }
                 }}
-                onCancelEdit={() => { setEditingBill(null); navigateTo('daybook'); }}
+                onCancelEdit={() => { 
+                    setEditingBill(null); 
+                    navigateTo(returnView); 
+                }}
               />
             )}
             
@@ -769,6 +783,20 @@ service cloud.firestore {
                 onDeleteBatch={handleDeleteBatch}
                 onDeleteProduct={handleDeleteProduct}
                 onBulkAddProducts={handleBulkAddProducts}
+                initialSubView={inventoryViewState.subView}
+                initialProductId={inventoryViewState.productId}
+                onEditBill={(bill, context) => {
+                    setInventoryViewState(context || {});
+                    setReturnView('inventory');
+                    setEditingBill(bill);
+                    setActiveView('billing'); // Use setActiveView directly to bypass history logic if needed, or navigateTo
+                }}
+                onEditPurchase={(purchase, context) => {
+                    setInventoryViewState(context || {});
+                    setReturnView('inventory');
+                    setEditingPurchase(purchase);
+                    setActiveView('purchases');
+                }}
               />
             )}
             
@@ -781,6 +809,11 @@ service cloud.firestore {
                 systemConfig={systemConfig}
                 gstRates={gstRates}
                 onUpdateConfig={handleSystemConfigChange}
+                purchaseToEdit={editingPurchase}
+                onCancelEdit={() => { 
+                    setEditingPurchase(null); 
+                    navigateTo(returnView); 
+                }}
                 onAddPurchase={async (purchaseData) => {
                     if (!dataOwnerId) return;
                     const batch = writeBatch(db);
@@ -928,7 +961,11 @@ service cloud.firestore {
 
                     await batch.commit();
                 }}
-                onEditBill={(bill) => { setEditingBill(bill); navigateTo('billing'); }}
+                onEditBill={(bill) => { 
+                    setEditingBill(bill); 
+                    setReturnView('daybook'); // Default return from Daybook
+                    navigateTo('billing'); 
+                }}
                 onUpdateBillDetails={async (billId, updates) => {
                     if (!dataOwnerId) return;
                     const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
