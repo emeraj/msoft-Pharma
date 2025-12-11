@@ -264,7 +264,6 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
                     const purchaseDate = new Date(purchase.invoiceDate); 
                     if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) { 
                         purchase.items.forEach(item => { 
-                            // Match by ID first, then fallback to Name if ID is missing (legacy support)
                             if (item.productId === product.id || (!item.productId && item.productName.toLowerCase() === product.name.toLowerCase())) { 
                                 const itemUnitsPerStrip = item.unitsPerStrip || unitsPerStrip; 
                                 purchasesInPeriod += item.quantity * itemUnitsPerStrip; 
@@ -436,6 +435,83 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
         onProductSelect(null);
     };
 
+    // Ledger Calculation
+    const ledger = useMemo(() => {
+        if (!selectedProduct) return { openingBalance: 0, transactions: [] };
+
+        const productId = selectedProduct.id;
+        const productName = selectedProduct.name.toLowerCase();
+        const productCompany = selectedProduct.company.toLowerCase();
+
+        // 1. Gather all movements
+        const allMovements: { date: Date; type: 'Purchase' | 'Sale'; particulars: string; inQty: number; outQty: number; timestamp: number }[] = [];
+
+        // Purchases
+        purchases.forEach(p => {
+            p.items.forEach(item => {
+                // Robust matching: ID first, then Name+Company fallback
+                const isMatch = item.productId === productId || (item.productName.toLowerCase() === productName && item.company.toLowerCase() === productCompany);
+                
+                if (isMatch) {
+                    // Standardize quantity to base units
+                    // Purchase quantity is usually in Strips/Boxes.
+                    // If no unitsPerStrip is defined on purchase item, fallback to product definition.
+                    const units = item.unitsPerStrip || selectedProduct.unitsPerStrip || 1;
+                    const qty = item.quantity * units;
+                    
+                    allMovements.push({
+                        date: new Date(p.invoiceDate),
+                        type: 'Purchase',
+                        particulars: `Inv: ${p.invoiceNumber} (${p.supplier})`,
+                        inQty: qty,
+                        outQty: 0,
+                        timestamp: new Date(p.invoiceDate).getTime()
+                    });
+                }
+            });
+        });
+
+        // Sales (Bills)
+        bills.forEach(b => {
+            b.items.forEach(item => {
+                if (item.productId === productId) {
+                    // Bill item quantity is already in base units (strips*units + loose)
+                    allMovements.push({
+                        date: new Date(b.date),
+                        type: 'Sale',
+                        particulars: `Bill: ${b.billNumber} (${b.customerName})`,
+                        inQty: 0,
+                        outQty: item.quantity,
+                        timestamp: new Date(b.date).getTime()
+                    });
+                }
+            });
+        });
+
+        // Sort by Date
+        allMovements.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Filter by Date Range and Calculate Opening Balance
+        const startTimestamp = fromDate ? new Date(fromDate).setHours(0,0,0,0) : 0;
+        const endTimestamp = toDate ? new Date(toDate).setHours(23,59,59,999) : Infinity;
+
+        let openingBalance = 0;
+        const filteredTransactions: typeof allMovements = [];
+
+        for (const m of allMovements) {
+            if (m.timestamp < startTimestamp) {
+                openingBalance += (m.inQty - m.outQty);
+            } else if (m.timestamp <= endTimestamp) {
+                filteredTransactions.push(m);
+            }
+        }
+
+        return { openingBalance, transactions: filteredTransactions };
+
+    }, [selectedProduct, purchases, bills, fromDate, toDate]);
+
+    let runningBalance = ledger.openingBalance;
+
     return (
         <Card title={t.inventory.selectedStock}>
             <div className="relative mb-6">
@@ -474,57 +550,65 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
                         <p className="text-slate-600 dark:text-slate-400">{selectedProduct.company}</p>
                         {isPharmaMode && <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">{selectedProduct.composition}</p>}
                         
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-                            <div className="bg-white dark:bg-slate-800 p-3 rounded shadow-sm">
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Total Stock</p>
-                                <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
-                                    {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}
-                                </p>
-                            </div>
-                            {/* Add more summary stats if needed */}
+                        <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            Current Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}
                         </div>
                     </div>
 
-                    <div>
-                        <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Batch Details</h4>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                                <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
-                                    <tr>
-                                        {isPharmaMode && <th className="px-4 py-2">Batch No</th>}
-                                        {isPharmaMode && <th className="px-4 py-2">Expiry</th>}
-                                        <th className="px-4 py-2 text-right">MRP</th>
-                                        <th className="px-4 py-2 text-right">Purchase Rate</th>
-                                        <th className="px-4 py-2 text-center">Stock</th>
-                                        <th className="px-4 py-2 text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {selectedProduct.batches.map(batch => (
-                                        <tr key={batch.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                                            {isPharmaMode && <td className="px-4 py-2 font-medium">{batch.batchNumber}</td>}
-                                            {isPharmaMode && <td className="px-4 py-2">{batch.expiryDate}</td>}
-                                            <td className="px-4 py-2 text-right">₹{batch.mrp.toFixed(2)}</td>
-                                            <td className="px-4 py-2 text-right">₹{batch.purchasePrice.toFixed(2)}</td>
-                                            <td className="px-4 py-2 text-center font-bold">{formatStock(batch.stock, selectedProduct.unitsPerStrip)}</td>
-                                            <td className="px-4 py-2 text-center">
-                                                <button 
-                                                    onClick={() => {
-                                                        if (window.confirm('Delete this batch?')) onDeleteBatch(selectedProduct.id, batch.id);
-                                                    }}
-                                                    className="text-red-600 hover:text-red-800"
-                                                >
-                                                    <TrashIcon className="h-4 w-4" />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {selectedProduct.batches.length === 0 && (
-                                        <tr><td colSpan={6} className="text-center py-4 text-slate-500">No batches found.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
+                    <div className="flex gap-4 items-center mb-4">
+                        <div className="flex-1">
+                            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
                         </div>
+                        <div className="flex-1">
+                            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                            <thead className="text-xs uppercase bg-white dark:bg-slate-800 border-b-2 dark:border-slate-600 font-bold">
+                                <tr>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Type</th>
+                                    <th className="px-4 py-3">Particulars</th>
+                                    <th className="px-4 py-3 text-center">In</th>
+                                    <th className="px-4 py-3 text-center">Out</th>
+                                    <th className="px-4 py-3 text-right">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white dark:bg-slate-800">
+                                <tr className="border-b dark:border-slate-700 font-semibold bg-slate-50 dark:bg-slate-700/30">
+                                    <td className="px-4 py-3"></td>
+                                    <td className="px-4 py-3"></td>
+                                    <td className="px-4 py-3 text-right">Opening Balance:</td>
+                                    <td className="px-4 py-3 text-center">-</td>
+                                    <td className="px-4 py-3 text-center">-</td>
+                                    <td className="px-4 py-3 text-right">{formatStock(ledger.openingBalance, selectedProduct.unitsPerStrip)}</td>
+                                </tr>
+                                {ledger.transactions.map((txn, index) => {
+                                    runningBalance = runningBalance + txn.inQty - txn.outQty;
+                                    return (
+                                        <tr key={index} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                            <td className="px-4 py-3">{txn.date.toLocaleDateString()}</td>
+                                            <td className="px-4 py-3">
+                                                <span className={`px-2 py-1 rounded text-xs font-semibold ${txn.type === 'Purchase' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                                    {txn.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3">{txn.particulars}</td>
+                                            <td className="px-4 py-3 text-center">{txn.inQty > 0 ? formatStock(txn.inQty, selectedProduct.unitsPerStrip) : '-'}</td>
+                                            <td className="px-4 py-3 text-center">{txn.outQty > 0 ? formatStock(txn.outQty, selectedProduct.unitsPerStrip) : '-'}</td>
+                                            <td className="px-4 py-3 text-right font-medium">{formatStock(runningBalance, selectedProduct.unitsPerStrip)}</td>
+                                        </tr>
+                                    );
+                                })}
+                                {ledger.transactions.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="text-center py-6 text-slate-500">No transactions in selected period.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             )}

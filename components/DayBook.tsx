@@ -71,26 +71,12 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
     return billsForSelectedDate.reduce((total, bill) => total + bill.grandTotal, 0);
   }, [billsForSelectedDate]);
 
-  const paymentBreakdown = useMemo(() => {
-      const breakdown = { cash: 0, credit: 0 };
-      billsForSelectedDate.forEach(bill => {
-          if (bill.paymentMode === 'Credit') {
-              breakdown.credit += bill.grandTotal;
-          } else {
-              // Default to cash if not specified or 'Cash'
-              breakdown.cash += bill.grandTotal;
-          }
-      });
-      return breakdown;
-  }, [billsForSelectedDate]);
-
   const handleExport = () => {
     const exportData = billsForSelectedDate.map(bill => ({
         'Bill No.': bill.billNumber,
         'Time': new Date(bill.date).toLocaleTimeString(),
         'Customer': bill.customerName,
         'Items': bill.items.length,
-        'Payment Mode': bill.paymentMode || 'Cash',
         'Amount': bill.grandTotal.toFixed(2),
     }));
     exportToCsv(`day_book_${selectedDate}`, exportData);
@@ -175,23 +161,14 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                     </button>
                 </div>
             </div>
-            
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-center">
                 <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-lg">
-                    <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills</p>
-                    <p className="text-2xl font-bold text-indigo-900 dark:text-indigo-200">{billsForSelectedDate.length}</p>
+                    <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills on Date</p>
+                    <p className="text-3xl font-bold text-indigo-900 dark:text-indigo-200">{billsForSelectedDate.length}</p>
                 </div>
                 <div className="bg-green-50 dark:bg-green-900/50 p-4 rounded-lg">
-                    <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales</p>
-                    <p className="text-2xl font-bold text-green-900 dark:text-green-200">₹{totalSales.toFixed(2)}</p>
-                </div>
-                <div className="bg-blue-50 dark:bg-blue-900/50 p-4 rounded-lg">
-                    <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold">Cash Sales</p>
-                    <p className="text-2xl font-bold text-blue-900 dark:text-blue-200">₹{paymentBreakdown.cash.toFixed(2)}</p>
-                </div>
-                <div className="bg-red-50 dark:bg-red-900/50 p-4 rounded-lg">
-                    <p className="text-sm text-red-800 dark:text-red-300 font-semibold">Credit Sales</p>
-                    <p className="text-2xl font-bold text-red-900 dark:text-red-200">₹{paymentBreakdown.credit.toFixed(2)}</p>
+                    <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales on Date</p>
+                    <p className="text-3xl font-bold text-green-900 dark:text-green-200">₹{totalSales.toFixed(2)}</p>
                 </div>
             </div>
         </Card>
@@ -204,7 +181,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                 <th scope="col" className="px-6 py-3">Bill No.</th>
                 <th scope="col" className="px-6 py-3">Time</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
-                <th scope="col" className="px-6 py-3 text-center">Type</th>
+                <th scope="col" className="px-6 py-3">Items</th>
                 <th scope="col" className="px-6 py-3">Amount</th>
                 <th scope="col" className="px-6 py-3 text-center">Actions</th>
               </tr>
@@ -215,11 +192,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                   <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{bill.billNumber}</td>
                   <td className="px-6 py-4">{new Date(bill.date).toLocaleTimeString()}</td>
                   <td className="px-6 py-4">{bill.customerName}</td>
-                  <td className="px-6 py-4 text-center">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${bill.paymentMode === 'Credit' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                          {bill.paymentMode || 'Cash'}
-                      </span>
-                  </td>
+                  <td className="px-6 py-4 text-center">{bill.items.length}</td>
                   <td className="px-6 py-4 font-semibold">₹{bill.grandTotal.toFixed(2)}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-center gap-4">
@@ -368,7 +341,6 @@ const BillDetailsModal: React.FC<BillDetailsModalProps> = ({ isOpen, onClose, bi
                         />
                     )}
                     <p className="text-slate-600 dark:text-slate-400 mt-2">Date: {new Date(bill.date).toLocaleString()}</p>
-                    <p className="text-slate-600 dark:text-slate-400">Payment: {bill.paymentMode || 'Cash'}</p>
                 </div>
                 <div className="border-t dark:border-slate-700 pt-2">
                     <div className="max-h-60 overflow-y-auto">

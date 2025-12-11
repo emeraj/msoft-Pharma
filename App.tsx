@@ -85,14 +85,6 @@ const App: React.FC = () => {
     enableSalesman: false,
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
-  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
-
-  // Navigation State to handle "Return To" logic
-  const [returnView, setReturnView] = useState<AppView>('daybook');
-  const [inventoryViewState, setInventoryViewState] = useState<{
-      subView?: string;
-      productId?: string | null;
-  }>({});
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
@@ -119,9 +111,6 @@ const App: React.FC = () => {
         setActiveView(event.state.view);
         if (event.state.view !== 'billing') {
             setEditingBill(null);
-        }
-        if (event.state.view !== 'purchases') {
-            setEditingPurchase(null);
         }
       } 
     };
@@ -761,9 +750,10 @@ service cloud.firestore {
                         return { ...billData, id: billId } as Bill;
                     } catch (e) { console.error(e); return null; }
                 }}
+                onCancelEdit={() => { setEditingBill(null); navigateTo('daybook'); }}
               />
             )}
-
+            
             {activeView === 'inventory' && canAccess('inventory') && (
               <Inventory 
                 products={products}
@@ -779,11 +769,9 @@ service cloud.firestore {
                 onDeleteBatch={handleDeleteBatch}
                 onDeleteProduct={handleDeleteProduct}
                 onBulkAddProducts={handleBulkAddProducts}
-                initialSubView={inventoryViewState.subView}
-                initialProductId={inventoryViewState.productId}
               />
             )}
-
+            
             {activeView === 'purchases' && canAccess('purchases') && (
               <Purchases 
                 products={products}
@@ -792,190 +780,71 @@ service cloud.firestore {
                 suppliers={suppliers}
                 systemConfig={systemConfig}
                 gstRates={gstRates}
+                onUpdateConfig={handleSystemConfigChange}
                 onAddPurchase={async (purchaseData) => {
                     if (!dataOwnerId) return;
-                    try {
-                        const batch = writeBatch(db);
-                        
-                        // Prepare items with new IDs if needed
-                        const updatedItems = [...purchaseData.items];
-                        const productUpdates = new Map<string, { product: Product, newBatches: Batch[] }>();
+                    const batch = writeBatch(db);
+                    const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
+                    batch.set(purchaseRef, purchaseData);
+                    
+                    for (const item of purchaseData.items) {
+                        const newBatch: Batch = {
+                            id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            batchNumber: item.batchNumber,
+                            expiryDate: item.expiryDate,
+                            stock: item.quantity * (item.unitsPerStrip || (item.productId ? products.find(p=>p.id===item.productId)?.unitsPerStrip : 1) || 1),
+                            mrp: item.mrp,
+                            purchasePrice: item.purchasePrice
+                        };
 
-                        for (let i = 0; i < updatedItems.length; i++) {
-                            const item = updatedItems[i];
+                        if (item.isNewProduct) {
                             let productId = item.productId;
-                            
-                            if (item.isNewProduct) {
-                                const newProdRef = doc(collection(db, `users/${dataOwnerId}/products`));
-                                productId = newProdRef.id;
-                                updatedItems[i].productId = productId; // Assign ID back to item
-                                
-                                const productData: any = {
+                            if (!productId) {
+                                const newProductRef = doc(collection(db, `users/${dataOwnerId}/products`));
+                                productId = newProductRef.id;
+                                const newProduct: any = {
                                     name: item.productName,
                                     company: item.company,
                                     hsnCode: item.hsnCode,
                                     gst: item.gst,
-                                    composition: item.composition || '',
-                                    unitsPerStrip: item.unitsPerStrip || 1,
-                                    isScheduleH: item.isScheduleH || false,
-                                    batches: []
+                                    batches: [newBatch] // Add batch directly
                                 };
-                                if(item.barcode) productData.barcode = item.barcode;
+                                if(item.barcode) newProduct.barcode = item.barcode;
+                                if(item.composition) newProduct.composition = item.composition;
+                                if(item.unitsPerStrip) newProduct.unitsPerStrip = item.unitsPerStrip;
+                                if(item.isScheduleH) newProduct.isScheduleH = item.isScheduleH;
                                 
-                                batch.set(newProdRef, productData);
+                                batch.set(newProductRef, newProduct);
                                 
-                                // Auto-add Company
-                                if (!companies.some(c => c.name.toLowerCase() === item.company.toLowerCase())) {
-                                    const newCompRef = doc(collection(db, `users/${dataOwnerId}/companies`));
-                                    batch.set(newCompRef, { name: item.company });
+                                const companyExists = companies.some(c => c.name.toLowerCase() === item.company.toLowerCase());
+                                if (!companyExists) {
+                                     const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
+                                     batch.set(newCompanyRef, { name: item.company });
                                 }
-                                
-                                productUpdates.set(productId, { product: { ...productData, id: productId }, newBatches: [] });
                             } else {
-                                if (!productId) continue;
-                                if (!productUpdates.has(productId)) {
-                                    const existingProduct = products.find(p => p.id === productId);
-                                    if (existingProduct) {
-                                        productUpdates.set(productId, { product: existingProduct, newBatches: [] });
-                                    }
-                                }
+                                // Fallback if somehow ID exists for 'new'
+                                const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
+                                batch.update(productRef, { batches: arrayUnion(newBatch) });
                             }
-
-                            // Prepare Batch
-                            const unitMultiplier = item.unitsPerStrip || 1;
-                            const stockToAdd = item.quantity * unitMultiplier;
-                            
-                            const newBatch: Batch = {
-                                id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                                batchNumber: item.batchNumber,
-                                expiryDate: item.expiryDate,
-                                stock: stockToAdd,
-                                mrp: item.mrp,
-                                purchasePrice: item.purchasePrice
-                            };
-
-                            const updateEntry = productUpdates.get(productId!);
-                            if (updateEntry) {
-                                updateEntry.newBatches.push(newBatch);
-                            }
+                        } else {
+                             if (item.productId) {
+                                const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
+                                batch.update(productRef, { batches: arrayUnion(newBatch) });
+                             }
                         }
-
-                        // Save Purchase with Updated Items
-                        const newPurchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
-                        const newPurchase = { ...purchaseData, items: updatedItems, id: newPurchaseRef.id };
-                        batch.set(newPurchaseRef, newPurchase);
-
-                        // Apply updates
-                        for (const [pid, entry] of productUpdates.entries()) {
-                            const productRef = doc(db, `users/${dataOwnerId}/products`, pid);
-                            let currentBatches = [...(entry.product.batches || [])];
-
-                            entry.newBatches.forEach(nb => {
-                                const idx = currentBatches.findIndex(b => 
-                                    b.batchNumber === nb.batchNumber && 
-                                    b.expiryDate === nb.expiryDate && 
-                                    b.mrp === nb.mrp
-                                );
-
-                                if (idx >= 0) {
-                                    currentBatches[idx].stock += nb.stock;
-                                    currentBatches[idx].purchasePrice = nb.purchasePrice; 
-                                } else {
-                                    currentBatches.push(nb);
-                                }
-                            });
-                            
-                            batch.update(productRef, { batches: currentBatches });
-                        }
-
-                        await batch.commit();
-                    } catch (e) {
-                        console.error(e);
-                        alert("Failed to save purchase");
                     }
+                    await batch.commit();
                 }}
-                onUpdatePurchase={async (id, updatedData, originalPurchase) => {
-                     if (!dataOwnerId) return;
-                     // For simplicity, we block purchase editing that affects stock significantly 
-                     // or implement full reversal and re-application.
-                     // A simple implementation: Alert user to delete and re-enter if stock changes are needed.
-                     // But let's allow basic header updates.
-                     
-                     try {
-                         const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, id);
-                         await updateDoc(purchaseRef, updatedData);
-                         alert("Purchase updated. Note: Stock was NOT adjusted. If items changed, please delete and re-enter.");
-                     } catch(e) {
-                         console.error(e);
-                     }
+                onUpdatePurchase={async (id, data) => {
+                    if (!dataOwnerId) return;
+                    const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, id);
+                    await updateDoc(purchaseRef, data);
                 }}
                 onDeletePurchase={async (purchase) => {
                     if (!dataOwnerId) return;
-                    if (!window.confirm("Delete this purchase record? Stock will be reduced.")) return;
-                    
-                    const batch = writeBatch(db);
+                    if (!window.confirm("Delete this purchase record? Stock will NOT be automatically reverted.")) return;
                     const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, purchase.id);
-                    batch.delete(purchaseRef);
-
-                    // Group items by product
-                    const productMap = new Map<string, typeof purchase.items>(); 
-                    for (const item of purchase.items) {
-                        if (item.productId) {
-                            const list = productMap.get(item.productId) || [];
-                            list.push(item);
-                            productMap.set(item.productId, list);
-                        }
-                    }
-
-                    for (const [productId, itemsToRemove] of productMap.entries()) {
-                        const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
-                        const productSnap = await getDoc(productRef);
-                        if (productSnap.exists()) {
-                            const productData = productSnap.data() as Product;
-                            let currentBatches = [...(productData.batches || [])];
-                            let changed = false;
-
-                            for (const item of itemsToRemove) {
-                                const unitMultiplier = item.unitsPerStrip || productData.unitsPerStrip || 1;
-                                const qtyToRemove = item.quantity * unitMultiplier;
-
-                                // 1. Strict ID Match
-                                if (item.batchId) {
-                                    const idx = currentBatches.findIndex(b => b.id === item.batchId);
-                                    if (idx !== -1) {
-                                        currentBatches[idx].stock -= qtyToRemove;
-                                        // Keep batch even if <= 0
-                                        changed = true;
-                                        continue;
-                                    }
-                                }
-
-                                // 2. Legacy/Fallback Match
-                                let bestMatchIndex = -1;
-                                for (let i = currentBatches.length - 1; i >= 0; i--) {
-                                    const b = currentBatches[i];
-                                    if (b.batchNumber === item.batchNumber && b.expiryDate === item.expiryDate) {
-                                        bestMatchIndex = i;
-                                        break; 
-                                    }
-                                }
-
-                                if (bestMatchIndex !== -1) {
-                                    const targetBatch = currentBatches[bestMatchIndex];
-                                    targetBatch.stock -= qtyToRemove;
-                                    // Keep batch even if <= 0
-                                    currentBatches[bestMatchIndex] = targetBatch;
-                                    changed = true;
-                                }
-                            }
-                            
-                            if (changed) {
-                                batch.update(productRef, { batches: currentBatches });
-                            }
-                        }
-                    }
-
-                    await batch.commit();
+                    await deleteDoc(purchaseRef);
                 }}
                 onAddSupplier={async (supplierData) => {
                     if (!dataOwnerId) return null;
@@ -984,7 +853,6 @@ service cloud.firestore {
                         return { id: docRef.id, ...supplierData } as Supplier;
                     } catch (e) { console.error(e); return null; }
                 }}
-                onUpdateConfig={handleSystemConfigChange}
               />
             )}
             
@@ -1060,11 +928,7 @@ service cloud.firestore {
 
                     await batch.commit();
                 }}
-                onEditBill={(bill) => { 
-                    setEditingBill(bill); 
-                    setReturnView('daybook'); // Default return from Daybook
-                    navigateTo('billing'); 
-                }}
+                onEditBill={(bill) => { setEditingBill(bill); navigateTo('billing'); }}
                 onUpdateBillDetails={async (billId, updates) => {
                     if (!dataOwnerId) return;
                     const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
