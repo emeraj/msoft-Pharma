@@ -761,147 +761,16 @@ service cloud.firestore {
                         return { ...billData, id: billId } as Bill;
                     } catch (e) { console.error(e); return null; }
                 }}
-                onCancelEdit={() => { 
-                    setEditingBill(null); 
-                    navigateTo(returnView); 
-                }}
-              />
-            )}
-            
-            {activeView === 'inventory' && canAccess('inventory') && (
-              <Inventory 
-                products={products}
-                companies={companies}
-                bills={bills}
-                purchases={purchases}
-                systemConfig={systemConfig}
-                companyProfile={companyProfile}
-                gstRates={gstRates}
-                onAddProduct={handleAddProduct}
-                onUpdateProduct={handleUpdateProduct}
-                onAddBatch={handleAddBatch}
-                onDeleteBatch={handleDeleteBatch}
-                onDeleteProduct={handleDeleteProduct}
-                onBulkAddProducts={handleBulkAddProducts}
-                initialSubView={inventoryViewState.subView}
-                initialProductId={inventoryViewState.productId}
-                onEditBill={(bill, context) => {
-                    setInventoryViewState(context || {});
-                    setReturnView('inventory');
-                    setEditingBill(bill);
-                    setActiveView('billing'); // Use setActiveView directly to bypass history logic if needed, or navigateTo
-                }}
-                onEditPurchase={(purchase, context) => {
-                    setInventoryViewState(context || {});
-                    setReturnView('inventory');
-                    setEditingPurchase(purchase);
-                    setActiveView('purchases');
-                }}
-              />
-            )}
-            
-            {activeView === 'purchases' && canAccess('purchases') && (
-              <Purchases 
-                products={products}
-                purchases={purchases}
-                companies={companies}
-                suppliers={suppliers}
-                systemConfig={systemConfig}
-                gstRates={gstRates}
-                onUpdateConfig={handleSystemConfigChange}
-                purchaseToEdit={editingPurchase}
-                onCancelEdit={() => { 
-                    setEditingPurchase(null); 
-                    navigateTo(returnView); 
-                }}
-                onAddPurchase={async (purchaseData) => {
-                    if (!dataOwnerId) return;
-                    
-                    // Sanitize purchaseData: prevent 'undefined' values which crash Firestore set()
-                    // JSON.parse(JSON.stringify(obj)) removes undefined fields
-                    const cleanPurchaseData = JSON.parse(JSON.stringify(purchaseData));
-
-                    const batch = writeBatch(db);
-                    const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
-                    
-                    // Iterate over items to create/update products and update item references in the purchase payload
-                    for (const item of cleanPurchaseData.items) {
-                        const newBatch: Batch = {
-                            id: `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            batchNumber: item.batchNumber || '', 
-                            expiryDate: item.expiryDate || '',   
-                            stock: item.quantity * (item.unitsPerStrip || (item.productId ? products.find(p=>p.id===item.productId)?.unitsPerStrip : 1) || 1),
-                            mrp: item.mrp || 0,
-                            purchasePrice: item.purchasePrice || 0
-                        };
-
-                        if (item.isNewProduct) {
-                            let productId = item.productId;
-                            if (!productId) {
-                                const newProductRef = doc(collection(db, `users/${dataOwnerId}/products`));
-                                productId = newProductRef.id;
-                                
-                                // UPDATE ITEM WITH NEW PRODUCT ID FOR PURCHASE RECORD LINKING
-                                item.productId = productId;
-                                item.isNewProduct = false;
-                                item.batchId = newBatch.id; // Store generated Batch ID in purchase item
-
-                                const newProduct: any = {
-                                    name: item.productName || 'Unknown Product',
-                                    company: item.company || 'Unknown Company',
-                                    hsnCode: item.hsnCode || '', 
-                                    gst: item.gst || 0,
-                                    batches: [newBatch] 
-                                };
-                                if(item.barcode) newProduct.barcode = item.barcode;
-                                if(item.composition) newProduct.composition = item.composition;
-                                if(item.unitsPerStrip) newProduct.unitsPerStrip = item.unitsPerStrip;
-                                if(item.isScheduleH) newProduct.isScheduleH = item.isScheduleH;
-                                
-                                batch.set(newProductRef, newProduct);
-                                
-                                const companyExists = companies.some(c => c.name.toLowerCase() === item.company.toLowerCase());
-                                if (!companyExists && item.company) {
-                                     const newCompanyRef = doc(collection(db, `users/${dataOwnerId}/companies`));
-                                     batch.set(newCompanyRef, { name: item.company });
-                                }
-                            } else {
-                                // Fallback if somehow ID exists for 'new'
-                                const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
-                                batch.update(productRef, { batches: arrayUnion(newBatch) });
-                                item.batchId = newBatch.id; // Store generated Batch ID
-                            }
-                        } else {
-                             if (item.productId) {
-                                const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-                                batch.update(productRef, { batches: arrayUnion(newBatch) });
-                                item.batchId = newBatch.id; // Store generated Batch ID in purchase item
-                             }
-                        }
-                    }
-                    
-                    // SAVE PURCHASE AFTER ITEM UPDATE
-                    batch.set(purchaseRef, cleanPurchaseData);
-
-                    await batch.commit();
-                }}
-                onUpdatePurchase={async (id, data) => {
-                    if (!dataOwnerId) return;
-                    const cleanData = JSON.parse(JSON.stringify(data));
-                    const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, id);
-                    await updateDoc(purchaseRef, cleanData);
-                }}
                 onDeletePurchase={async (purchase) => {
                     if (!dataOwnerId) return;
-                    if (!window.confirm("Delete this purchase record? Stock will be reverted.")) return;
+                    if (!window.confirm("Delete this purchase record? Stock will be reduced.")) return;
                     
                     const batch = writeBatch(db);
                     const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, purchase.id);
                     batch.delete(purchaseRef);
 
-                    // Group items by product to minimize reads
-                    const productMap = new Map<string, typeof purchase.items>(); // productId -> items
-                    
+                    // Group items by product
+                    const productMap = new Map<string, typeof purchase.items>(); 
                     for (const item of purchase.items) {
                         if (item.productId) {
                             const list = productMap.get(item.productId) || [];
@@ -910,7 +779,6 @@ service cloud.firestore {
                         }
                     }
 
-                    // Perform updates
                     for (const [productId, itemsToRemove] of productMap.entries()) {
                         const productRef = doc(db, `users/${dataOwnerId}/products`, productId);
                         const productSnap = await getDoc(productRef);
@@ -920,44 +788,35 @@ service cloud.firestore {
                             let changed = false;
 
                             for (const item of itemsToRemove) {
-                                // 1. Try Strict Match (New System)
+                                const unitMultiplier = item.unitsPerStrip || productData.unitsPerStrip || 1;
+                                const qtyToRemove = item.quantity * unitMultiplier;
+
+                                // 1. Strict ID Match
                                 if (item.batchId) {
                                     const idx = currentBatches.findIndex(b => b.id === item.batchId);
                                     if (idx !== -1) {
-                                        currentBatches.splice(idx, 1);
+                                        currentBatches[idx].stock -= qtyToRemove;
+                                        // Keep batch even if <= 0
                                         changed = true;
                                         continue;
                                     }
                                 }
 
-                                // 2. Legacy Match (Last-In Preference)
-                                // Search backwards to find the most recently added batch matching details
-                                // This helps avoid deleting 'Opening Stock' which would be at the beginning of the array
+                                // 2. Legacy/Fallback Match
                                 let bestMatchIndex = -1;
                                 for (let i = currentBatches.length - 1; i >= 0; i--) {
                                     const b = currentBatches[i];
                                     if (b.batchNumber === item.batchNumber && b.expiryDate === item.expiryDate) {
                                         bestMatchIndex = i;
-                                        break; // Found the last one, stop
+                                        break; 
                                     }
                                 }
 
                                 if (bestMatchIndex !== -1) {
                                     const targetBatch = currentBatches[bestMatchIndex];
-                                    const qtyToRemove = item.quantity * (item.unitsPerStrip || productData.unitsPerStrip || 1);
-                                    
-                                    // Subtract stock
                                     targetBatch.stock -= qtyToRemove;
-                                    
-                                    // If stock is depleted (or negative due to sales inconsistencies), remove the batch
-                                    // This assumes that if we are deleting the source of the stock, the batch shouldn't exist 
-                                    // unless it had MORE stock than what we bought (e.g. merged stock).
-                                    if (targetBatch.stock <= 0) {
-                                        currentBatches.splice(bestMatchIndex, 1);
-                                    } else {
-                                        // Update the batch with reduced stock
-                                        currentBatches[bestMatchIndex] = targetBatch;
-                                    }
+                                    // Keep batch even if <= 0
+                                    currentBatches[bestMatchIndex] = targetBatch;
                                     changed = true;
                                 }
                             }
