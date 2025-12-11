@@ -131,26 +131,15 @@ const AddSupplierModal: React.FC<{
 };
 
 // --- Premium Upgrade Modal ---
-const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void; onActivate: (code: string) => boolean; usageCount: number; quota: number; }> = ({ isOpen, onClose, onActivate, usageCount, quota }) => {
-  const [activationCode, setActivationCode] = useState('');
+const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void; usageCount: number; quota: number; }> = ({ isOpen, onClose, usageCount, quota }) => {
   const upiId = "emeraj@oksbi"; // Syed Meraj
   const amount = "5000";
   const name = "Syed Meraj";
   const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent(name)}&am=${amount}&cu=INR`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
 
-  const handleActivate = () => {
-      const success = onActivate(activationCode);
-      if (success) {
-          alert("Premium Quota Updated Successfully!");
-          onClose();
-      } else {
-          alert("Invalid Activation Code");
-      }
-  };
-
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Upgrade to Premium">
+    <Modal isOpen={isOpen} onClose={onClose} title="Top-up AI Quota">
         <div className="flex flex-col items-center text-center space-y-6 p-4">
             <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-full text-sm font-bold shadow-sm">
                 Quota Reached ({usageCount}/{quota})
@@ -170,28 +159,18 @@ const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void; onActivate:
                 <p className="font-bold text-2xl text-indigo-700">₹5,000 <span className="text-sm font-normal text-slate-500">/ 100 Scans</span></p>
             </div>
 
-            <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
-                <p className="font-medium text-slate-700 dark:text-slate-300">Scan to pay via UPI</p>
-                <p>After payment, contact support to get your activation code.</p>
-                <p className="font-bold text-lg text-slate-800 dark:text-slate-200 mt-2">Call/WhatsApp: 9890072651</p>
-            </div>
-            
-            <div className="w-full pt-4 border-t dark:border-slate-700">
-                <div className="flex gap-2">
-                    <input 
-                        type="text" 
-                        value={activationCode}
-                        onChange={(e) => setActivationCode(e.target.value)}
-                        placeholder="Enter Activation Code"
-                        className="flex-grow p-2 border border-slate-300 rounded-md"
-                    />
-                    <button onClick={handleActivate} className="bg-green-600 text-white px-4 py-2 rounded-md font-semibold hover:bg-green-700">
-                        Activate
-                    </button>
+            <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1 bg-slate-100 dark:bg-slate-700/50 p-4 rounded-lg w-full max-w-sm">
+                <p className="font-medium text-slate-700 dark:text-slate-300">Payment Details:</p>
+                <p>UPI ID: <span className="font-mono font-bold select-all">{upiId}</span></p>
+                <p>Name: <span className="font-bold">{name}</span></p>
+                <div className="mt-3 pt-3 border-t border-slate-300 dark:border-slate-600">
+                    <p className="font-bold text-red-500 dark:text-red-400">Important:</p>
+                    <p>After payment, please send the screenshot to Admin to update your quota.</p>
+                    <p className="font-bold text-lg text-slate-800 dark:text-slate-200 mt-1">Call/WhatsApp: 9890072651</p>
                 </div>
             </div>
 
-            <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 text-sm underline">
+            <button onClick={onClose} className="bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 px-8 py-3 rounded-lg font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors w-full sm:w-auto">
                 Close
             </button>
         </div>
@@ -1434,15 +1413,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         exportToCsv(filename, exportData);
     };
 
-    const handleActivatePremium = (code: string) => {
-        if (code === "MEDICO100") {
-            // Reset count and set quota to 100 as requested
-            onUpdateConfig({ ...systemConfig, aiInvoiceQuota: 100, aiInvoiceUsageCount: 0 });
-            return true;
-        }
-        return false;
-    };
-
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <Card title={
@@ -1656,7 +1626,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             <PremiumModal 
                 isOpen={showPremiumModal} 
                 onClose={() => setShowPremiumModal(false)}
-                onActivate={handleActivatePremium}
                 usageCount={systemConfig.aiInvoiceUsageCount || 0}
                 quota={systemConfig.aiInvoiceQuota || 5}
             />
