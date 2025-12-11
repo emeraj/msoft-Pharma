@@ -796,21 +796,19 @@ service cloud.firestore {
                     if (!dataOwnerId) return;
                     try {
                         const batch = writeBatch(db);
-                        const newPurchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
-                        const newPurchase = { ...purchaseData, id: newPurchaseRef.id };
-                        batch.set(newPurchaseRef, newPurchase);
-
-                        // Group products to minimize reads/writes if multiple items belong to same product
+                        
+                        // Prepare items with new IDs if needed
+                        const updatedItems = [...purchaseData.items];
                         const productUpdates = new Map<string, { product: Product, newBatches: Batch[] }>();
 
-                        for (const item of purchaseData.items) {
+                        for (let i = 0; i < updatedItems.length; i++) {
+                            const item = updatedItems[i];
                             let productId = item.productId;
-                            let productRef;
                             
                             if (item.isNewProduct) {
                                 const newProdRef = doc(collection(db, `users/${dataOwnerId}/products`));
                                 productId = newProdRef.id;
-                                productRef = newProdRef;
+                                updatedItems[i].productId = productId; // Assign ID back to item
                                 
                                 const productData: any = {
                                     name: item.productName,
@@ -832,7 +830,6 @@ service cloud.firestore {
                                     batch.set(newCompRef, { name: item.company });
                                 }
                                 
-                                // Setup initial state for batch processing below
                                 productUpdates.set(productId, { product: { ...productData, id: productId }, newBatches: [] });
                             } else {
                                 if (!productId) continue;
@@ -863,13 +860,17 @@ service cloud.firestore {
                             }
                         }
 
+                        // Save Purchase with Updated Items
+                        const newPurchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
+                        const newPurchase = { ...purchaseData, items: updatedItems, id: newPurchaseRef.id };
+                        batch.set(newPurchaseRef, newPurchase);
+
                         // Apply updates
                         for (const [pid, entry] of productUpdates.entries()) {
                             const productRef = doc(db, `users/${dataOwnerId}/products`, pid);
                             let currentBatches = [...(entry.product.batches || [])];
 
                             entry.newBatches.forEach(nb => {
-                                // Check for existing batch match (Number + Expiry + MRP)
                                 const idx = currentBatches.findIndex(b => 
                                     b.batchNumber === nb.batchNumber && 
                                     b.expiryDate === nb.expiryDate && 
@@ -878,7 +879,7 @@ service cloud.firestore {
 
                                 if (idx >= 0) {
                                     currentBatches[idx].stock += nb.stock;
-                                    currentBatches[idx].purchasePrice = nb.purchasePrice; // Update latest cost
+                                    currentBatches[idx].purchasePrice = nb.purchasePrice; 
                                 } else {
                                     currentBatches.push(nb);
                                 }
@@ -886,9 +887,6 @@ service cloud.firestore {
                             
                             batch.update(productRef, { batches: currentBatches });
                         }
-
-                        // Update Supplier Ledger if opening balance exists (simple check, full ledger logic is in SuppliersLedger)
-                        // Actually, Purchase document itself drives the ledger view, so we just need to save the purchase.
 
                         await batch.commit();
                     } catch (e) {

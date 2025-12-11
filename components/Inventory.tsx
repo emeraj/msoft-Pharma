@@ -260,7 +260,18 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
         const lowerSearchTerm = searchTerm.toLowerCase();
         return products.filter(product => (product.name.toLowerCase().includes(lowerSearchTerm) || product.id.toLowerCase() === lowerSearchTerm || (!isPharmaMode && product.barcode && product.barcode.includes(searchTerm))) && (companyFilter === '' || product.company === companyFilter)).map(product => {
                 let purchasesInPeriod = 0; let salesInPeriod = 0; const unitsPerStrip = product.unitsPerStrip || 1;
-                purchases.forEach(purchase => { const purchaseDate = new Date(purchase.invoiceDate); if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) { purchase.items.forEach(item => { if (item.productId === product.id) { const itemUnitsPerStrip = item.unitsPerStrip || unitsPerStrip; purchasesInPeriod += item.quantity * itemUnitsPerStrip; } }); } });
+                purchases.forEach(purchase => { 
+                    const purchaseDate = new Date(purchase.invoiceDate); 
+                    if ((!startDate || purchaseDate >= startDate) && (!endDate || purchaseDate <= endDate)) { 
+                        purchase.items.forEach(item => { 
+                            // Match by ID first, then fallback to Name if ID is missing (legacy support)
+                            if (item.productId === product.id || (!item.productId && item.productName.toLowerCase() === product.name.toLowerCase())) { 
+                                const itemUnitsPerStrip = item.unitsPerStrip || unitsPerStrip; 
+                                purchasesInPeriod += item.quantity * itemUnitsPerStrip; 
+                            } 
+                        }); 
+                    } 
+                });
                 bills.forEach(bill => { const billDate = new Date(bill.date); if ((!startDate || billDate >= startDate) && (!endDate || billDate <= endDate)) { bill.items.forEach(item => { if (item.productId === product.id) { salesInPeriod += item.quantity; } }); } });
                 const currentStock = product.batches.reduce((sum, batch) => sum + batch.stock, 0); const openingStock = currentStock - purchasesInPeriod + salesInPeriod; const stockValue = product.batches.reduce((sum, batch) => { const unitPrice = batch.mrp / (product.unitsPerStrip || 1); return sum + (unitPrice * batch.stock); }, 0); const latestMrp = product.batches.length > 0 ? Math.max(...product.batches.map(b => b.mrp)) : 0;
                 return { id: product.id, name: product.name, company: product.company, composition: product.composition, unitsPerStrip: product.unitsPerStrip, isScheduleH: product.isScheduleH, barcode: product.barcode, openingStock, purchasedQty: purchasesInPeriod, soldQty: salesInPeriod, currentStock, stockValue, latestMrp, product };
@@ -413,293 +424,150 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
         return products.filter(p => p.name.toLowerCase().includes(term) || (!isPharmaMode && p.barcode && p.barcode.includes(term))).slice(0, 10);
     }, [searchTerm, products, selectedProduct, isPharmaMode]);
 
-    const handleSelect = (product: Product) => {
+    const handleSelectProduct = (product: Product) => {
         setSelectedProduct(product);
         setSearchTerm(product.name);
-        if(onProductSelect) onProductSelect(product);
+        onProductSelect(product);
     };
 
-    const stockLedger = useMemo(() => {
-        if (!selectedProduct) return { openingBalance: 0, transactions: [], closingBalance: 0 };
-
-        const startDate = fromDate ? new Date(fromDate) : null;
-        if (startDate) startDate.setHours(0, 0, 0, 0);
-        
-        const endDate = toDate ? new Date(toDate) : null;
-        if (endDate) endDate.setHours(23, 59, 59, 999);
-
-        // 1. Collect all transactions (Sales & Purchases)
-        const allTransactions: { date: Date; type: 'Purchase' | 'Sale'; qty: number; invoiceNo: string; party: string; }[] = [];
-
-        // Sales
-        bills.forEach(bill => {
-            bill.items.forEach(item => {
-                if (item.productId === selectedProduct.id) {
-                    allTransactions.push({
-                        date: new Date(bill.date),
-                        type: 'Sale',
-                        qty: item.quantity,
-                        invoiceNo: bill.billNumber,
-                        party: bill.customerName
-                    });
-                }
-            });
-        });
-
-        // Purchases
-        purchases.forEach(purchase => {
-            purchase.items.forEach(item => {
-                const units = item.unitsPerStrip || selectedProduct.unitsPerStrip || 1;
-                if (item.productId === selectedProduct.id || (!item.productId && item.productName === selectedProduct.name)) {
-                    allTransactions.push({
-                        date: new Date(purchase.invoiceDate),
-                        type: 'Purchase',
-                        qty: item.quantity * units,
-                        invoiceNo: purchase.invoiceNumber,
-                        party: purchase.supplier
-                    });
-                }
-            });
-        });
-
-        // 2. Sort by date descending (Newest first) for display
-        allTransactions.sort((a, b) => b.date.getTime() - a.date.getTime());
-
-        // 3. Current Stock is the authoritative closing balance
-        const currentStock = selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0);
-        
-        // 4. Calculate Balances backwards
-        let runningBalance = currentStock;
-        
-        const history = allTransactions.map(tx => {
-            const balanceAfter = runningBalance;
-            if (tx.type === 'Sale') {
-                runningBalance += tx.qty; // Reverse: Sale reduced stock, so before sale it was higher
-            } else {
-                runningBalance -= tx.qty; // Reverse: Purchase increased stock, so before purchase it was lower
-            }
-            return { ...tx, balance: balanceAfter };
-        });
-
-        // Filter for display
-        const filteredHistory = history.filter(tx => {
-            if (startDate && tx.date < startDate) return false;
-            if (endDate && tx.date > endDate) return false;
-            return true;
-        });
-
-        // Opening balance for the selected period is the runningBalance after traversing all transactions back to start date
-        // However, if we filter, the last item in filteredHistory (which is earliest in time) would have the balance after that txn.
-        // The balance *before* the earliest transaction in the period is effectively the opening balance.
-        // `runningBalance` currently holds the stock at the very beginning of time (or start of all records).
-        // Let's re-calculate forward for the period to be precise.
-        
-        // Re-approach: Sort ascending for forward calculation
-        allTransactions.sort((a, b) => a.date.getTime() - b.date.getTime());
-        
-        let periodOpening = 0; // Default
-        
-        // We need to calculate what the stock was at `startDate`.
-        // Start from current stock and go back until `startDate`.
-        let tempStock = currentStock;
-        // Iterate backwards from latest to earliest
-        for (let i = allTransactions.length - 1; i >= 0; i--) {
-            const tx = allTransactions[i];
-            if (startDate && tx.date < startDate) {
-                // We reached before the period. `tempStock` is the opening balance.
-                break;
-            }
-            // Reverse logic to go back in time
-            if (tx.type === 'Sale') tempStock += tx.qty;
-            else tempStock -= tx.qty;
-        }
-        periodOpening = tempStock;
-
-        return { 
-            openingBalance: periodOpening, 
-            transactions: filteredHistory, 
-            closingBalance: currentStock 
-        };
-
-    }, [selectedProduct, bills, purchases, fromDate, toDate]);
+    const handleClearSelection = () => {
+        setSelectedProduct(null);
+        setSearchTerm('');
+        onProductSelect(null);
+    };
 
     return (
         <Card title={t.inventory.selectedStock}>
-            <div className="space-y-4">
-                <div className="relative">
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Product</label>
+            <div className="relative mb-6">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Product</label>
+                <div className="flex gap-2">
                     <input 
                         type="text" 
-                        value={searchTerm}
-                        onChange={e => { setSearchTerm(e.target.value); setSelectedProduct(null); }}
-                        placeholder="Type to search..." 
-                        className={inputStyle}
+                        value={searchTerm} 
+                        onChange={e => { setSearchTerm(e.target.value); setSelectedProduct(null); }} 
+                        className={inputStyle} 
+                        placeholder={t.inventory.searchPlaceholder}
                     />
-                    {searchResults.length > 0 && (
-                        <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                            {searchResults.map(p => (
-                                <li 
-                                    key={p.id} 
-                                    onClick={() => handleSelect(p)}
-                                    className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-slate-800 dark:text-slate-200"
-                                >
-                                    {p.name} ({p.company})
-                                </li>
-                            ))}
-                        </ul>
+                    {selectedProduct && (
+                        <button onClick={handleClearSelection} className="px-4 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600">Clear</button>
                     )}
                 </div>
+                {searchResults.length > 0 && (
+                    <ul className="absolute z-10 w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto mt-1">
+                        {searchResults.map(p => (
+                            <li 
+                                key={p.id} 
+                                onClick={() => handleSelectProduct(p)} 
+                                className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200"
+                            >
+                                {p.name} <span className="text-xs text-slate-500 dark:text-slate-400">({p.company})</span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
 
-                {selectedProduct && (
-                    <div className="space-y-6">
-                        <div className="p-4 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
-                            <p className="text-slate-600 dark:text-slate-400">{selectedProduct.company}</p>
-                            <p className="text-sm mt-1">Current Stock: <span className="font-bold">{formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</span></p>
+            {selectedProduct && (
+                <div className="space-y-6">
+                    <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
+                        <p className="text-slate-600 dark:text-slate-400">{selectedProduct.company}</p>
+                        {isPharmaMode && <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">{selectedProduct.composition}</p>}
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+                            <div className="bg-white dark:bg-slate-800 p-3 rounded shadow-sm">
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Total Stock</p>
+                                <p className="text-lg font-bold text-slate-800 dark:text-slate-200">
+                                    {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}
+                                </p>
+                            </div>
+                            {/* Add more summary stats if needed */}
                         </div>
+                    </div>
 
-                        {/* Date Filters */}
-                        <div className="flex gap-4">
-                            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
-                            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
-                        </div>
-
-                        {/* Ledger Table */}
+                    <div>
+                        <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Batch Details</h4>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+                                <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
                                     <tr>
-                                        <th className="px-4 py-3">Date</th>
-                                        <th className="px-4 py-3">Type</th>
-                                        <th className="px-4 py-3">Particulars</th>
-                                        <th className="px-4 py-3 text-right">In</th>
-                                        <th className="px-4 py-3 text-right">Out</th>
-                                        <th className="px-4 py-3 text-right">Balance</th>
+                                        {isPharmaMode && <th className="px-4 py-2">Batch No</th>}
+                                        {isPharmaMode && <th className="px-4 py-2">Expiry</th>}
+                                        <th className="px-4 py-2 text-right">MRP</th>
+                                        <th className="px-4 py-2 text-right">Purchase Rate</th>
+                                        <th className="px-4 py-2 text-center">Stock</th>
+                                        <th className="px-4 py-2 text-center">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr className="bg-slate-50 dark:bg-slate-700 font-semibold">
-                                        <td colSpan={5} className="px-4 py-2 text-right">Opening Balance:</td>
-                                        <td className="px-4 py-2 text-right">{formatStock(stockLedger.openingBalance, selectedProduct.unitsPerStrip)}</td>
-                                    </tr>
-                                    {stockLedger.transactions.map((tx, idx) => (
-                                        <tr key={idx} className="border-b dark:border-slate-700">
-                                            <td className="px-4 py-2">{tx.date.toLocaleDateString()}</td>
-                                            <td className="px-4 py-2">
-                                                <span className={`px-2 py-0.5 rounded text-xs ${tx.type === 'Purchase' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                                                    {tx.type}
-                                                </span>
+                                    {selectedProduct.batches.map(batch => (
+                                        <tr key={batch.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                            {isPharmaMode && <td className="px-4 py-2 font-medium">{batch.batchNumber}</td>}
+                                            {isPharmaMode && <td className="px-4 py-2">{batch.expiryDate}</td>}
+                                            <td className="px-4 py-2 text-right">₹{batch.mrp.toFixed(2)}</td>
+                                            <td className="px-4 py-2 text-right">₹{batch.purchasePrice.toFixed(2)}</td>
+                                            <td className="px-4 py-2 text-center font-bold">{formatStock(batch.stock, selectedProduct.unitsPerStrip)}</td>
+                                            <td className="px-4 py-2 text-center">
+                                                <button 
+                                                    onClick={() => {
+                                                        if (window.confirm('Delete this batch?')) onDeleteBatch(selectedProduct.id, batch.id);
+                                                    }}
+                                                    className="text-red-600 hover:text-red-800"
+                                                >
+                                                    <TrashIcon className="h-4 w-4" />
+                                                </button>
                                             </td>
-                                            <td className="px-4 py-2">
-                                                {tx.type === 'Purchase' ? `Inv: ${tx.invoiceNo} (${tx.party})` : `Bill: ${tx.invoiceNo} (${tx.party})`}
-                                            </td>
-                                            <td className="px-4 py-2 text-right">{tx.type === 'Purchase' ? formatStock(tx.qty, selectedProduct.unitsPerStrip) : '-'}</td>
-                                            <td className="px-4 py-2 text-right">{tx.type === 'Sale' ? formatStock(tx.qty, selectedProduct.unitsPerStrip) : '-'}</td>
-                                            <td className="px-4 py-2 text-right font-medium">{formatStock(tx.balance, selectedProduct.unitsPerStrip)}</td>
                                         </tr>
                                     ))}
+                                    {selectedProduct.batches.length === 0 && (
+                                        <tr><td colSpan={6} className="text-center py-4 text-slate-500">No batches found.</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
                     </div>
-                )}
-            </div>
-        </Card>
-    );
-};
-
-const CompanyWiseStockView: React.FC<{products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any}> = ({ products, purchases, bills, systemConfig, t }) => {
-    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
-    const companies = useMemo(() => [...new Set(products.map(p => p.company))].sort(), [products]);
-    const [selectedCompany, setSelectedCompany] = useState('');
-
-    const filteredProducts = useMemo(() => {
-        if (!selectedCompany) return [];
-        return products.filter(p => p.company === selectedCompany);
-    }, [selectedCompany, products]);
-
-    return (
-        <Card title={t.inventory.companyStock}>
-            <div className="mb-4">
-                <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className={selectStyle}>
-                    <option value="">Select Company</option>
-                    {companies.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-            </div>
-            {selectedCompany && (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                        <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
-                            <tr>
-                                <th className="px-6 py-3">Product Name</th>
-                                <th className="px-6 py-3 text-center">Stock</th>
-                                <th className="px-6 py-3 text-right">Value (MRP)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredProducts.map(p => {
-                                const stock = p.batches.reduce((sum, b) => sum + b.stock, 0);
-                                const value = p.batches.reduce((sum, b) => sum + (b.stock * (b.mrp / (p.unitsPerStrip || 1))), 0);
-                                return (
-                                    <tr key={p.id} className="border-b dark:border-slate-700">
-                                        <td className="px-6 py-4">{p.name}</td>
-                                        <td className="px-6 py-4 text-center">{formatStock(stock, p.unitsPerStrip)}</td>
-                                        <td className="px-6 py-4 text-right">₹{value.toFixed(2)}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
                 </div>
             )}
         </Card>
     );
 };
 
-const BatchWiseStockView: React.FC<{products: Product[], onDeleteBatch: (pId: string, bId: string) => void, systemConfig: SystemConfig, t: any}> = ({ products, onDeleteBatch, systemConfig, t }) => {
+const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, systemConfig, t }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    
     const allBatches = useMemo(() => {
-        const batches: any[] = [];
-        products.forEach(p => {
-            p.batches.forEach(b => {
-                batches.push({
-                    productId: p.id,
-                    productName: p.name,
-                    company: p.company,
-                    unitsPerStrip: p.unitsPerStrip,
-                    ...b
-                });
+        return products.flatMap(p => p.batches.map(b => ({ ...b, product: p })))
+            .filter(item => {
+                const term = searchTerm.toLowerCase();
+                return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term);
             });
-        });
-        return batches.sort((a, b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime());
-    }, [products]);
+    }, [products, searchTerm]);
 
     return (
         <Card title={t.inventory.batchStock}>
-            <div className="overflow-x-auto max-h-[70vh]">
+            <input type="text" placeholder="Search by Product or Batch..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle + " mb-4"} />
+            <div className="overflow-x-auto max-h-[600px]">
                 <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                    <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0">
+                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs sticky top-0">
                         <tr>
-                            <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3">Batch</th>
-                            <th className="px-4 py-3">Expiry</th>
-                            <th className="px-4 py-3 text-center">Stock</th>
-                            <th className="px-4 py-3 text-right">MRP</th>
-                            <th className="px-4 py-3 text-center">Action</th>
+                            <th className="px-4 py-2">Product</th>
+                            <th className="px-4 py-2">Batch No</th>
+                            <th className="px-4 py-2">Expiry</th>
+                            <th className="px-4 py-2 text-right">MRP</th>
+                            <th className="px-4 py-2 text-center">Stock</th>
+                            <th className="px-4 py-2 text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {allBatches.map((b, idx) => (
-                            <tr key={`${b.productId}-${b.id}-${idx}`} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                                <td className="px-4 py-3">
-                                    <div className="font-medium">{b.productName}</div>
-                                    <div className="text-xs text-slate-500">{b.company}</div>
-                                </td>
-                                <td className="px-4 py-3">{b.batchNumber}</td>
-                                <td className="px-4 py-3">{b.expiryDate}</td>
-                                <td className="px-4 py-3 text-center">{formatStock(b.stock, b.unitsPerStrip)}</td>
-                                <td className="px-4 py-3 text-right">₹{b.mrp.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-center">
-                                    <button onClick={() => onDeleteBatch(b.productId, b.id)} className="text-red-500 hover:text-red-700">
+                        {allBatches.map(item => (
+                            <tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <td className="px-4 py-2 font-medium">{item.product.name}</td>
+                                <td className="px-4 py-2">{item.batchNumber}</td>
+                                <td className="px-4 py-2">{item.expiryDate}</td>
+                                <td className="px-4 py-2 text-right">₹{item.mrp.toFixed(2)}</td>
+                                <td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-4 py-2 text-center">
+                                    <button onClick={() => { if(confirm('Delete batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800">
                                         <TrashIcon className="h-4 w-4" />
                                     </button>
                                 </td>
@@ -712,244 +580,265 @@ const BatchWiseStockView: React.FC<{products: Product[], onDeleteBatch: (pId: st
     );
 };
 
-const ExpiredStockView: React.FC<{products: Product[], onDeleteBatch: (pId: string, bId: string) => void, systemConfig: SystemConfig, t: any}> = ({ products, onDeleteBatch, systemConfig, t }) => {
-    const expiredBatches = useMemo(() => {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const batches: any[] = [];
+const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any }> = ({ products, systemConfig, t }) => {
+    const companyStats = useMemo(() => {
+        const stats: Record<string, { count: number, value: number }> = {};
         products.forEach(p => {
-            p.batches.forEach(b => {
-                if (getExpiryDate(b.expiryDate) < today && b.stock > 0) {
-                    batches.push({
-                        productId: p.id,
-                        productName: p.name,
-                        company: p.company,
-                        unitsPerStrip: p.unitsPerStrip,
-                        ...b
-                    });
-                }
-            });
+            if (!stats[p.company]) stats[p.company] = { count: 0, value: 0 };
+            stats[p.company].count += 1; // Or sum stock
+            const pValue = p.batches.reduce((sum, b) => {
+                const unitPrice = b.mrp / (p.unitsPerStrip || 1); // Approx value by MRP
+                return sum + (unitPrice * b.stock);
+            }, 0);
+            stats[p.company].value += pValue;
         });
-        return batches;
+        return Object.entries(stats).map(([name, data]) => ({ name, ...data })).sort((a,b) => b.value - a.value);
     }, [products]);
 
     return (
-        <Card title={t.inventory.expiredStock}>
-            {expiredBatches.length > 0 ? (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                        <thead className="text-xs text-red-800 dark:text-red-300 uppercase bg-red-50 dark:bg-red-900/20">
-                            <tr>
-                                <th className="px-4 py-3">Product</th>
-                                <th className="px-4 py-3">Batch</th>
-                                <th className="px-4 py-3">Expiry</th>
-                                <th className="px-4 py-3 text-center">Stock</th>
-                                <th className="px-4 py-3 text-center">Action</th>
+        <Card title={t.inventory.companyStock}>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
+                        <tr>
+                            <th className="px-4 py-2">Company</th>
+                            <th className="px-4 py-2 text-center">Products Count</th>
+                            <th className="px-4 py-2 text-right">Total Stock Value (MRP)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {companyStats.map(c => (
+                            <tr key={c.name} className="border-b dark:border-slate-700">
+                                <td className="px-4 py-2 font-medium">{c.name}</td>
+                                <td className="px-4 py-2 text-center">{c.count}</td>
+                                <td className="px-4 py-2 text-right">₹{c.value.toLocaleString('en-IN', {maximumFractionDigits: 2})}</td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {expiredBatches.map((b, idx) => (
-                                <tr key={idx} className="border-b dark:border-slate-700 text-red-600 dark:text-red-400">
-                                    <td className="px-4 py-3">{b.productName}</td>
-                                    <td className="px-4 py-3">{b.batchNumber}</td>
-                                    <td className="px-4 py-3 font-bold">{b.expiryDate}</td>
-                                    <td className="px-4 py-3 text-center">{formatStock(b.stock, b.unitsPerStrip)}</td>
-                                    <td className="px-4 py-3 text-center">
-                                        <button onClick={() => onDeleteBatch(b.productId, b.id)} className="text-red-600 hover:text-red-800 underline">
-                                            Remove
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            ) : (
-                <p className="text-center py-6 text-green-600 dark:text-green-400">No expired stock found!</p>
-            )}
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </Card>
     );
 };
 
-const NearingExpiryStockView: React.FC<{products: Product[], onDeleteBatch: (pId: string, bId: string) => void, systemConfig: SystemConfig, t: any}> = ({ products, onDeleteBatch, systemConfig, t }) => {
+const ExpiredStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, t }) => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    const expiredBatches = useMemo(() => {
+        return products.flatMap(p => p.batches.map(b => ({ ...b, product: p })))
+            .filter(item => item.stock > 0 && getExpiryDate(item.expiryDate) < today);
+    }, [products, today]);
+
+    return (
+        <Card title={t.inventory.expiredStock}>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="bg-red-50 dark:bg-red-900/30 uppercase text-xs">
+                        <tr>
+                            <th className="px-4 py-2">Product</th>
+                            <th className="px-4 py-2">Batch</th>
+                            <th className="px-4 py-2">Expiry</th>
+                            <th className="px-4 py-2 text-center">Stock</th>
+                            <th className="px-4 py-2 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {expiredBatches.map(item => (
+                            <tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700">
+                                <td className="px-4 py-2 font-medium">{item.product.name}</td>
+                                <td className="px-4 py-2">{item.batchNumber}</td>
+                                <td className="px-4 py-2 text-red-600 font-bold">{item.expiryDate}</td>
+                                <td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-4 py-2 text-center">
+                                    <button onClick={() => { if(confirm('Delete expired batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800">
+                                        <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {expiredBatches.length === 0 && <tr><td colSpan={5} className="text-center py-4">No expired stock found.</td></tr>}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    );
+};
+
+const NearingExpiryStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, t }) => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const next30Days = new Date(today);
+    next30Days.setDate(today.getDate() + 30);
+
     const nearExpiryBatches = useMemo(() => {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const next30Days = new Date(today);
-        next30Days.setDate(today.getDate() + 30);
-        
-        const batches: any[] = [];
-        products.forEach(p => {
-            p.batches.forEach(b => {
-                const exp = getExpiryDate(b.expiryDate);
-                if (exp >= today && exp <= next30Days && b.stock > 0) {
-                    batches.push({
-                        productId: p.id,
-                        productName: p.name,
-                        company: p.company,
-                        unitsPerStrip: p.unitsPerStrip,
-                        ...b
-                    });
-                }
+        return products.flatMap(p => p.batches.map(b => ({ ...b, product: p })))
+            .filter(item => {
+                const exp = getExpiryDate(item.expiryDate);
+                return item.stock > 0 && exp >= today && exp <= next30Days;
             });
-        });
-        return batches;
-    }, [products]);
+    }, [products, today, next30Days]);
 
     return (
         <Card title={t.inventory.nearExpiry}>
-            {nearExpiryBatches.length > 0 ? (
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                        <thead className="text-xs text-yellow-800 dark:text-yellow-300 uppercase bg-yellow-50 dark:bg-yellow-900/20">
-                            <tr>
-                                <th className="px-4 py-3">Product</th>
-                                <th className="px-4 py-3">Batch</th>
-                                <th className="px-4 py-3">Expiry</th>
-                                <th className="px-4 py-3 text-center">Stock</th>
+            <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="bg-yellow-50 dark:bg-yellow-900/30 uppercase text-xs">
+                        <tr>
+                            <th className="px-4 py-2">Product</th>
+                            <th className="px-4 py-2">Batch</th>
+                            <th className="px-4 py-2">Expiry</th>
+                            <th className="px-4 py-2 text-center">Stock</th>
+                            <th className="px-4 py-2 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {nearExpiryBatches.map(item => (
+                            <tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700">
+                                <td className="px-4 py-2 font-medium">{item.product.name}</td>
+                                <td className="px-4 py-2">{item.batchNumber}</td>
+                                <td className="px-4 py-2 text-yellow-600 font-bold">{item.expiryDate}</td>
+                                <td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-4 py-2 text-center">
+                                    <button onClick={() => { if(confirm('Delete batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800">
+                                        <TrashIcon className="h-4 w-4" />
+                                    </button>
+                                </td>
                             </tr>
-                        </thead>
-                        <tbody>
-                            {nearExpiryBatches.map((b, idx) => (
-                                <tr key={idx} className="border-b dark:border-slate-700">
-                                    <td className="px-4 py-3">{b.productName}</td>
-                                    <td className="px-4 py-3">{b.batchNumber}</td>
-                                    <td className="px-4 py-3 font-bold text-yellow-600 dark:text-yellow-400">{b.expiryDate}</td>
-                                    <td className="px-4 py-3 text-center">{formatStock(b.stock, b.unitsPerStrip)}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            ) : (
-                <p className="text-center py-6 text-slate-600 dark:text-slate-400">No batches expiring in the next 30 days.</p>
-            )}
+                        ))}
+                        {nearExpiryBatches.length === 0 && <tr><td colSpan={5} className="text-center py-4">No batches expiring soon.</td></tr>}
+                    </tbody>
+                </table>
+            </div>
         </Card>
     );
 };
 
 // --- Modals ---
 
-const AddProductModal: React.FC<any> = ({ isOpen, onClose, onAddProduct, companies, systemConfig, gstRates, products, t }) => {
+const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAddProduct: (p: any, b: any) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], products: Product[], t: any }> = ({ isOpen, onClose, onAddProduct, companies, systemConfig, gstRates, products, t }) => {
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const [formData, setFormData] = useState({
-        name: '', company: '', hsnCode: '', gst: '0', barcode: '', composition: '', unitsPerStrip: '1', isScheduleH: 'No',
-        batchNumber: isPharmaMode ? '' : 'DEFAULT', expiryDate: isPharmaMode ? '' : '2099-12', stock: '0', mrp: '0', purchasePrice: '0'
+        name: '', company: '', hsnCode: '', gst: gstRates[0]?.rate || 0, barcode: '', composition: '', unitsPerStrip: 1, isScheduleH: 'No',
+        batchNumber: '', expiryDate: '', stock: 0, mrp: 0, purchasePrice: 0
     });
 
-    const handleChange = (e: any) => setFormData({...formData, [e.target.name]: e.target.value});
-
-    const handleSubmit = (e: any) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onAddProduct(
-            {
-                name: formData.name, company: formData.company, hsnCode: formData.hsnCode, gst: parseFloat(formData.gst),
-                barcode: formData.barcode, composition: formData.composition, unitsPerStrip: parseInt(formData.unitsPerStrip),
-                isScheduleH: formData.isScheduleH === 'Yes'
-            },
-            {
-                batchNumber: formData.batchNumber, expiryDate: formData.expiryDate, stock: parseInt(formData.stock),
-                mrp: parseFloat(formData.mrp), purchasePrice: parseFloat(formData.purchasePrice)
-            }
-        );
+        const productData = {
+            name: formData.name, company: formData.company, hsnCode: formData.hsnCode, gst: Number(formData.gst),
+            barcode: formData.barcode, composition: formData.composition, unitsPerStrip: Number(formData.unitsPerStrip),
+            isScheduleH: formData.isScheduleH === 'Yes'
+        };
+        const batchData = {
+            batchNumber: formData.batchNumber || 'DEFAULT',
+            expiryDate: formData.expiryDate || '2099-12',
+            stock: Number(formData.stock), mrp: Number(formData.mrp), purchasePrice: Number(formData.purchasePrice)
+        };
+        onAddProduct(productData, batchData);
         onClose();
-        setFormData({
-            name: '', company: '', hsnCode: '', gst: '0', barcode: '', composition: '', unitsPerStrip: '1', isScheduleH: 'No',
-            batchNumber: isPharmaMode ? '' : 'DEFAULT', expiryDate: isPharmaMode ? '' : '2099-12', stock: '0', mrp: '0', purchasePrice: '0'
-        });
+        setFormData({ name: '', company: '', hsnCode: '', gst: gstRates[0]?.rate || 0, barcode: '', composition: '', unitsPerStrip: 1, isScheduleH: 'No', batchNumber: '', expiryDate: '', stock: 0, mrp: 0, purchasePrice: 0 });
     };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={t.inventory.addProduct}>
             <form onSubmit={handleSubmit} className="space-y-4">
-                <input name="name" value={formData.name} onChange={handleChange} placeholder="Product Name" className={inputStyle} required />
-                <input name="company" value={formData.company} onChange={handleChange} placeholder="Company" className={inputStyle} required list="companies" />
-                <datalist id="companies">{companies.map((c: any) => <option key={c.id} value={c.name} />)}</datalist>
+                <input placeholder="Product Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required />
+                <input placeholder="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className={inputStyle} required list="company-list" />
+                <datalist id="company-list">{companies.map(c => <option key={c.id} value={c.name} />)}</datalist>
+                
                 <div className="grid grid-cols-2 gap-4">
-                    <input name="hsnCode" value={formData.hsnCode} onChange={handleChange} placeholder="HSN" className={inputStyle} />
-                    <select name="gst" value={formData.gst} onChange={handleChange} className={selectStyle}>
-                        {gstRates.map((r: any) => <option key={r.id} value={r.rate}>{r.rate}%</option>)}
+                    <select value={formData.gst} onChange={e => setFormData({...formData, gst: Number(e.target.value)})} className={selectStyle}>
+                        {gstRates.map(r => <option key={r.id} value={r.rate}>GST {r.rate}%</option>)}
                     </select>
+                    <input placeholder="HSN Code" value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} />
                 </div>
-                {!isPharmaMode && <input name="barcode" value={formData.barcode} onChange={handleChange} placeholder="Barcode" className={inputStyle} />}
-                {isPharmaMode && <input name="composition" value={formData.composition} onChange={handleChange} placeholder="Composition" className={inputStyle} />}
+
+                {!isPharmaMode && <input placeholder="Barcode" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} />}
+                
                 {isPharmaMode && (
-                    <div className="grid grid-cols-2 gap-4">
-                        <input name="unitsPerStrip" type="number" value={formData.unitsPerStrip} onChange={handleChange} placeholder="Units/Strip" className={inputStyle} />
-                        <select name="isScheduleH" value={formData.isScheduleH} onChange={handleChange} className={selectStyle}>
-                            <option value="No">Not Sch. H</option>
-                            <option value="Yes">Sch. H</option>
-                        </select>
-                    </div>
+                    <>
+                        <input placeholder="Composition" value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} />
+                        <div className="grid grid-cols-2 gap-4">
+                            <input type="number" placeholder="Units/Strip" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: Number(e.target.value)})} className={inputStyle} />
+                            <select value={formData.isScheduleH} onChange={e => setFormData({...formData, isScheduleH: e.target.value})} className={selectStyle}>
+                                <option value="No">Schedule H: No</option>
+                                <option value="Yes">Schedule H: Yes</option>
+                            </select>
+                        </div>
+                    </>
                 )}
+
                 <div className="border-t pt-4 mt-4">
-                    <h4 className="font-semibold mb-2">Initial Stock</h4>
+                    <h4 className="font-semibold mb-2">Initial Batch Details</h4>
                     <div className="grid grid-cols-2 gap-4">
-                        {isPharmaMode && <input name="batchNumber" value={formData.batchNumber} onChange={handleChange} placeholder="Batch" className={inputStyle} required />}
-                        {isPharmaMode && <input name="expiryDate" type="month" value={formData.expiryDate} onChange={handleChange} className={inputStyle} required />}
-                        <input name="stock" type="number" value={formData.stock} onChange={handleChange} placeholder="Stock" className={inputStyle} required />
-                        <input name="mrp" type="number" value={formData.mrp} onChange={handleChange} placeholder="MRP" className={inputStyle} required />
-                        <input name="purchasePrice" type="number" value={formData.purchasePrice} onChange={handleChange} placeholder="Purchase Price" className={inputStyle} required />
+                        {isPharmaMode && <input placeholder="Batch No" value={formData.batchNumber} onChange={e => setFormData({...formData, batchNumber: e.target.value})} className={inputStyle} required />}
+                        {isPharmaMode && <input type="month" placeholder="Expiry" value={formData.expiryDate} onChange={e => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} required />}
+                        <input type="number" placeholder="Stock Qty" value={formData.stock} onChange={e => setFormData({...formData, stock: Number(e.target.value)})} className={inputStyle} required />
+                        <input type="number" step="0.01" placeholder="MRP" value={formData.mrp} onChange={e => setFormData({...formData, mrp: Number(e.target.value)})} className={inputStyle} required />
+                        <input type="number" step="0.01" placeholder="Purchase Price" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: Number(e.target.value)})} className={inputStyle} required />
                     </div>
                 </div>
-                <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded">Save Product</button>
+
+                <div className="flex justify-end gap-2 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Add Product</button>
+                </div>
             </form>
         </Modal>
     );
 };
 
-const AddBatchModal: React.FC<any> = ({ isOpen, onClose, product, onAddBatch, onDeleteBatch, systemConfig }) => {
+const AddBatchModal: React.FC<{ isOpen: boolean, onClose: () => void, product: Product, onAddBatch: (pid: string, b: any) => void, onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig }> = ({ isOpen, onClose, product, onAddBatch, onDeleteBatch, systemConfig }) => {
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const [formData, setFormData] = useState({
-        batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: ''
+        batchNumber: '', expiryDate: '', stock: 0, mrp: 0, purchasePrice: 0
     });
 
-    const handleSubmit = (e: any) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onAddBatch(product.id, {
             batchNumber: formData.batchNumber || 'DEFAULT',
             expiryDate: formData.expiryDate || '2099-12',
-            stock: parseInt(formData.stock),
-            mrp: parseFloat(formData.mrp),
-            purchasePrice: parseFloat(formData.purchasePrice)
+            stock: Number(formData.stock), mrp: Number(formData.mrp), purchasePrice: Number(formData.purchasePrice)
         });
-        setFormData({ batchNumber: '', expiryDate: '', stock: '', mrp: '', purchasePrice: '' });
+        setFormData({ batchNumber: '', expiryDate: '', stock: 0, mrp: 0, purchasePrice: 0 });
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Manage Stock: ${product.name}`}>
+        <Modal isOpen={isOpen} onClose={onClose} title={`Manage Batches: ${product.name}`}>
             <div className="space-y-6">
-                <form onSubmit={handleSubmit} className="space-y-4 border-b pb-6">
-                    <h4 className="font-semibold">Add New Batch</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                        {isPharmaMode && <input name="batchNumber" value={formData.batchNumber} onChange={(e) => setFormData({...formData, batchNumber: e.target.value})} placeholder="Batch No" className={inputStyle} required />}
-                        {isPharmaMode && <input name="expiryDate" type="month" value={formData.expiryDate} onChange={(e) => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} required />}
-                        <input name="stock" type="number" value={formData.stock} onChange={(e) => setFormData({...formData, stock: e.target.value})} placeholder="Qty" className={inputStyle} required />
-                        <input name="mrp" type="number" value={formData.mrp} onChange={(e) => setFormData({...formData, mrp: e.target.value})} placeholder="MRP" className={inputStyle} required />
-                        <input name="purchasePrice" type="number" value={formData.purchasePrice} onChange={(e) => setFormData({...formData, purchasePrice: e.target.value})} placeholder="Purchase Rate" className={inputStyle} required />
+                <form onSubmit={handleSubmit} className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
+                    <h4 className="font-semibold mb-3">Add New Batch</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        {isPharmaMode && <input placeholder="Batch No" value={formData.batchNumber} onChange={e => setFormData({...formData, batchNumber: e.target.value})} className={inputStyle} required />}
+                        {isPharmaMode && <input type="month" value={formData.expiryDate} onChange={e => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} required />}
+                        <input type="number" placeholder="Qty" value={formData.stock} onChange={e => setFormData({...formData, stock: Number(e.target.value)})} className={inputStyle} required />
+                        <input type="number" step="0.01" placeholder="MRP" value={formData.mrp} onChange={e => setFormData({...formData, mrp: Number(e.target.value)})} className={inputStyle} required />
+                        <input type="number" step="0.01" placeholder="P.Rate" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: Number(e.target.value)})} className={inputStyle} required />
                     </div>
-                    <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded">Add Stock</button>
+                    <button type="submit" className="mt-3 w-full py-2 bg-green-600 text-white rounded hover:bg-green-700">Add Batch</button>
                 </form>
-                <div>
-                    <h4 className="font-semibold mb-2">Existing Batches</h4>
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="bg-slate-100">
-                                <th className="p-2 text-left">Batch</th>
-                                <th className="p-2 text-left">Exp</th>
-                                <th className="p-2 text-center">Stock</th>
-                                <th className="p-2 text-right">MRP</th>
-                                <th className="p-2"></th>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
+                            <tr>
+                                {isPharmaMode && <th>Batch</th>}
+                                {isPharmaMode && <th>Expiry</th>}
+                                <th>Stock</th>
+                                <th>MRP</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {product.batches.map((b: any) => (
-                                <tr key={b.id} className="border-b">
-                                    <td className="p-2">{b.batchNumber}</td>
-                                    <td className="p-2">{b.expiryDate}</td>
-                                    <td className="p-2 text-center">{b.stock}</td>
-                                    <td className="p-2 text-right">{b.mrp}</td>
-                                    <td className="p-2"><button onClick={() => onDeleteBatch(product.id, b.id)} className="text-red-500"><TrashIcon className="h-4 w-4"/></button></td>
+                            {product.batches.map(b => (
+                                <tr key={b.id} className="border-b dark:border-slate-700">
+                                    {isPharmaMode && <td className="px-4 py-2">{b.batchNumber}</td>}
+                                    {isPharmaMode && <td className="px-4 py-2">{b.expiryDate}</td>}
+                                    <td className="px-4 py-2">{b.stock}</td>
+                                    <td className="px-4 py-2">₹{b.mrp}</td>
+                                    <td className="px-4 py-2"><button onClick={() => { if(confirm('Delete?')) onDeleteBatch(product.id, b.id); }} className="text-red-500"><TrashIcon className="h-4 w-4"/></button></td>
                                 </tr>
                             ))}
                         </tbody>
@@ -960,71 +849,93 @@ const AddBatchModal: React.FC<any> = ({ isOpen, onClose, product, onAddBatch, on
     );
 };
 
-const EditProductModal: React.FC<any> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
-    const [formData, setFormData] = useState({...product});
+const EditProductModal: React.FC<{ isOpen: boolean, onClose: () => void, product: Product, onUpdateProduct: (pid: string, data: any) => void, systemConfig: SystemConfig, gstRates: GstRate[] }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
+    const [formData, setFormData] = useState({ ...product, gst: String(product.gst) });
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
-    const handleSubmit = (e: any) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onUpdateProduct(product.id, formData);
+        onUpdateProduct(product.id, { ...formData, gst: Number(formData.gst) });
         onClose();
     };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Edit Product">
             <form onSubmit={handleSubmit} className="space-y-4">
-                <input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className={inputStyle} placeholder="Name" />
-                <input value={formData.company} onChange={(e) => setFormData({...formData, company: e.target.value})} className={inputStyle} placeholder="Company" />
+                <input placeholder="Name" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required />
+                <input placeholder="Company" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className={inputStyle} required />
                 <div className="grid grid-cols-2 gap-4">
-                    <input value={formData.hsnCode} onChange={(e) => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} placeholder="HSN" />
-                    <select value={formData.gst} onChange={(e) => setFormData({...formData, gst: parseFloat(e.target.value)})} className={selectStyle}>
-                        {gstRates.map((r: any) => <option key={r.id} value={r.rate}>{r.rate}%</option>)}
+                    <select value={formData.gst} onChange={e => setFormData({...formData, gst: e.target.value})} className={selectStyle}>
+                        {gstRates.map(r => <option key={r.id} value={r.rate}>GST {r.rate}%</option>)}
                     </select>
+                    <input placeholder="HSN" value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} />
                 </div>
-                {!isPharmaMode && <input value={formData.barcode} onChange={(e) => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Barcode" />}
-                {isPharmaMode && <input value={formData.composition} onChange={(e) => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="Composition" />}
-                <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded">Update</button>
+                {!isPharmaMode && <input placeholder="Barcode" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} />}
+                {isPharmaMode && <input placeholder="Composition" value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} />}
+                <div className="flex justify-end gap-2 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 rounded">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">Update</button>
+                </div>
             </form>
         </Modal>
     );
 };
 
-const PrintLabelModal: React.FC<any> = ({ isOpen, onClose, product, companyProfile }) => {
-    const handlePrint = () => {
-        const w = window.open('', '_blank');
-        if(w) {
-            w.document.write(`<html><body><div style="text-align:center; font-family:sans-serif;"><h3>${companyProfile.name}</h3><p><strong>${product.name}</strong></p><p>MRP: ${product.batches[0]?.mrp}</p><svg id="barcode"></svg></div><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script><script>JsBarcode("#barcode", "${product.barcode || product.id}", {height:40}); window.print();</script></body></html>`);
-            w.document.close();
-        }
-    };
+const PrintLabelModal: React.FC<{ isOpen: boolean, onClose: () => void, product: Product, companyProfile: CompanyProfile, systemConfig: SystemConfig }> = ({ isOpen, onClose, product, companyProfile }) => {
+    const handlePrint = () => { window.print(); };
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Print Label">
-            <div className="text-center p-4">
-                <p className="mb-4">Print barcode label for <strong>{product.name}</strong>?</p>
-                <button onClick={handlePrint} className="bg-indigo-600 text-white px-4 py-2 rounded">Print</button>
+            <div className="flex flex-col items-center gap-4 p-6">
+                <div className="border p-4 text-center w-64 bg-white text-black print:fixed print:top-0 print:left-0 print:w-full print:h-full print:border-none print:flex print:items-center print:justify-center">
+                    <p className="font-bold text-sm">{companyProfile.name}</p>
+                    <p className="text-xs truncate">{product.name}</p>
+                    <p className="text-xs font-mono my-1">{product.barcode || product.id}</p>
+                    <p className="font-bold text-sm">MRP: ₹{product.batches[0]?.mrp || 0}</p>
+                </div>
+                <div className="flex gap-2 print:hidden">
+                    <button onClick={handlePrint} className="px-4 py-2 bg-slate-800 text-white rounded flex items-center gap-2"><CheckCircleIcon className="h-4 w-4"/> Print</button>
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 rounded">Close</button>
+                </div>
+                <style>{`@media print { body * { visibility: hidden; } .print\\:fixed, .print\\:fixed * { visibility: visible; } }`}</style>
             </div>
         </Modal>
     );
 };
 
-const ImportProductsModal: React.FC<any> = ({ isOpen, onClose, onBulkAddProducts }) => {
-    const [csvData, setCsvData] = useState('');
+const ImportProductsModal: React.FC<{ isOpen: boolean, onClose: () => void, onBulkAddProducts: (prods: any[]) => Promise<{success: number, skipped: number}> }> = ({ isOpen, onClose, onBulkAddProducts }) => {
+    const [csvText, setCsvText] = useState('');
+    const [status, setStatus] = useState('');
+
     const handleImport = async () => {
-        const rows = csvData.trim().split('\n').map(row => row.split(','));
-        // Assuming CSV structure: Name,Company,MRP
-        const products = rows.slice(1).map(r => ({
-            name: r[0], company: r[1], hsnCode: '', gst: 0,
-            batches: [{ batchNumber: 'IMP', expiryDate: '2099-12', stock: 100, mrp: parseFloat(r[2]) || 0, purchasePrice: 0 }]
-        }));
-        await onBulkAddProducts(products as any);
-        onClose();
+        const lines = csvText.split('\n').filter(l => l.trim());
+        const products = lines.slice(1).map(line => {
+            const cols = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+            // Very basic mapping assumption: Name,Company,HSN,GST,MRP,Stock...
+            if (cols.length < 2) return null;
+            return {
+                name: cols[0],
+                company: cols[1],
+                hsnCode: cols[2] || '',
+                gst: parseFloat(cols[3]) || 0,
+                // Simplified for bulk import logic, usually needs more robust mapping
+            };
+        }).filter(p => p !== null);
+
+        setStatus('Importing...');
+        const res = await onBulkAddProducts(products);
+        setStatus(`Success: ${res.success}, Skipped: ${res.skipped}`);
     };
+
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Import Products">
             <div className="space-y-4">
-                <p className="text-sm text-slate-500">Paste CSV data (Name,Company,MRP):</p>
-                <textarea value={csvData} onChange={(e) => setCsvData(e.target.value)} className="w-full h-40 p-2 border rounded" />
-                <button onClick={handleImport} className="bg-green-600 text-white px-4 py-2 rounded">Import</button>
+                <p className="text-sm text-slate-500">Paste CSV content (Name,Company,HSN,GST...)</p>
+                <textarea className="w-full h-40 p-2 border rounded" value={csvText} onChange={e => setCsvText(e.target.value)}></textarea>
+                {status && <p className="text-sm font-bold">{status}</p>}
+                <div className="flex justify-end gap-2">
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 rounded">Close</button>
+                    <button onClick={handleImport} className="px-4 py-2 bg-green-600 text-white rounded">Import</button>
+                </div>
             </div>
         </Modal>
     );
