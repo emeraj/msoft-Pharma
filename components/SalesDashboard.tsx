@@ -2,13 +2,13 @@
 import React, { useMemo } from 'react';
 import type { Bill, Product, SystemConfig } from '../types';
 import Card from './common/Card';
-import { ArchiveIcon, CashIcon, CubeIcon, ReceiptIcon, ChartBarIcon } from './icons/Icons';
+import { ArchiveIcon, CashIcon, CubeIcon, ReceiptIcon, ChartBarIcon, ExclamationTriangleIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
 
 interface SalesDashboardProps {
   bills: Bill[];
   products: Product[];
-  systemConfig: SystemConfig; // Added prop
+  systemConfig: SystemConfig;
 }
 
 const StatCard: React.FC<{
@@ -17,8 +17,8 @@ const StatCard: React.FC<{
     icon: React.ReactNode;
     color: string;
 }> = ({ title, value, icon, color }) => (
-    <Card className="flex items-start gap-4">
-        <div className={`p-3 rounded-lg ${color}`}>
+    <Card className="flex items-start gap-4 h-full">
+        <div className={`p-3 rounded-lg flex-shrink-0 ${color}`}>
             {icon}
         </div>
         <div>
@@ -44,6 +44,47 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products, system
             totalItemsSold
         };
     }, [bills]);
+
+    const inventoryStats = useMemo(() => {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const next30Days = new Date(today);
+        next30Days.setDate(today.getDate() + 30);
+
+        let expired = 0;
+        let nearExpiry = 0;
+        let lowStock = 0;
+
+        products.forEach(p => {
+            const totalStock = p.batches.reduce((sum, b) => sum + b.stock, 0);
+            if (totalStock < 10 && totalStock > 0) lowStock++; // Threshold 10, exclude 0 stock
+
+            p.batches.forEach(b => {
+                if (b.stock > 0) { // Only count stock that exists
+                    // Calculate expiry (Last day of month)
+                    const parts = b.expiryDate.split('-');
+                    let expiryDate;
+                    if (parts.length === 2) {
+                        const [y, m] = parts.map(Number);
+                        expiryDate = new Date(y, m, 0); 
+                    } else {
+                        expiryDate = new Date(b.expiryDate); // Fallback
+                    }
+                    
+                    // Reset time for accurate comparison
+                    expiryDate.setHours(0,0,0,0);
+
+                    if (expiryDate < today) {
+                        expired++;
+                    } else if (expiryDate <= next30Days) {
+                        nearExpiry++;
+                    }
+                }
+            });
+        });
+
+        return { expired, nearExpiry, lowStock };
+    }, [products]);
 
     const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
@@ -108,12 +149,43 @@ const SalesDashboard: React.FC<SalesDashboardProps> = ({ bills, products, system
     <div className="p-4 sm:p-6 space-y-6 animate-fade-in">
         <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{t.dashboard.title}</h1>
         
+        {/* Main Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <StatCard title={t.dashboard.totalRevenue} value={formatCurrency(stats.totalRevenue)} icon={<CashIcon className="h-6 w-6 text-green-800 dark:text-green-200" />} color="bg-green-100 dark:bg-green-900/50" />
             <StatCard title={t.dashboard.totalBills} value={stats.totalBills.toLocaleString('en-IN')} icon={<ReceiptIcon className="h-6 w-6 text-blue-800 dark:text-blue-200" />} color="bg-blue-100 dark:bg-blue-900/50" />
             <StatCard title={t.dashboard.avgBillValue} value={formatCurrency(stats.avgBillValue)} icon={<ChartBarIcon className="h-6 w-6 text-indigo-800 dark:text-indigo-200" />} color="bg-indigo-100 dark:bg-indigo-900/50" />
             <StatCard title={t.dashboard.totalItemsSold} value={stats.totalItemsSold.toLocaleString('en-IN')} icon={<CubeIcon className="h-6 w-6 text-yellow-800 dark:text-yellow-200" />} color="bg-yellow-100 dark:bg-yellow-900/50" />
         </div>
+
+        {/* Inventory Alerts Section */}
+        {systemConfig.softwareMode === 'Pharma' && (
+            <div className="mt-4">
+                <h2 className="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-4 flex items-center gap-2">
+                    <ExclamationTriangleIcon className="h-5 w-5 text-amber-500" /> 
+                    Inventory Alerts
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <StatCard 
+                        title="Expired Batches" 
+                        value={inventoryStats.expired} 
+                        icon={<ArchiveIcon className="h-6 w-6 text-red-800 dark:text-red-200" />} 
+                        color="bg-red-100 dark:bg-red-900/50" 
+                    />
+                    <StatCard 
+                        title="Expiring Soon (30 Days)" 
+                        value={inventoryStats.nearExpiry} 
+                        icon={<ExclamationTriangleIcon className="h-6 w-6 text-amber-800 dark:text-amber-200" />} 
+                        color="bg-amber-100 dark:bg-amber-900/50" 
+                    />
+                    <StatCard 
+                        title="Low Stock Items" 
+                        value={inventoryStats.lowStock} 
+                        icon={<CubeIcon className="h-6 w-6 text-sky-800 dark:text-sky-200" />} 
+                        color="bg-sky-100 dark:bg-sky-900/50" 
+                    />
+                </div>
+            </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <Card title={t.dashboard.monthlySales} className="lg:col-span-2">
