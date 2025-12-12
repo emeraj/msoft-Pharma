@@ -72,7 +72,9 @@ const EditCustomerModal: React.FC<{
                 phone: customer.phone || '',
                 address: customer.address || '',
                 gstin: customer.gstin || '',
-                openingBalance: (customer.openingBalance ?? 0).toString()
+                // Use openingBalance if exists, else 0. 
+                // Note: We do NOT map current 'balance' here, we map the static 'openingBalance'.
+                openingBalance: (customer.openingBalance || 0).toString()
             });
         }
     }, [customer]);
@@ -80,11 +82,13 @@ const EditCustomerModal: React.FC<{
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Calculate new balance based on change in opening balance
-        const oldOpening = customer.openingBalance || 0;
         const newOpening = parseFloat(formData.openingBalance) || 0;
+        const oldOpening = customer.openingBalance || 0;
+        
+        // Calculate the difference to adjust the current outstanding balance
+        // If Opening increases by 100, Current Balance (Debit) increases by 100.
         const diff = newOpening - oldOpening;
-        const newBalance = customer.balance + diff;
+        const newCurrentBalance = customer.balance + diff;
 
         await onUpdate(customer.id, {
             name: formData.name,
@@ -92,7 +96,7 @@ const EditCustomerModal: React.FC<{
             address: formData.address,
             gstin: formData.gstin,
             openingBalance: newOpening,
-            balance: newBalance
+            balance: newCurrentBalance
         });
         onClose();
     };
@@ -148,6 +152,7 @@ const EditCustomerModal: React.FC<{
                             className={formInputStyle} 
                             placeholder="0.00"
                         />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Adjusts current balance automatically.</p>
                     </div>
                 </div>
                 <div className="flex justify-end gap-3 pt-4">

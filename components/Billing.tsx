@@ -407,13 +407,13 @@ const Billing: React.FC<BillingProps> = ({
             return [...prev, {
                 productId: product.id,
                 productName: product.name,
-                composition: product.composition,
+                composition: product.composition || '',
                 batchId: selectedBatch.id,
                 batchNumber: selectedBatch.batchNumber,
                 expiryDate: selectedBatch.expiryDate,
                 hsnCode: product.hsnCode,
-                unitsPerStrip: product.unitsPerStrip,
-                isScheduleH: product.isScheduleH,
+                unitsPerStrip: product.unitsPerStrip || 1,
+                isScheduleH: product.isScheduleH || false,
                 stripQty: 0,
                 looseQty: 1,
                 quantity: 1,
@@ -477,15 +477,20 @@ const Billing: React.FC<BillingProps> = ({
         const billData = {
             date: new Date(billDate).toISOString(),
             customerName,
-            customerId: custId,
-            doctorName,
-            salesmanId,
-            salesmanName: salesmen.find(s => s.id === salesmanId)?.name,
-            items: cart,
+            customerId: custId || null,
+            doctorName: doctorName || '',
+            salesmanId: salesmanId || null,
+            salesmanName: salesmen?.find(s => s.id === salesmanId)?.name || null,
+            items: cart.map(item => ({
+                ...item,
+                composition: item.composition || '',
+                unitsPerStrip: item.unitsPerStrip || 1,
+                isScheduleH: item.isScheduleH || false
+            })),
             subTotal: totals.subTotal,
             totalGst: totals.totalGst,
             grandTotal: totals.grandTotal,
-            roundOff: totals.roundOff,
+            roundOff: totals.roundOff || 0,
             paymentMode
         };
 
@@ -614,7 +619,7 @@ const Billing: React.FC<BillingProps> = ({
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Salesman</label>
                             <select value={salesmanId} onChange={e => setSalesmanId(e.target.value)} className={inputStyle + " w-full"}>
                                 <option value="">Select Salesman</option>
-                                {salesmen.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                {salesmen?.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
                     )}
