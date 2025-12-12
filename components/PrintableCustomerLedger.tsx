@@ -14,15 +14,20 @@ interface PrintableCustomerLedgerProps {
   customer: Customer;
   transactions: Transaction[];
   companyProfile: CompanyProfile;
+  openingBalance: number;
+  dateRange: { from: string; to: string };
 }
 
-const PrintableCustomerLedger: React.FC<PrintableCustomerLedgerProps> = ({ customer, transactions, companyProfile }) => {
+const PrintableCustomerLedger: React.FC<PrintableCustomerLedgerProps> = ({ customer, transactions, companyProfile, openingBalance, dateRange }) => {
     
-    let runningBalance = 0;
+    let runningBalance = openingBalance;
     
     const totalDebit = transactions.reduce((sum, tx) => sum + tx.debit, 0);
     const totalCredit = transactions.reduce((sum, tx) => sum + tx.credit, 0);
     
+    const formatDate = (dateString: string) => dateString ? new Date(dateString).toLocaleDateString() : 'Start';
+    const periodString = `Period: ${formatDate(dateRange.from)} to ${formatDate(dateRange.to)}`;
+
     const styles: { [key: string]: React.CSSProperties } = {
         page: {
             width: '210mm',
@@ -94,6 +99,7 @@ const PrintableCustomerLedger: React.FC<PrintableCustomerLedgerProps> = ({ custo
                 <div style={{ width: '40%', textAlign: 'right' }}>
                     <h2 style={{ fontWeight: 'bold', fontSize: '14pt', margin: 0 }}>Customer Ledger</h2>
                     <p style={{ margin: '1.5mm 0 0 0' }}><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
+                    <p style={{ margin: '1mm 0 0 0', fontSize: '9pt' }}>{periodString}</p>
                 </div>
             </header>
 
@@ -109,13 +115,22 @@ const PrintableCustomerLedger: React.FC<PrintableCustomerLedgerProps> = ({ custo
                     <thead>
                         <tr>
                             <th style={{ ...styles.th, width: '15%' }}>Date</th>
-                            <th style={{ ...styles.th, width: '45%' }}>Particulars</th>
+                            <th style={{ ...styles.th, width: '40%' }}>Particulars</th>
                             <th style={{ ...styles.th, textAlign: 'right', width: '15%' }}>Debit (₹)</th>
                             <th style={{ ...styles.th, textAlign: 'right', width: '15%' }}>Credit (₹)</th>
                             <th style={{ ...styles.th, textAlign: 'right', width: '15%' }}>Balance (₹)</th>
                         </tr>
                     </thead>
                     <tbody>
+                        <tr>
+                            <td style={styles.td}></td>
+                            <td style={{ ...styles.td, fontStyle: 'italic' }}><strong>Opening Balance</strong></td>
+                            <td style={styles.td}></td>
+                            <td style={styles.td}></td>
+                            <td style={{ ...styles.td, textAlign: 'right', fontWeight: 'bold' }}>
+                                {Math.abs(openingBalance).toFixed(2)} {openingBalance > 0 ? 'Dr' : 'Cr'}
+                            </td>
+                        </tr>
                         {transactions.map((tx, index) => {
                             runningBalance = runningBalance + tx.debit - tx.credit;
                             return (
@@ -124,7 +139,7 @@ const PrintableCustomerLedger: React.FC<PrintableCustomerLedgerProps> = ({ custo
                                     <td style={styles.td}>{tx.particulars}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{tx.debit > 0 ? tx.debit.toFixed(2) : '-'}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{tx.credit > 0 ? tx.credit.toFixed(2) : '-'}</td>
-                                    <td style={{ ...styles.td, textAlign: 'right' }}>{Math.abs(runningBalance).toFixed(2)} {runningBalance >= 0 ? 'Dr' : 'Cr'}</td>
+                                    <td style={{ ...styles.td, textAlign: 'right' }}>{Math.abs(runningBalance).toFixed(2)} {runningBalance > 0 ? 'Dr' : 'Cr'}</td>
                                 </tr>
                             );
                         })}
