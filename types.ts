@@ -109,6 +109,7 @@ export interface Customer {
   name: string;
   phone?: string;
   address?: string;
+  gstin?: string;
   balance: number; // +ve for Debit (Receivable), -ve for Credit (Payable)
 }
 

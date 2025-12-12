@@ -25,7 +25,7 @@ interface BillingProps {
   editingBill?: Bill | null;
   onUpdateBill?: (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => Promise<Bill | null>;
   onCancelEdit?: () => void;
-  onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
+  onAddCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
   onAddSalesman?: (salesman: Omit<Salesman, 'id'>) => Promise<Salesman | null>; // New prop
 }
 
@@ -33,6 +33,7 @@ const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border bo
 const modalInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
 // --- Helper Functions ---
+
 const getExpiryDate = (expiryString: string): Date => {
     if (!expiryString) return new Date('9999-12-31');
     const [year, month] = expiryString.split('-').map(Number);
@@ -290,13 +291,10 @@ const printViaWebBluetooth = async (data: Uint8Array, printerId?: string) => {
          throw new Error("Printer service not found. Ensure it supports standard BLE printing.");
     }
 
-    // Write Data in chunks with DELAY to prevent buffer overflow
-    // Reduced chunk size and increased delay for higher reliability on mobile
     const CHUNK_SIZE = 40; 
     for (let i = 0; i < data.length; i += CHUNK_SIZE) {
         const chunk = data.slice(i, i + CHUNK_SIZE);
         await characteristic.writeValue(chunk);
-        // Increase delay to allow printer to process buffer
         await new Promise(resolve => setTimeout(resolve, 40)); 
     }
 
@@ -643,25 +641,35 @@ const OrderSuccessModal: React.FC<{
 const AddCustomerModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-    onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
+    onAddCustomer: (customer: Omit<Customer, 'id'>) => Promise<Customer | null>;
     initialName: string;
 }> = ({ isOpen, onClose, onAddCustomer, initialName }) => {
     const [name, setName] = useState(initialName);
     const [phone, setPhone] = useState('');
     const [address, setAddress] = useState('');
+    const [gstin, setGstin] = useState('');
+    const [openingBalance, setOpeningBalance] = useState('');
 
     useEffect(() => {
         if(isOpen) {
             setName(initialName);
             setPhone('');
             setAddress('');
+            setGstin('');
+            setOpeningBalance('');
         }
     }, [isOpen, initialName]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
-        await onAddCustomer({ name, phone, address });
+        await onAddCustomer({ 
+            name, 
+            phone, 
+            address, 
+            gstin, 
+            balance: parseFloat(openingBalance) || 0 
+        });
         onClose();
     };
 
@@ -679,6 +687,23 @@ const AddCustomerModal: React.FC<{
                 <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
                     <input type="text" value={address} onChange={e => setAddress(e.target.value)} className={modalInputStyle} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
+                        <input type="text" value={gstin} onChange={e => setGstin(e.target.value)} className={modalInputStyle} />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
+                        <input 
+                            type="number" 
+                            step="0.01" 
+                            value={openingBalance} 
+                            onChange={e => setOpeningBalance(e.target.value)} 
+                            className={modalInputStyle} 
+                            placeholder="0.00"
+                        />
+                    </div>
                 </div>
                 <div className="flex justify-end gap-2 pt-4">
                     <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button>
@@ -850,7 +875,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       setShowCustomerSuggestions(false);
   };
 
-  const handleAddNewCustomer = async (custData: Omit<Customer, 'id' | 'balance'>) => {
+  const handleAddNewCustomer = async (custData: Omit<Customer, 'id'>) => {
       const newCust = await onAddCustomer(custData);
       if (newCust) {
           setCustomerName(newCust.name);
@@ -907,6 +932,21 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   }, [searchResults, today, isPharmaMode]);
 
   // --- Keyboard Navigation Effects ---
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        if (cart.length > 0) handleSaveBill(true);
+      }
+      if (event.altKey && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (cart.length > 0) handleSaveBill(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cart.length]);
+
   useEffect(() => {
     if (searchTerm && searchResults.length > 0) {
       // Find the first product with navigable batches
@@ -1097,7 +1137,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   }, [cart]);
 
   const printViaReactNative = async (bill: Bill, printer: PrinterProfile) => {
-      // ... (Keep existing native print logic, it doesn't use translated strings in main UI)
       try {
         await window.BluetoothManager.connect(printer.id);
         const printerAPI = window.BluetoothEscposPrinter;
@@ -1200,7 +1239,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         try {
             await (window as any).BluetoothLe.initialize();
             const data = generateEscPosBill(bill, companyProfile, systemConfig);
-            const hexString = bytesToHex(data);
+            const hexString = Array.from(data, byte => byte.toString(16).padStart(2, '0').toUpperCase()).join('');
             await (window as any).BluetoothLe.write({ deviceId: printer.id, service: "000018f0-0000-1000-8000-00805f9b34fb", characteristic: "00002af1-0000-1000-8000-00805f9b34fb", value: hexString });
             if (shouldReset) doReset();
             return;
@@ -1239,7 +1278,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     } else { alert("Please enable popups to print the bill."); if (shouldReset) doReset(); }
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
-  // ... (Keep other handlers handlePrinterSelection, handleUpdateConfig, handleSaveBill etc.) ...
   const handlePrinterSelection = (printer: PrinterProfile) => {
       if (billToPrint) {
           executePrint(billToPrint, printer); 
@@ -1271,7 +1309,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const billData: any = { 
         date: isUpdate ? editingBill.date : new Date().toISOString(), 
         customerName: customerName || t.billing.walkInCustomer, 
-        customerId: selectedCustomer ? selectedCustomer.id : null, // Fix: undefined causes Firestore error
+        customerId: selectedCustomer ? selectedCustomer.id : null, 
         doctorName: doctorName.trim(), 
         items: cart, 
         subTotal, 
@@ -1302,8 +1340,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                 setPrinterModalOpen(true); 
             }
         } else {
-            // Save Only: Don't reset form yet, show Order Success Modal
-            // Calculate time taken
             if (startTimeRef.current) {
                 const seconds = Math.floor((Date.now() - startTimeRef.current) / 1000);
                 setOrderSeconds(seconds);
@@ -1314,7 +1350,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
             setLastSavedBill(savedBill);
             setShowOrderSuccessModal(true);
             
-            // Show toast success message briefly
             setShowSuccessToast(true);
             setTimeout(() => setShowSuccessToast(false), 2500);
         }
@@ -1324,23 +1359,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     }
   }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, roundOff, onGenerateBill, systemConfig, executePrint, t, paymentMode, selectedSalesmanId, salesmen]);
   
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.altKey && event.key.toLowerCase() === 'p') {
-        event.preventDefault();
-        if (cart.length > 0) handleSaveBill(true);
-      }
-      if (event.altKey && event.key.toLowerCase() === 's') {
-        event.preventDefault();
-        if (cart.length > 0) handleSaveBill(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart.length, handleSaveBill]);
-  
-  // ... (Keep keyboard nav logic handleKeyDown, handleStripQtyKeyDown, handleTabQtyKeyDown) ...
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
         if (searchResults.length === 0 || navigableBatchesByProduct.every(b => b.length === 0)) return;
         const findNext = (current: { product: number; batch: number }) => {
             let { product, batch } = current;
@@ -1500,7 +1519,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                                 </li>
                             );
                             })}
-                            {/* ... (Expired batches kept same) ... */}
                         </ul>
                         </li>
                     ))}
@@ -1723,167 +1741,157 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                         </div>
                     )}
                 </div>
+                
                 {isPharmaMode && (
                     <div>
-                        <label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{t.billing.doctorName}</label>
+                        <label htmlFor="doctorName" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                            {t.billing.doctorName}
+                        </label>
                         <input
                             type="text"
                             id="doctorName"
                             value={doctorName}
                             onChange={e => setDoctorName(e.target.value)}
-                            placeholder="e.g. Dr. John Doe"
-                            className={`mt-1 block w-full px-3 py-2 ${inputStyle}`}
+                            className={inputStyle}
                             list="doctor-list"
                         />
                         <datalist id="doctor-list">
-                            {doctorList.map(doc => <option key={doc} value={doc} />)}
+                            {doctorList.map(d => <option key={d} value={d} />)}
                         </datalist>
                     </div>
                 )}
-                
-                <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300">
-                    <div className="flex justify-between">
-                        <span>{t.billing.subtotal}</span>
+
+                <div className="border-t dark:border-slate-700 pt-4 space-y-2 mt-4">
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                        <span>{t.billing.subtotal}:</span>
                         <span>₹{subTotal.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between">
-                        <span>{t.billing.totalGst}</span>
+                    <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                        <span>{t.billing.totalGst}:</span>
                         <span>₹{totalGst.toFixed(2)}</span>
                     </div>
-                    {/* Add Round Off Display */}
-                    {Math.abs(roundOff) > 0.005 && (
-                        <div className="flex justify-between text-sm text-slate-500 dark:text-slate-400">
-                            <span>Round Off</span>
+                    {roundOff !== undefined && Math.abs(roundOff) > 0.005 && (
+                        <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                            <span>Round Off:</span>
                             <span>{roundOff > 0 ? '+' : ''}{roundOff.toFixed(2)}</span>
                         </div>
                     )}
-                    <div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2">
-                        <span>{t.billing.grandTotal}</span>
+                    <div className="flex justify-between text-xl font-bold text-slate-800 dark:text-slate-200 border-t dark:border-slate-700 pt-2">
+                        <span>{t.billing.grandTotal}:</span>
                         <span>₹{grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
-                
-                <div className="pt-2 flex gap-2">
-                    <button 
-                        onClick={() => handleSaveBill(true)}
-                        disabled={cart.length === 0}
-                        className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}
-                        title="Save and Print (Alt+P)"
-                    >
-                       <PrinterIcon className="h-5 w-5" />
-                       {isEditing ? (t.billing.updateAndPrint || "Update & Print") : t.billing.saveAndPrint}
-                    </button>
-                    <button 
-                        onClick={() => handleSaveBill(false)}
-                        disabled={cart.length === 0}
-                        className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                        title="Save Only (Alt+S)"
-                    >
-                        <CheckCircleIcon className="h-5 w-5" />
-                        {isEditing ? (t.billing.updateOnly || "Update Only") : (t.billing.saveOnly || "Save Only")}
-                    </button>
+
+                <div className="flex flex-col gap-3 mt-6">
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            onClick={() => handleSaveBill(false)}
+                            className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                            title="Alt + S"
+                        >
+                            {isEditing ? t.billing.updateOnly : t.billing.saveOnly}
+                        </button>
+                        <button
+                            onClick={() => handleSaveBill(true)}
+                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                            title="Alt + P"
+                        >
+                            <PrinterIcon className="h-5 w-5" />
+                            {isEditing ? t.billing.updateAndPrint : t.billing.saveAndPrint}
+                        </button>
+                    </div>
+                    {isEditing && onCancelEdit && (
+                        <button
+                            onClick={onCancelEdit}
+                            className="w-full py-3 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg font-semibold transition-colors"
+                        >
+                            {t.billing.cancelEdit}
+                        </button>
+                    )}
                 </div>
-                {isEditing && (
-                    <button 
-                        onClick={onCancelEdit}
-                        className="w-full bg-slate-500 text-white py-2 rounded-lg text-md font-semibold shadow-md hover:bg-slate-600 transition-colors duration-200 mt-2"
-                    >
-                        {t.billing.cancelEdit}
-                    </button>
-                )}
             </div>
         </Card>
       </div>
-      {/* ... (Keep SubstituteModal, PrinterSelectionModal, ConnectingModal) ... */}
-      {isPharmaMode && (
-          <SubstituteModal 
-            isOpen={isSubstituteModalOpen}
-            onClose={() => setSubstituteModalOpen(false)}
-            sourceProduct={sourceProductForSub}
-            substitutes={substituteOptions}
-            onAddToCart={handleAddToCart}
-          />
-      )}
-      
-      {itemToEdit && (
-          <EditBillItemModal 
-            isOpen={!!itemToEdit}
-            onClose={() => setItemToEdit(null)}
-            item={itemToEdit.item}
-            maxStock={itemToEdit.maxStock}
-            onUpdate={updateCartItemDetails}
-            systemConfig={systemConfig}
-          />
-      )}
-
-      <OrderSuccessModal
-        isOpen={showOrderSuccessModal}
-        onClose={() => setShowOrderSuccessModal(false)}
-        bill={lastSavedBill}
-        timeTaken={orderSeconds}
-        companyProfile={companyProfile}
-        onPrint={() => {
-            if (lastSavedBill) {
-                // Check for default printer logic similar to handleSaveBill
-                const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
-                if (defaultPrinter) {
-                    executePrint(lastSavedBill, defaultPrinter, true); // Printing usually finalizes the flow
-                } else {
-                    setBillToPrint(lastSavedBill);
-                    setPrinterModalOpen(true);
-                }
-            }
-        }}
-        onCreateNew={() => {
-            resetBillingForm();
-            setShowOrderSuccessModal(false);
-        }}
-        onEditOrder={() => {
-            setShowOrderSuccessModal(false);
-        }}
-      />
 
       <PrinterSelectionModal 
           isOpen={isPrinterModalOpen}
-          onClose={() => { 
-            setPrinterModalOpen(false); 
-            if (shouldResetAfterPrint) {
-                resetBillingForm();
-                setShouldResetAfterPrint(false);
-            }
-            setBillToPrint(null);
-          }}
+          onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }}
           systemConfig={systemConfig}
           onUpdateConfig={handleUpdateConfig}
           onSelectPrinter={handlePrinterSelection}
       />
 
       <ConnectingModal 
-        isOpen={isConnecting} 
-        printerName={connectingPrinterInfo.name} 
-        printerId={connectingPrinterInfo.id} 
+          isOpen={isConnecting} 
+          printerName={connectingPrinterInfo.name} 
+          printerId={connectingPrinterInfo.id} 
       />
-      
+
+      {sourceProductForSub && (
+          <SubstituteModal
+              isOpen={isSubstituteModalOpen}
+              onClose={() => setSubstituteModalOpen(false)}
+              sourceProduct={sourceProductForSub}
+              substitutes={substituteOptions}
+              onAddToCart={handleAddToCart}
+          />
+      )}
+
+      {itemToEdit && (
+          <EditBillItemModal
+              isOpen={!!itemToEdit}
+              onClose={() => setItemToEdit(null)}
+              item={itemToEdit.item}
+              maxStock={itemToEdit.maxStock}
+              onUpdate={updateCartItemDetails}
+              systemConfig={systemConfig}
+          />
+      )}
+
+      <OrderSuccessModal
+          isOpen={showOrderSuccessModal}
+          onClose={() => {
+              setShowOrderSuccessModal(false);
+              setLastSavedBill(null);
+          }}
+          bill={lastSavedBill}
+          timeTaken={orderSeconds}
+          onPrint={() => {
+              if (lastSavedBill) {
+                  const defaultPrinter = systemConfig.printers?.find(p => p.isDefault);
+                  if (defaultPrinter) {
+                      executePrint(lastSavedBill, defaultPrinter, true);
+                  } else {
+                      setBillToPrint(lastSavedBill);
+                      setShouldResetAfterPrint(true);
+                      setPrinterModalOpen(true);
+                  }
+                  setShowOrderSuccessModal(false);
+              }
+          }}
+          onCreateNew={() => {
+              setShowOrderSuccessModal(false);
+              resetBillingForm();
+          }}
+          onEditOrder={() => {
+              setShowOrderSuccessModal(false);
+          }}
+          companyProfile={companyProfile}
+      />
+
       <AddCustomerModal 
-        isOpen={isAddCustomerModalOpen}
-        onClose={() => setAddCustomerModalOpen(false)}
-        onAddCustomer={handleAddNewCustomer}
-        initialName={customerName}
+          isOpen={isAddCustomerModalOpen}
+          onClose={() => setAddCustomerModalOpen(false)}
+          onAddCustomer={handleAddNewCustomer}
+          initialName={customerName}
       />
 
       <AddSalesmanModal 
-        isOpen={isAddSalesmanModalOpen}
-        onClose={() => setAddSalesmanModalOpen(false)}
-        onAddSalesman={handleAddNewSalesman}
+          isOpen={isAddSalesmanModalOpen}
+          onClose={() => setAddSalesmanModalOpen(false)}
+          onAddSalesman={handleAddNewSalesman}
       />
 
-      <style>{`
-        @keyframes fade-in-down {
-            0% { opacity: 0; transform: translateY(-10px); }
-            100% { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in-down { animation: fade-in-down 0.3s ease-out forwards; }
-      `}</style>
     </div>
   );
 };

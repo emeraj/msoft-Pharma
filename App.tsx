@@ -102,7 +102,7 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-    document.title = 'Cloud - Retail';
+    document.title = 'Cloud-TAG';
   }, []);
 
   // Handle Browser Back Button Navigation
@@ -290,9 +290,7 @@ const App: React.FC = () => {
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [currentUser, dataOwnerId]); // Dependency on dataOwnerId
-
-  // ... (rest of App.tsx remains mostly same, just updating initial config in CRUD handlers implicitly via state)
+  }, [currentUser, dataOwnerId]); 
 
   const handleLogout = () => {
     signOut(auth);
@@ -461,7 +459,6 @@ service cloud.firestore {
     });
   };
   
-  // ... (rest of the file remains unchanged)
   const handleDeleteBatch = async (productId: string, batchId: string) => {
     if (!dataOwnerId) return;
     const isInBill = bills.some(bill => bill.items.some(item => item.batchId === batchId));
