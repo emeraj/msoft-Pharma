@@ -109,7 +109,8 @@ export interface Customer {
   name: string;
   phone?: string;
   address?: string;
-  balance: number; // +ve for Debit (Receivable), -ve for Credit (Payable)
+  openingBalance?: number; // Initial balance before recorded transactions
+  balance: number; // Current outstanding balance (+ve for Debit/Receivable, -ve for Credit/Advance)
 }
 
 export interface Salesman {

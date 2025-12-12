@@ -55,12 +55,14 @@ const Auth: React.FC = () => {
     <div className="min-h-screen bg-slate-100 dark:bg-slate-900 flex flex-col font-sans transition-colors duration-200">
       <div className="flex-grow flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="text-center mb-6">
-              <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
-                  <CloudIcon className="h-8 w-8 text-indigo-500" />
-                  <span>Cloud - Retail</span>
+          <div className="text-center mb-8">
+              <h1 className="text-4xl font-extrabold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-3">
+                  <CloudIcon className="h-10 w-10 text-indigo-600" />
+                  <span className="tracking-tight">Cloud - Retail</span>
               </h1>
-              <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
+              <p className="mt-3 text-lg font-serif italic font-medium text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">
+                “Tag Your Business to the Cloud”
+              </p>
           </div>
           <Card>
             <form onSubmit={handleAuthAction} className="space-y-4">
@@ -104,7 +106,7 @@ const Auth: React.FC = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
+                className="w-full py-2 px-4 bg-indigo-600 text-white font-semibold rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400 transition-all transform active:scale-95"
               >
                 {loading ? 'Processing...' : (isLogin ? 'Login' : 'Create Account')}
               </button>
@@ -113,7 +115,7 @@ const Auth: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => { setIsLogin(!isLogin); setError(''); }}
-                  className="font-medium text-indigo-600 hover:text-indigo-500 ml-1"
+                  className="font-medium text-indigo-600 hover:text-indigo-500 ml-1 hover:underline"
                 >
                   {isLogin ? 'Sign Up' : 'Login'}
                 </button>

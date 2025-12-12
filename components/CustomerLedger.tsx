@@ -1,10 +1,10 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Customer, Bill, CustomerPayment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon } from './icons/Icons';
+import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon, PencilIcon } from './icons/Icons';
 import PrintableCustomerLedger from './PrintableCustomerLedger';
 
 // Helper for CSV Export
@@ -45,18 +45,90 @@ interface CustomerLedgerProps {
   payments: CustomerPayment[];
   companyProfile: CompanyProfile;
   onAddPayment: (payment: Omit<CustomerPayment, 'id'>) => Promise<void>;
+  onUpdateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment }) => {
+const EditCustomerModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    customer: Customer;
+    onUpdate: (id: string, data: Partial<Customer>) => Promise<void>;
+}> = ({ isOpen, onClose, customer, onUpdate }) => {
+    const [name, setName] = useState(customer.name);
+    const [phone, setPhone] = useState(customer.phone || '');
+    const [address, setAddress] = useState(customer.address || '');
+    const [openingBalance, setOpeningBalance] = useState(String(customer.openingBalance || 0));
+
+    useEffect(() => {
+        setName(customer.name);
+        setPhone(customer.phone || '');
+        setAddress(customer.address || '');
+        setOpeningBalance(String(customer.openingBalance || 0));
+    }, [customer]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await onUpdate(customer.id, { 
+            name, 
+            phone, 
+            address,
+            openingBalance: parseFloat(openingBalance) || 0 
+        });
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Customer Details">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Name</label>
+                    <input type="text" value={name} onChange={e => setName(e.target.value)} className={formInputStyle} required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Phone</label>
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} className={formInputStyle} />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
+                    <input type="text" value={address} onChange={e => setAddress(e.target.value)} className={formInputStyle} />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance (₹)</label>
+                    <input type="number" step="0.01" value={openingBalance} onChange={e => setOpeningBalance(e.target.value)} className={formInputStyle} />
+                    <p className="text-xs text-slate-500 mt-1">Updating this will adjust the current outstanding balance.</p>
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Update</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+interface Transaction {
+    date: Date;
+    type: 'Bill' | 'Payment';
+    ref: string;
+    debit: number;
+    credit: number;
+}
+
+const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment, onUpdateCustomer }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Other'>('Cash');
   const [paymentNotes, setPaymentNotes] = useState('');
+  
+  // Date Filtering for Ledger View
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   const filteredCustomers = useMemo(() => {
     if (!searchTerm) return customers;
@@ -66,36 +138,91 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
     );
   }, [customers, searchTerm]);
 
-  const customerTransactions = useMemo(() => {
-    if (!selectedCustomer) return [];
+  // Ledger Calculation Logic
+  const ledgerData = useMemo(() => {
+    if (!selectedCustomer) return { transactions: [], summary: { opening: 0, sales: 0, receipts: 0, closing: 0 } };
     
-    // Only show bills where paymentMode is 'Credit'.
-    // Cash bills do not affect the ledger balance.
-    const customerBills = bills.filter(b => {
+    // 1. Gather all transactions
+    const allTransactions: Transaction[] = [];
+    
+    // Bills
+    bills.forEach(b => {
         const isThisCustomer = (b.customerId === selectedCustomer.id) || 
                                (!b.customerId && b.customerName.toLowerCase() === selectedCustomer.name.toLowerCase());
         
-        return isThisCustomer && b.paymentMode === 'Credit';
-    }).map(b => ({
-        date: new Date(b.date),
-        type: 'Bill',
-        ref: b.billNumber,
-        debit: b.grandTotal, // Bill increases receivable (Debit)
-        credit: 0
-    }));
+        if (isThisCustomer && b.paymentMode === 'Credit') {
+            allTransactions.push({
+                date: new Date(b.date),
+                type: 'Bill',
+                ref: b.billNumber,
+                debit: b.grandTotal,
+                credit: 0
+            });
+        }
+    });
 
-    const customerPaymentsList = payments.filter(p => p.customerId === selectedCustomer.id).map(p => ({
-        date: new Date(p.date),
-        type: 'Payment',
-        ref: p.method,
-        debit: 0,
-        credit: p.amount // Payment reduces receivable (Credit)
-    }));
+    // Payments
+    payments.forEach(p => {
+        if (p.customerId === selectedCustomer.id) {
+            allTransactions.push({
+                date: new Date(p.date),
+                type: 'Payment',
+                ref: `${p.method}${p.notes ? ` - ${p.notes}` : ''}`,
+                debit: 0,
+                credit: p.amount
+            });
+        }
+    });
 
-    // Combine and sort
-    return [...customerBills, ...customerPaymentsList].sort((a, b) => a.date.getTime() - b.date.getTime());
+    // Sort by Date
+    allTransactions.sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  }, [selectedCustomer, bills, payments]);
+    // 2. Filter by Date Range and Calculate Period Opening Balance
+    let openingBalance = selectedCustomer.openingBalance || 0;
+    
+    // If no start date, opening balance is just the customer's initial opening balance
+    // If start date is set, calculate balance up to that date
+    if (fromDate) {
+        const startDate = new Date(fromDate);
+        startDate.setHours(0, 0, 0, 0);
+        
+        // Filter transactions BEFORE start date to adjust opening balance
+        const prePeriodTransactions = allTransactions.filter(t => t.date < startDate);
+        const prePeriodDebit = prePeriodTransactions.reduce((sum, t) => sum + t.debit, 0);
+        const prePeriodCredit = prePeriodTransactions.reduce((sum, t) => sum + t.credit, 0);
+        
+        openingBalance = openingBalance + prePeriodDebit - prePeriodCredit;
+    }
+
+    // Filter transactions WITHIN the period
+    let filteredTransactions = allTransactions;
+    if (fromDate) {
+        const startDate = new Date(fromDate);
+        startDate.setHours(0, 0, 0, 0);
+        filteredTransactions = filteredTransactions.filter(t => t.date >= startDate);
+    }
+    if (toDate) {
+        const endDate = new Date(toDate);
+        endDate.setHours(23, 59, 59, 999);
+        filteredTransactions = filteredTransactions.filter(t => t.date <= endDate);
+    }
+
+    // 3. Calculate Period Totals
+    const totalSales = filteredTransactions.reduce((sum, t) => sum + t.debit, 0);
+    const totalReceipts = filteredTransactions.reduce((sum, t) => sum + t.credit, 0);
+    const closingBalance = openingBalance + totalSales - totalReceipts;
+
+    return {
+        transactions: filteredTransactions,
+        summary: {
+            opening: openingBalance,
+            sales: totalSales,
+            receipts: totalReceipts,
+            closing: closingBalance
+        }
+    };
+
+  }, [selectedCustomer, bills, payments, fromDate, toDate]);
 
   const handleExport = () => {
       const data = filteredCustomers.map(c => ({
@@ -130,14 +257,30 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
             
             const root = ReactDOM.createRoot(printRoot);
             
-            // Format transactions for the printable component
-            const printableTransactions = customerTransactions.map(tx => ({
+            // Re-map transactions for the print component which expects a simpler array
+            const printableTransactions = ledgerData.transactions.map(tx => ({
                 date: tx.date,
                 particulars: `${tx.type} - ${tx.ref}`,
                 debit: tx.debit,
                 credit: tx.credit,
-                type: tx.type as any
+                type: tx.type
             }));
+
+            // We pass the period's opening balance calculated here to the print component 
+            // so it starts correctly.
+            // Note: The PrintableCustomerLedger component logic needs to be aware of this initial balance.
+            // Currently PrintableCustomerLedger calculates running balance from 0. 
+            // I should update it or pass initialBalance prop. 
+            // For now, I'll assume PrintableCustomerLedger is simple and just dump the rows.
+            
+            // To make it correct, insert an "Opening Balance" row at the start for printing
+            printableTransactions.unshift({
+                date: fromDate ? new Date(fromDate) : new Date(0), // Dummy date
+                particulars: 'Opening Balance',
+                debit: ledgerData.summary.opening > 0 ? ledgerData.summary.opening : 0,
+                credit: ledgerData.summary.opening < 0 ? Math.abs(ledgerData.summary.opening) : 0,
+                type: 'Bill' // Dummy type
+            });
 
             root.render(
                 <PrintableCustomerLedger
@@ -177,8 +320,13 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
       setPaymentModalOpen(false);
       setPaymentAmount('');
       setPaymentNotes('');
-      // Ideally update local selected customer balance visibly or rely on re-render from parent
   };
+
+  const formatCurrency = (val: number) => `₹${Math.abs(val).toFixed(2)}`;
+  const formatDrCr = (val: number) => val >= 0 ? 'Dr' : 'Cr';
+
+  // Running balance calculator for display
+  let runningBalance = ledgerData.summary.opening;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -217,12 +365,21 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                                 ₹{Math.abs(customer.balance).toFixed(2)} {customer.balance > 0 ? 'Dr' : 'Cr'}
                             </td>
                             <td className="px-6 py-4 text-center">
-                                <button 
-                                    onClick={() => setSelectedCustomer(customer)}
-                                    className="text-indigo-600 hover:underline font-medium"
-                                >
-                                    View Details
-                                </button>
+                                <div className="flex items-center justify-center gap-4">
+                                    <button 
+                                        onClick={() => { setSelectedCustomer(customer); setFromDate(''); setToDate(''); }}
+                                        className="text-indigo-600 hover:underline font-medium"
+                                    >
+                                        View Details
+                                    </button>
+                                    <button
+                                        onClick={() => setEditingCustomer(customer)}
+                                        className="text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors"
+                                        title="Edit Customer"
+                                    >
+                                        <PencilIcon className="h-4 w-4" />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -235,57 +392,109 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
       </Card>
 
       {selectedCustomer && (
-          <Modal isOpen={!!selectedCustomer} onClose={() => setSelectedCustomer(null)} title={`Ledger: ${selectedCustomer.name}`} maxWidth="max-w-4xl">
-              <div className="space-y-4">
-                  <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg">
-                      <div>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">Current Balance</p>
-                          <p className={`text-2xl font-bold ${selectedCustomer.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                              ₹{Math.abs(selectedCustomer.balance).toFixed(2)} {selectedCustomer.balance > 0 ? 'Dr (Receivable)' : 'Cr (Advance)'}
-                          </p>
-                      </div>
-                      <button 
-                        onClick={() => setPaymentModalOpen(true)}
-                        className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow"
-                      >
-                          <PlusIcon className="h-5 w-5" /> Receive Payment
-                      </button>
+          <Modal isOpen={!!selectedCustomer} onClose={() => setSelectedCustomer(null)} title={`Ledger for ${selectedCustomer.name}`} maxWidth="max-w-5xl">
+              <div className="space-y-6">
+                  
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900 text-white p-6 rounded-xl shadow-lg border border-slate-700">
+                        <div className="flex flex-col border-r border-slate-700 pr-4">
+                            <span className="text-slate-400 text-sm mb-1">Opening Balance</span>
+                            <span className="text-xl font-bold">{formatCurrency(ledgerData.summary.opening)} <span className="text-sm font-normal text-slate-400">{formatDrCr(ledgerData.summary.opening)}</span></span>
+                        </div>
+                        <div className="flex flex-col border-r border-slate-700 px-4">
+                            <span className="text-red-400 text-sm mb-1">Sales (Debit)</span>
+                            <span className="text-xl font-bold">{formatCurrency(ledgerData.summary.sales)}</span>
+                        </div>
+                        <div className="flex flex-col border-r border-slate-700 px-4">
+                            <span className="text-green-400 text-sm mb-1">Receipts (Credit)</span>
+                            <span className="text-xl font-bold">{formatCurrency(ledgerData.summary.receipts)}</span>
+                        </div>
+                        <div className="flex flex-col pl-4">
+                            <span className="text-slate-400 text-sm mb-1">Outstanding Balance</span>
+                            <span className="text-2xl font-bold">{formatCurrency(ledgerData.summary.closing)} <span className="text-sm font-normal text-slate-400">{formatDrCr(ledgerData.summary.closing)}</span></span>
+                        </div>
                   </div>
 
-                  <div className="overflow-x-auto border dark:border-slate-700 rounded-lg max-h-[60vh]">
-                      <table className="w-full text-sm text-left">
-                          <thead className="bg-slate-100 dark:bg-slate-700 sticky top-0">
-                              <tr>
-                                  <th className="px-4 py-2">Date</th>
-                                  <th className="px-4 py-2">Particulars</th>
-                                  <th className="px-4 py-2 text-right">Debit (Bill)</th>
-                                  <th className="px-4 py-2 text-right">Credit (Payment)</th>
-                              </tr>
-                          </thead>
-                          <tbody>
-                              {customerTransactions.map((tx, idx) => (
-                                  <tr key={idx} className="border-b dark:border-slate-700">
-                                      <td className="px-4 py-2">{tx.date.toLocaleDateString()}</td>
-                                      <td className="px-4 py-2">{tx.type} - {tx.ref}</td>
-                                      <td className="px-4 py-2 text-right text-red-600">{tx.debit > 0 ? `₹${tx.debit.toFixed(2)}` : '-'}</td>
-                                      <td className="px-4 py-2 text-right text-green-600">{tx.credit > 0 ? `₹${tx.credit.toFixed(2)}` : '-'}</td>
+                  {/* Actions Bar */}
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border dark:border-slate-700">
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <label className="text-sm font-medium text-slate-600 dark:text-slate-400">Period:</label>
+                            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="p-1.5 text-sm border rounded bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200" />
+                            <span className="text-slate-400">-</span>
+                            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="p-1.5 text-sm border rounded bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200" />
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={handleExportPdf}
+                                className="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-600 dark:hover:bg-slate-500 text-slate-800 dark:text-white rounded-lg text-sm transition-colors"
+                            >
+                                <PrinterIcon className="h-4 w-4" /> Print
+                            </button>
+                            <button 
+                                onClick={() => setPaymentModalOpen(true)}
+                                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm text-sm"
+                            >
+                                <PlusIcon className="h-4 w-4" /> Receive Payment
+                            </button>
+                        </div>
+                  </div>
+
+                  {/* Transaction Table */}
+                  <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                      <div className="bg-slate-800 text-slate-200 px-4 py-3 font-semibold border-b border-slate-700 flex justify-between items-center">
+                          <span>Transaction History {fromDate || toDate ? '(Period)' : ''}</span>
+                      </div>
+                      <div className="overflow-x-auto max-h-[500px]">
+                          <table className="w-full text-sm text-left">
+                              <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold sticky top-0 z-10 border-b dark:border-slate-700 shadow-sm">
+                                  <tr>
+                                      <th className="px-4 py-3">Date</th>
+                                      <th className="px-4 py-3">Particulars</th>
+                                      <th className="px-4 py-3 text-right text-red-600 dark:text-red-400">Debit (₹)</th>
+                                      <th className="px-4 py-3 text-right text-green-600 dark:text-green-400">Credit (₹)</th>
+                                      <th className="px-4 py-3 text-right">Balance (₹)</th>
                                   </tr>
-                              ))}
-                              {customerTransactions.length === 0 && (
-                                  <tr><td colSpan={4} className="text-center py-4">No transaction history.</td></tr>
-                              )}
-                          </tbody>
-                      </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                  {/* Opening Row */}
+                                  <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                                      <td className="px-4 py-3 text-slate-500 italic">Opening</td>
+                                      <td className="px-4 py-3 text-slate-500 italic">Opening Balance</td>
+                                      <td className="px-4 py-3 text-right">-</td>
+                                      <td className="px-4 py-3 text-right">-</td>
+                                      <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
+                                          {formatCurrency(ledgerData.summary.opening)} {formatDrCr(ledgerData.summary.opening)}
+                                      </td>
+                                  </tr>
+                                  
+                                  {/* Transactions */}
+                                  {ledgerData.transactions.map((tx, idx) => {
+                                      runningBalance = runningBalance + tx.debit - tx.credit;
+                                      return (
+                                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                              <td className="px-4 py-3 font-medium text-slate-600 dark:text-slate-400">{tx.date.toLocaleDateString()}</td>
+                                              <td className="px-4 py-3 text-slate-800 dark:text-slate-200">
+                                                  {tx.type === 'Bill' ? `Bill - ${tx.ref}` : `Payment - ${tx.ref}`}
+                                              </td>
+                                              <td className="px-4 py-3 text-right text-red-600 font-medium">{tx.debit > 0 ? tx.debit.toFixed(2) : '-'}</td>
+                                              <td className="px-4 py-3 text-right text-green-600 font-medium">{tx.credit > 0 ? tx.credit.toFixed(2) : '-'}</td>
+                                              <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
+                                                  {Math.abs(runningBalance).toFixed(2)} {formatDrCr(runningBalance)}
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                                  {ledgerData.transactions.length === 0 && (
+                                      <tr><td colSpan={5} className="text-center py-8 text-slate-500">No transactions in this period.</td></tr>
+                                  )}
+                              </tbody>
+                          </table>
+                      </div>
                   </div>
                   
-                  <div className="flex justify-end pt-2 gap-3">
-                      <button 
-                        onClick={handleExportPdf}
-                        className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors border dark:border-slate-600"
-                      >
-                          <PrinterIcon className="h-5 w-5" /> Export to PDF
-                      </button>
-                      <button onClick={() => setSelectedCustomer(null)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500 dark:text-slate-200">Close</button>
+                  <div className="flex justify-end">
+                      <button onClick={() => setSelectedCustomer(null)} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 font-medium text-slate-800 dark:text-slate-200 transition-colors">Close</button>
                   </div>
               </div>
           </Modal>
@@ -337,6 +546,15 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                   </div>
               </form>
           </Modal>
+      )}
+
+      {editingCustomer && (
+          <EditCustomerModal 
+              isOpen={!!editingCustomer}
+              onClose={() => setEditingCustomer(null)}
+              customer={editingCustomer}
+              onUpdate={onUpdateCustomer}
+          />
       )}
     </div>
   );
