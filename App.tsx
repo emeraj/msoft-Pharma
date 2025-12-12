@@ -329,7 +329,7 @@ service cloud.firestore {
     // 2. User Data Scope
     match /users/{userId} {
       
-      // Admin Collections (Protected)
+      // Admin Collections (Protected Config)
       match /subUsers/{subUserId} {
         allow read: if isOwner(userId) || (request.auth != null && request.auth.uid == subUserId);
         allow write: if isOwner(userId);
@@ -963,6 +963,11 @@ service cloud.firestore {
                     }
                     
                     await batch.commit();
+                }}
+                onUpdateCustomer={async (customerId, data) => {
+                    if (!dataOwnerId) return;
+                    const customerRef = doc(db, `users/${dataOwnerId}/customers`, customerId);
+                    await updateDoc(customerRef, data);
                 }}
               />
             )}

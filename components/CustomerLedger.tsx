@@ -1,10 +1,10 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Customer, Bill, CustomerPayment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon } from './icons/Icons';
+import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon, PencilIcon } from './icons/Icons';
 import PrintableCustomerLedger from './PrintableCustomerLedger';
 
 // Helper for CSV Export
@@ -45,14 +45,124 @@ interface CustomerLedgerProps {
   payments: CustomerPayment[];
   companyProfile: CompanyProfile;
   onAddPayment: (payment: Omit<CustomerPayment, 'id'>) => Promise<void>;
+  onUpdateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment }) => {
+const EditCustomerModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    customer: Customer;
+    onUpdate: (id: string, data: Partial<Customer>) => Promise<void>;
+}> = ({ isOpen, onClose, customer, onUpdate }) => {
+    const [formData, setFormData] = useState({
+        name: '',
+        phone: '',
+        address: '',
+        gstin: '',
+        openingBalance: ''
+    });
+
+    useEffect(() => {
+        if (customer) {
+            setFormData({
+                name: customer.name,
+                phone: customer.phone || '',
+                address: customer.address || '',
+                gstin: customer.gstin || '',
+                openingBalance: (customer.openingBalance ?? 0).toString()
+            });
+        }
+    }, [customer]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        // Calculate new balance based on change in opening balance
+        const oldOpening = customer.openingBalance || 0;
+        const newOpening = parseFloat(formData.openingBalance) || 0;
+        const diff = newOpening - oldOpening;
+        const newBalance = customer.balance + diff;
+
+        await onUpdate(customer.id, {
+            name: formData.name,
+            phone: formData.phone,
+            address: formData.address,
+            gstin: formData.gstin,
+            openingBalance: newOpening,
+            balance: newBalance
+        });
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Customer Details">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Customer Name</label>
+                    <input 
+                        type="text" 
+                        value={formData.name} 
+                        onChange={e => setFormData({...formData, name: e.target.value})} 
+                        className={formInputStyle} 
+                        required 
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Mobile Number</label>
+                    <input 
+                        type="text" 
+                        value={formData.phone} 
+                        onChange={e => setFormData({...formData, phone: e.target.value})} 
+                        className={formInputStyle} 
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Address</label>
+                    <input 
+                        type="text" 
+                        value={formData.address} 
+                        onChange={e => setFormData({...formData, address: e.target.value})} 
+                        className={formInputStyle} 
+                    />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">GSTIN</label>
+                        <input 
+                            type="text" 
+                            value={formData.gstin} 
+                            onChange={e => setFormData({...formData, gstin: e.target.value})} 
+                            className={formInputStyle} 
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Opening Balance</label>
+                        <input 
+                            type="number" 
+                            step="0.01"
+                            value={formData.openingBalance} 
+                            onChange={e => setFormData({...formData, openingBalance: e.target.value})} 
+                            className={formInputStyle} 
+                            placeholder="0.00"
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Update</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment, onUpdateCustomer }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Other'>('Cash');
@@ -228,12 +338,21 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                                 ₹{Math.abs(customer.balance).toFixed(2)} {customer.balance > 0 ? 'Dr' : 'Cr'}
                             </td>
                             <td className="px-6 py-4 text-center">
-                                <button 
-                                    onClick={() => setSelectedCustomer(customer)}
-                                    className="text-indigo-600 hover:underline font-medium"
-                                >
-                                    View Details
-                                </button>
+                                <div className="flex items-center justify-center gap-4">
+                                    <button 
+                                        onClick={() => setSelectedCustomer(customer)}
+                                        className="text-indigo-600 hover:underline font-medium"
+                                    >
+                                        View Details
+                                    </button>
+                                    <button 
+                                        onClick={() => setEditingCustomer(customer)}
+                                        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+                                        title="Edit Customer"
+                                    >
+                                        <PencilIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     ))}
@@ -354,52 +473,13 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
           </Modal>
       )}
 
-      {isPaymentModalOpen && selectedCustomer && (
-          <Modal isOpen={isPaymentModalOpen} onClose={() => setPaymentModalOpen(false)} title="Receive Payment">
-              <form onSubmit={handleSavePayment} className="space-y-4">
-                  <div>
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Customer: <span className="font-bold">{selectedCustomer.name}</span></p>
-                  </div>
-                  <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Amount Received</label>
-                      <input 
-                        type="number" 
-                        value={paymentAmount} 
-                        onChange={e => setPaymentAmount(e.target.value)} 
-                        className={formInputStyle} 
-                        required 
-                        min="0"
-                        step="0.01"
-                      />
-                  </div>
-                  <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Payment Method</label>
-                      <select 
-                        value={paymentMethod} 
-                        onChange={e => setPaymentMethod(e.target.value as any)} 
-                        className={formSelectStyle}
-                      >
-                          <option value="Cash">Cash</option>
-                          <option value="UPI">UPI</option>
-                          <option value="Other">Other</option>
-                      </select>
-                  </div>
-                  <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Notes</label>
-                      <input 
-                        type="text" 
-                        value={paymentNotes} 
-                        onChange={e => setPaymentNotes(e.target.value)} 
-                        className={formInputStyle} 
-                        placeholder="Optional remarks..."
-                      />
-                  </div>
-                  <div className="flex justify-end gap-3 pt-4">
-                      <button type="button" onClick={() => setPaymentModalOpen(false)} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200">Cancel</button>
-                      <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Save Payment</button>
-                  </div>
-              </form>
-          </Modal>
+      {editingCustomer && (
+          <EditCustomerModal
+              isOpen={!!editingCustomer}
+              onClose={() => setEditingCustomer(null)}
+              customer={editingCustomer}
+              onUpdate={onUpdateCustomer}
+          />
       )}
     </div>
   );

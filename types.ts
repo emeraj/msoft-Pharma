@@ -111,6 +111,7 @@ export interface Customer {
   address?: string;
   gstin?: string;
   balance: number; // +ve for Debit (Receivable), -ve for Credit (Payable)
+  openingBalance?: number; // Initial balance when customer was created
 }
 
 export interface Salesman {
