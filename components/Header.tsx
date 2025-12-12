@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, CloudIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -125,11 +125,9 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
-            <img 
-                src="https://i.postimg.cc/k5XzX0zM/msi-logo-2.jpg" 
-                alt="Logo" 
-                className="h-10 w-auto mr-3 rounded shadow-sm object-contain bg-white" 
-            />
+            <div className="p-2 bg-white dark:bg-slate-700 rounded-full shadow-sm mr-3 border border-slate-100 dark:border-slate-600">
+                <CloudIcon className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+            </div>
             <div className="flex flex-col justify-center">
                 <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 leading-none">
                     Cloud-TAG
