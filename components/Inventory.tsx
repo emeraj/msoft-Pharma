@@ -300,6 +300,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     );
 };
 
+// ... (SelectedItemStockView, BatchWiseStockView, CompanyWiseStockView, ExpiredStockView, NearingExpiryStockView - KEEP AS IS)
 const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purchases: Purchase[], onDeleteBatch: (productId: string, batchId: string) => void, systemConfig: SystemConfig, t: any, initialProduct: Product | null, onProductSelect: (p: Product | null) => void }> = ({ products, bills, purchases, onDeleteBatch, systemConfig, t, initialProduct, onProductSelect }) => {
     // ... [Same implementation as previous turn] ...
     const [searchTerm, setSearchTerm] = useState('');
@@ -329,9 +330,9 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
         const productId = selectedProduct.id;
         const productName = selectedProduct.name.toLowerCase();
         const productCompany = selectedProduct.company.toLowerCase();
-        const allMovements: { date: Date; type: 'Purchase' | 'Sale'; particulars: string; batchNumber: string; expiryDate: string; inQty: number; outQty: number; timestamp: number }[] = [];
-        purchases.forEach(p => { p.items.forEach(item => { const isMatch = item.productId === productId || (item.productName.toLowerCase() === productName && item.company.toLowerCase() === productCompany); if (isMatch) { const units = item.unitsPerStrip || selectedProduct.unitsPerStrip || 1; const qty = item.quantity * units; allMovements.push({ date: new Date(p.invoiceDate), type: 'Purchase', particulars: `Inv: ${p.invoiceNumber} (${p.supplier})`, batchNumber: item.batchNumber || '-', expiryDate: item.expiryDate || '-', inQty: qty, outQty: 0, timestamp: new Date(p.invoiceDate).getTime() }); } }); });
-        bills.forEach(b => { b.items.forEach(item => { if (item.productId === productId) { allMovements.push({ date: new Date(b.date), type: 'Sale', particulars: `Bill: ${b.billNumber} (${b.customerName})`, batchNumber: item.batchNumber || '-', expiryDate: item.expiryDate || '-', inQty: 0, outQty: item.quantity, timestamp: new Date(b.date).getTime() }); } }); });
+        const allMovements: { date: Date; type: 'Purchase' | 'Sale'; particulars: string; inQty: number; outQty: number; timestamp: number }[] = [];
+        purchases.forEach(p => { p.items.forEach(item => { const isMatch = item.productId === productId || (item.productName.toLowerCase() === productName && item.company.toLowerCase() === productCompany); if (isMatch) { const units = item.unitsPerStrip || selectedProduct.unitsPerStrip || 1; const qty = item.quantity * units; allMovements.push({ date: new Date(p.invoiceDate), type: 'Purchase', particulars: `Inv: ${p.invoiceNumber} (${p.supplier})`, inQty: qty, outQty: 0, timestamp: new Date(p.invoiceDate).getTime() }); } }); });
+        bills.forEach(b => { b.items.forEach(item => { if (item.productId === productId) { allMovements.push({ date: new Date(b.date), type: 'Sale', particulars: `Bill: ${b.billNumber} (${b.customerName})`, inQty: 0, outQty: item.quantity, timestamp: new Date(b.date).getTime() }); } }); });
         allMovements.sort((a, b) => a.timestamp - b.timestamp);
         const startTimestamp = fromDate ? new Date(fromDate).setHours(0,0,0,0) : 0;
         const endTimestamp = toDate ? new Date(toDate).setHours(23,59,59,999) : Infinity;
@@ -386,7 +387,7 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
                 <div className="space-y-6">
                     <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600"><h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3><p className="text-slate-600 dark:text-slate-400">{selectedProduct.company}</p>{isPharmaMode && <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">{selectedProduct.composition}</p>}<div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Current Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</div></div>
                     <div className="flex gap-4 items-center mb-4"><div className="flex-1"><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div className="flex-1"><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div>
-                    <div className="overflow-x-auto"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs uppercase bg-white dark:bg-slate-800 border-b-2 dark:border-slate-600 font-bold"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Particulars</th><th className="px-4 py-3">Batch Info</th><th className="px-4 py-3 text-center">In</th><th className="px-4 py-3 text-center">Out</th><th className="px-4 py-3 text-right">Balance</th></tr></thead><tbody className="bg-white dark:bg-slate-800"><tr className="border-b dark:border-slate-700 font-semibold bg-slate-50 dark:bg-slate-700/30"><td className="px-4 py-3"></td><td className="px-4 py-3"></td><td className="px-4 py-3 text-right">Opening Balance:</td><td className="px-4 py-3"></td><td className="px-4 py-3 text-center">-</td><td className="px-4 py-3 text-center">-</td><td className="px-4 py-3 text-right">{formatStock(ledger.openingBalance, selectedProduct.unitsPerStrip)}</td></tr>{transactionsWithBalance.map((txn, index) => (<tr key={index} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="px-4 py-3">{txn.date.toLocaleDateString()}</td><td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-semibold ${txn.type === 'Purchase' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{txn.type}</span></td><td className="px-4 py-3">{txn.particulars}</td><td className="px-4 py-3"><div className="font-medium text-xs">{txn.batchNumber}</div><div className="text-xs text-slate-500">{txn.expiryDate}</div></td><td className="px-4 py-3 text-center">{txn.inQty > 0 ? formatStock(txn.inQty, selectedProduct.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-center">{txn.outQty > 0 ? formatStock(txn.outQty, selectedProduct.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-right font-medium">{formatStock(txn.balance, selectedProduct.unitsPerStrip)}</td></tr>))}{transactionsWithBalance.length === 0 && (<tr><td colSpan={7} className="text-center py-6 text-slate-500">No transactions in selected period.</td></tr>)}</tbody></table></div>
+                    <div className="overflow-x-auto"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs uppercase bg-white dark:bg-slate-800 border-b-2 dark:border-slate-600 font-bold"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Particulars</th><th className="px-4 py-3 text-center">In</th><th className="px-4 py-3 text-center">Out</th><th className="px-4 py-3 text-right">Balance</th></tr></thead><tbody className="bg-white dark:bg-slate-800"><tr className="border-b dark:border-slate-700 font-semibold bg-slate-50 dark:bg-slate-700/30"><td className="px-4 py-3"></td><td className="px-4 py-3"></td><td className="px-4 py-3 text-right">Opening Balance:</td><td className="px-4 py-3 text-center">-</td><td className="px-4 py-3 text-center">-</td><td className="px-4 py-3 text-right">{formatStock(ledger.openingBalance, selectedProduct.unitsPerStrip)}</td></tr>{transactionsWithBalance.map((txn, index) => (<tr key={index} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="px-4 py-3">{txn.date.toLocaleDateString()}</td><td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-semibold ${txn.type === 'Purchase' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{txn.type}</span></td><td className="px-4 py-3">{txn.particulars}</td><td className="px-4 py-3 text-center">{txn.inQty > 0 ? formatStock(txn.inQty, selectedProduct.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-center">{txn.outQty > 0 ? formatStock(txn.outQty, selectedProduct.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-right font-medium">{formatStock(txn.balance, selectedProduct.unitsPerStrip)}</td></tr>))}{transactionsWithBalance.length === 0 && (<tr><td colSpan={6} className="text-center py-6 text-slate-500">No transactions in selected period.</td></tr>)}</tbody></table></div>
                 </div>
             )}
         </Card>
@@ -395,21 +396,7 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
 
 const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const allBatches = useMemo(() => { 
-        return products.flatMap(p => p.batches.map(b => ({ ...b, product: p })))
-        .filter(item => { 
-            const term = searchTerm.toLowerCase(); 
-            return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); 
-        })
-        .sort((a, b) => {
-            // First sort by product name
-            const nameCmp = a.product.name.localeCompare(b.product.name);
-            if (nameCmp !== 0) return nameCmp;
-            // Then by Expiry Date ASC (FIFO)
-            return a.expiryDate.localeCompare(b.expiryDate);
-        }); 
-    }, [products, searchTerm]);
-
+    const allBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }); }, [products, searchTerm]);
     return (
         <Card title={t.inventory.batchStock}>
             <input type="text" placeholder="Search by Product or Batch..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle + " mb-4"} />

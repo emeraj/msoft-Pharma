@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, CloudIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -125,17 +125,19 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
-            <div className="p-2 bg-white dark:bg-slate-700 rounded-full shadow-sm mr-3 border border-slate-100 dark:border-slate-600">
-                <CloudIcon className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div className="flex flex-col justify-center">
-                <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 leading-none">
-                    Cloud-TAG
-                </h1>
-                <p className="hidden md:block text-[10px] text-indigo-600 dark:text-indigo-400 font-serif italic leading-none mt-1">
-                    Tag Your Business to the Cloud
-                </p>
-            </div>
+            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+              {systemConfig.softwareMode === 'Pharma' ? (
+                <>
+                  <PillIcon className="h-7 w-7 text-indigo-500" />
+                  <span>Medico<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
+                </>
+              ) : (
+                <>
+                  <CubeIcon className="h-7 w-7 text-indigo-500" />
+                  <span>Kirana<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
+                </>
+              )}
+            </h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
             <span className="hidden md:inline text-sm text-slate-600 dark:text-slate-400">

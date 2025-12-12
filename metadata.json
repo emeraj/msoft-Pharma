@@ -1,5 +1,5 @@
 {
-  "name": "Cloud-TAG",
+  "name": "Cloud - Retail",
   "description": "A comprehensive and user-friendly billing and inventory management application for retail businesses. It helps manage stock, track product batches and expiry dates, handle billing, and view sales reports efficiently.",
   "requestFramePermissions": [
     "camera",

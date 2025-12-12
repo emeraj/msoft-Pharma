@@ -102,7 +102,7 @@ const App: React.FC = () => {
   }, []);
   
   useEffect(() => {
-    document.title = 'Cloud-TAG';
+    document.title = 'Cloud - Retail';
   }, []);
 
   // Handle Browser Back Button Navigation
@@ -290,7 +290,9 @@ const App: React.FC = () => {
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [currentUser, dataOwnerId]); 
+  }, [currentUser, dataOwnerId]); // Dependency on dataOwnerId
+
+  // ... (rest of App.tsx remains mostly same, just updating initial config in CRUD handlers implicitly via state)
 
   const handleLogout = () => {
     signOut(auth);
@@ -329,7 +331,7 @@ service cloud.firestore {
     // 2. User Data Scope
     match /users/{userId} {
       
-      // Admin Collections (Protected Config)
+      // Admin Collections (Protected)
       match /subUsers/{subUserId} {
         allow read: if isOwner(userId) || (request.auth != null && request.auth.uid == subUserId);
         allow write: if isOwner(userId);
@@ -459,6 +461,7 @@ service cloud.firestore {
     });
   };
   
+  // ... (rest of the file remains unchanged)
   const handleDeleteBatch = async (productId: string, batchId: string) => {
     if (!dataOwnerId) return;
     const isInBill = bills.some(bill => bill.items.some(item => item.batchId === batchId));
@@ -963,11 +966,6 @@ service cloud.firestore {
                     }
                     
                     await batch.commit();
-                }}
-                onUpdateCustomer={async (customerId, data) => {
-                    if (!dataOwnerId) return;
-                    const customerRef = doc(db, `users/${dataOwnerId}/customers`, customerId);
-                    await updateDoc(customerRef, data);
                 }}
               />
             )}

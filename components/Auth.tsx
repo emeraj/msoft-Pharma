@@ -56,18 +56,11 @@ const Auth: React.FC = () => {
       <div className="flex-grow flex items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="text-center mb-6">
-              <div className="flex justify-center mb-4">
-                  <div className="p-3 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-slate-100 dark:border-slate-700">
-                    <CloudIcon className="h-10 w-10 text-indigo-600 dark:text-indigo-400" />
-                  </div>
-              </div>
-              <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2">
-                  Cloud-TAG
+              <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-2">
+                  <CloudIcon className="h-8 w-8 text-indigo-500" />
+                  <span>Cloud - Retail</span>
               </h1>
-              <p className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 font-serif italic text-lg mt-1 mb-2 font-medium tracking-wide">
-                  “Tag Your Business to the Cloud”
-              </p>
-              <p className="text-slate-600 dark:text-slate-400 text-sm">Please sign in to continue</p>
+              <p className="text-slate-600 dark:text-slate-400">Please sign in to continue</p>
           </div>
           <Card>
             <form onSubmit={handleAuthAction} className="space-y-4">
