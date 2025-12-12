@@ -57,8 +57,8 @@ const Auth: React.FC = () => {
         <div className="w-full max-w-md">
           <div className="text-center mb-6">
               <div className="flex justify-center mb-4">
-                  <div className="p-4 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-slate-100 dark:border-slate-700">
-                    <CloudIcon className="h-16 w-16 text-indigo-600 dark:text-indigo-400" />
+                  <div className="p-3 bg-white dark:bg-slate-800 rounded-full shadow-lg border border-slate-100 dark:border-slate-700">
+                    <CloudIcon className="h-10 w-10 text-indigo-600 dark:text-indigo-400" />
                   </div>
               </div>
               <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-2">
