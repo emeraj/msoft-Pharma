@@ -300,7 +300,6 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     );
 };
 
-// ... (SelectedItemStockView, BatchWiseStockView, ExpiredStockView, NearingExpiryStockView - KEEP AS IS)
 const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purchases: Purchase[], onDeleteBatch: (productId: string, batchId: string) => void, systemConfig: SystemConfig, t: any, initialProduct: Product | null, onProductSelect: (p: Product | null) => void }> = ({ products, bills, purchases, onDeleteBatch, systemConfig, t, initialProduct, onProductSelect }) => {
     // ... [Same implementation as previous turn] ...
     const [searchTerm, setSearchTerm] = useState('');
@@ -380,12 +379,38 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
         return result.reverse();
     }, [ledger]);
 
+    const handleExport = () => {
+        if (!selectedProduct || transactionsWithBalance.length === 0) {
+            alert("No data to export.");
+            return;
+        }
+        const data = transactionsWithBalance.map(t => ({
+            'Date': t.date.toLocaleDateString(),
+            'Type': t.type,
+            'Particulars': t.particulars,
+            'In': t.inQty > 0 ? formatStock(t.inQty, selectedProduct.unitsPerStrip) : '-',
+            'Out': t.outQty > 0 ? formatStock(t.outQty, selectedProduct.unitsPerStrip) : '-',
+            'Balance': formatStock(t.balance, selectedProduct.unitsPerStrip)
+        }));
+        exportToCsv(`stock_ledger_${selectedProduct.name.replace(/ /g, '_')}_${fromDate || 'start'}_to_${toDate || 'end'}`, data);
+    };
+
     return (
         <Card title={t.inventory.selectedStock}>
             <div className="relative mb-6"><label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Product</label><div className="flex gap-2"><input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedProduct(null); }} className={inputStyle} placeholder={t.inventory.searchPlaceholder} />{selectedProduct && (<button onClick={handleClearSelection} className="px-4 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600">Clear</button>)}</div>{searchResults.length > 0 && (<ul className="absolute z-10 w-full bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto mt-1">{searchResults.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200">{p.name} <span className="text-xs text-slate-500 dark:text-slate-400">({p.company})</span></li>))}</ul>)}</div>
             {selectedProduct && (
                 <div className="space-y-6">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600"><h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3><p className="text-slate-600 dark:text-slate-400">{selectedProduct.company}</p>{isPharmaMode && <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">{selectedProduct.composition}</p>}<div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Current Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</div></div>
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600 gap-4">
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">{selectedProduct.name}</h3>
+                            <p className="text-slate-600 dark:text-slate-400">{selectedProduct.company}</p>
+                            {isPharmaMode && <p className="text-sm text-indigo-600 dark:text-indigo-400 mt-1">{selectedProduct.composition}</p>}
+                            <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Current Total Stock: {formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</div>
+                        </div>
+                        <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors">
+                            <DownloadIcon className="h-5 w-5" /> Export Ledger
+                        </button>
+                    </div>
                     <div className="flex gap-4 items-center mb-4"><div className="flex-1"><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div className="flex-1"><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div>
                     <div className="overflow-x-auto"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs uppercase bg-white dark:bg-slate-800 border-b-2 dark:border-slate-600 font-bold"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Type</th><th className="px-4 py-3">Particulars</th><th className="px-4 py-3 text-center">In</th><th className="px-4 py-3 text-center">Out</th><th className="px-4 py-3 text-right">Balance</th></tr></thead><tbody className="bg-white dark:bg-slate-800"><tr className="border-b dark:border-slate-700 font-semibold bg-slate-50 dark:bg-slate-700/30"><td className="px-4 py-3"></td><td className="px-4 py-3"></td><td className="px-4 py-3 text-right">Opening Balance:</td><td className="px-4 py-3 text-center">-</td><td className="px-4 py-3 text-center">-</td><td className="px-4 py-3 text-right">{formatStock(ledger.openingBalance, selectedProduct.unitsPerStrip)}</td></tr>{transactionsWithBalance.map((txn, index) => (<tr key={index} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50"><td className="px-4 py-3">{txn.date.toLocaleDateString()}</td><td className="px-4 py-3"><span className={`px-2 py-1 rounded text-xs font-semibold ${txn.type === 'Purchase' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>{txn.type}</span></td><td className="px-4 py-3">{txn.particulars}</td><td className="px-4 py-3 text-center">{txn.inQty > 0 ? formatStock(txn.inQty, selectedProduct.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-center">{txn.outQty > 0 ? formatStock(txn.outQty, selectedProduct.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-right font-medium">{formatStock(txn.balance, selectedProduct.unitsPerStrip)}</td></tr>))}{transactionsWithBalance.length === 0 && (<tr><td colSpan={6} className="text-center py-6 text-slate-500">No transactions in selected period.</td></tr>)}</tbody></table></div>
                 </div>
@@ -397,9 +422,28 @@ const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purch
 const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const allBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }); }, [products, searchTerm]);
+    
+    const handleExport = () => {
+        if (allBatches.length === 0) { alert("No data"); return; }
+        const data = allBatches.map(b => ({
+            'Product': b.product.name,
+            'Company': b.product.company,
+            'Batch': b.batchNumber,
+            'Expiry': b.expiryDate,
+            'MRP': b.mrp.toFixed(2),
+            'Stock': formatStock(b.stock, b.product.unitsPerStrip)
+        }));
+        exportToCsv('all_batches_stock', data);
+    };
+
     return (
         <Card title={t.inventory.batchStock}>
-            <input type="text" placeholder="Search by Product or Batch..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle + " mb-4"} />
+            <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                <input type="text" placeholder="Search by Product or Batch..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} />
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors flex-shrink-0">
+                    <DownloadIcon className="h-5 w-5" /> Export
+                </button>
+            </div>
             <div className="overflow-x-auto max-h-[600px]"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs sticky top-0"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2">Batch No</th><th className="px-4 py-2">Expiry</th><th className="px-4 py-2 text-right">MRP</th><th className="px-4 py-2 text-center">Stock</th><th className="px-4 py-2 text-center">Action</th></tr></thead><tbody>{allBatches.map(item => (<tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600"><td className="px-4 py-2 font-medium">{item.product.name}</td><td className="px-4 py-2">{item.batchNumber}</td><td className="px-4 py-2">{item.expiryDate}</td><td className="px-4 py-2 text-right">₹{item.mrp.toFixed(2)}</td><td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-4 py-2 text-center"><button onClick={() => { if(confirm('Delete batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button></td></tr>))}</tbody></table></div>
         </Card>
     );
@@ -615,8 +659,27 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
 const ExpiredStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, t }) => {
     const today = new Date(); today.setHours(0,0,0,0);
     const expiredBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => item.stock > 0 && getExpiryDate(item.expiryDate) < today); }, [products, today]);
+    
+    const handleExport = () => {
+        if (expiredBatches.length === 0) { alert("No data"); return; }
+        const data = expiredBatches.map(b => ({
+            'Product': b.product.name,
+            'Batch': b.batchNumber,
+            'Expiry': b.expiryDate,
+            'Stock': formatStock(b.stock, b.product.unitsPerStrip)
+        }));
+        exportToCsv('expired_stock', data);
+    };
+
     return (
-        <Card title={t.inventory.expiredStock}>
+        <Card title={
+            <div className="flex justify-between items-center">
+                <span>{t.inventory.expiredStock}</span>
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700 transition-colors">
+                    <DownloadIcon className="h-4 w-4" /> Export
+                </button>
+            </div>
+        }>
             <div className="overflow-x-auto"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="bg-red-50 dark:bg-red-900/30 uppercase text-xs"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2">Batch</th><th className="px-4 py-2">Expiry</th><th className="px-4 py-2 text-center">Stock</th><th className="px-4 py-2 text-center">Action</th></tr></thead><tbody>{expiredBatches.map(item => (<tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700"><td className="px-4 py-2 font-medium">{item.product.name}</td><td className="px-4 py-2">{item.batchNumber}</td><td className="px-4 py-2 text-red-600 font-bold">{item.expiryDate}</td><td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-4 py-2 text-center"><button onClick={() => { if(confirm('Delete expired batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button></td></tr>))}{expiredBatches.length === 0 && <tr><td colSpan={5} className="text-center py-4">No expired stock found.</td></tr>}</tbody></table></div>
         </Card>
     );
@@ -625,8 +688,27 @@ const ExpiredStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: str
 const NearingExpiryStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, t }) => {
     const today = new Date(); today.setHours(0,0,0,0); const next30Days = new Date(today); next30Days.setDate(today.getDate() + 30);
     const nearExpiryBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => { const exp = getExpiryDate(item.expiryDate); return item.stock > 0 && exp >= today && exp <= next30Days; }); }, [products, today, next30Days]);
+    
+    const handleExport = () => {
+        if (nearExpiryBatches.length === 0) { alert("No data"); return; }
+        const data = nearExpiryBatches.map(b => ({
+            'Product': b.product.name,
+            'Batch': b.batchNumber,
+            'Expiry': b.expiryDate,
+            'Stock': formatStock(b.stock, b.product.unitsPerStrip)
+        }));
+        exportToCsv('near_expiry_stock', data);
+    };
+
     return (
-        <Card title={t.inventory.nearExpiry}>
+        <Card title={
+            <div className="flex justify-between items-center">
+                <span>{t.inventory.nearExpiry}</span>
+                <button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-3 py-1.5 text-sm rounded-lg shadow hover:bg-green-700 transition-colors">
+                    <DownloadIcon className="h-4 w-4" /> Export
+                </button>
+            </div>
+        }>
             <div className="overflow-x-auto"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="bg-yellow-50 dark:bg-yellow-900/30 uppercase text-xs"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2">Batch</th><th className="px-4 py-2">Expiry</th><th className="px-4 py-2 text-center">Stock</th><th className="px-4 py-2 text-center">Action</th></tr></thead><tbody>{nearExpiryBatches.map(item => (<tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700"><td className="px-4 py-2 font-medium">{item.product.name}</td><td className="px-4 py-2">{item.batchNumber}</td><td className="px-4 py-2 text-yellow-600 font-bold">{item.expiryDate}</td><td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-4 py-2 text-center"><button onClick={() => { if(confirm('Delete batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button></td></tr>))}{nearExpiryBatches.length === 0 && <tr><td colSpan={5} className="text-center py-4">No batches expiring soon.</td></tr>}</tbody></table></div>
         </Card>
     );
