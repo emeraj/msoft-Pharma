@@ -73,8 +73,84 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 U';
 };
 
-const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, systemConfig, t }) => {
+const EditBatchModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    product: Product;
+    batch: Batch;
+    onSave: (pid: string, updatedBatch: Batch) => void;
+}> = ({ isOpen, onClose, product, batch, onSave }) => {
+    const [formData, setFormData] = useState<Batch>({ ...batch });
+
+    useEffect(() => {
+        setFormData({ ...batch });
+    }, [batch]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value, type } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: type === 'number' ? parseFloat(value) || 0 : value
+        }));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        onSave(product.id, formData);
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Batch Details">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product</label>
+                    <input value={product.name} disabled className={`${inputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Batch Number</label>
+                        <input name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputStyle} required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Expiry (YYYY-MM)</label>
+                        <input name="expiryDate" value={formData.expiryDate} onChange={handleChange} className={inputStyle} placeholder="YYYY-MM" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">MRP</label>
+                        <input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={handleChange} className={inputStyle} required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Purchase Price</label>
+                        <input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={handleChange} className={inputStyle} required />
+                    </div>
+                    <div className="col-span-2">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Current Stock (Total Units)</label>
+                        <input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required />
+                        <p className="text-xs text-orange-600 mt-1">Warning: Manually adjusting stock here directly affects inventory count.</p>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700 mt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Save Changes</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const BatchWiseStockView: React.FC<{ 
+    products: Product[], 
+    onDeleteBatch: (pid: string, bid: string) => void, 
+    onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>,
+    systemConfig: SystemConfig, 
+    t: any 
+}> = ({ products, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [editingBatchData, setEditingBatchData] = useState<{ product: Product, batch: Batch } | null>(null);
+
     const allBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }); }, [products, searchTerm]);
     
     const handleExport = () => {
@@ -94,6 +170,14 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
             };
         });
         exportToCsv('all_batches_stock', data);
+    };
+
+    const handleUpdateBatch = (pid: string, updatedBatch: Batch) => {
+        const product = products.find(p => p.id === pid);
+        if (product) {
+            const updatedBatches = product.batches.map(b => b.id === updatedBatch.id ? updatedBatch : b);
+            onUpdateProduct(pid, { batches: updatedBatches });
+        }
     };
 
     return (
@@ -134,13 +218,22 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
                                     <td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
                                     <td className="px-4 py-2 text-right">₹{stockValue.toFixed(2)}</td>
                                     <td className="px-4 py-2 text-center">
-                                        <button 
-                                            onClick={() => { if(window.confirm(`Are you sure you want to delete batch ${item.batchNumber} of ${item.product.name}?`)) onDeleteBatch(item.product.id, item.id); }} 
-                                            className="text-red-500 hover:text-red-700 p-1"
-                                            title="Delete Batch"
-                                        >
-                                            <TrashIcon className="h-4 w-4"/>
-                                        </button>
+                                        <div className="flex items-center justify-center gap-2">
+                                            <button 
+                                                onClick={() => setEditingBatchData({ product: item.product, batch: item })} 
+                                                className="text-blue-500 hover:text-blue-700 p-1"
+                                                title="Edit Batch"
+                                            >
+                                                <PencilIcon className="h-4 w-4"/>
+                                            </button>
+                                            <button 
+                                                onClick={() => { if(window.confirm(`Are you sure you want to delete batch ${item.batchNumber} of ${item.product.name}?`)) onDeleteBatch(item.product.id, item.id); }} 
+                                                className="text-red-500 hover:text-red-700 p-1"
+                                                title="Delete Batch"
+                                            >
+                                                <TrashIcon className="h-4 w-4"/>
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             );
@@ -148,6 +241,16 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
                     </tbody>
                 </table>
             </div>
+            
+            {editingBatchData && (
+                <EditBatchModal 
+                    isOpen={!!editingBatchData}
+                    onClose={() => setEditingBatchData(null)}
+                    product={editingBatchData.product}
+                    batch={editingBatchData.batch}
+                    onSave={handleUpdateBatch}
+                />
+            )}
         </Card>
     );
 };
@@ -558,7 +661,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 </Card>
             )}
 
-            {view === 'batches' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
+            {view === 'batches' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
             {view === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
             {view === 'expired' && <ExpiredStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
             {view === 'nearExpiry' && <NearingExpiryStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
