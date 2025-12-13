@@ -423,7 +423,7 @@ const App: React.FC = () => {
   const handleAddProduct = async (product: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => {
       if (!dataOwnerId) return;
       
-      const newBatch: Batch = { ...firstBatch, id: Date.now().toString() };
+      const newBatch: Batch = { ...firstBatch, id: Date.now().toString(), openingStock: firstBatch.stock };
       const newProduct = { ...product, batches: [newBatch] };
       
       const docRef = await addDoc(collection(db, `users/${dataOwnerId}/products`), newProduct);
