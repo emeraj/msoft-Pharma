@@ -327,24 +327,51 @@ function App() {
           }
 
           for (const item of itemsWithIds) {
-              let product = currentProducts.find(p => p.name === item.productName && p.company === item.company);
-              let productRef;
+              let product: Product | undefined;
+              
+              // 1. Try finding by ID first
+              if (item.productId) {
+                  product = currentProducts.find(p => p.id === item.productId);
+              }
+              // 2. Fallback to Name + Company
+              if (!product) {
+                  product = currentProducts.find(p => p.name === item.productName && p.company === item.company);
+              }
               
               if (product) {
-                  productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
-                  const newBatch = {
-                      id: `batch_${Date.now()}_${Math.random()}`,
-                      batchNumber: item.batchNumber,
-                      expiryDate: item.expiryDate,
-                      stock: item.quantity * (item.unitsPerStrip || 1),
-                      mrp: item.mrp,
-                      purchasePrice: item.purchasePrice,
-                      openingStock: 0 
-                  };
-                  product.batches.push(newBatch);
+                  const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
+                  
+                  // Check for existing batch with same Batch Number AND MRP
+                  const existingBatchIndex = product.batches.findIndex(b => 
+                      b.batchNumber.trim().toLowerCase() === item.batchNumber.trim().toLowerCase() && 
+                      Math.abs(b.mrp - item.mrp) < 0.01
+                  );
+
+                  const units = item.unitsPerStrip || product.unitsPerStrip || 1;
+                  const quantityToAdd = item.quantity * units;
+
+                  if (existingBatchIndex >= 0) {
+                      // Merge into existing batch
+                      product.batches[existingBatchIndex].stock += quantityToAdd;
+                      // Update purchase price to the latest one
+                      product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
+                  } else {
+                      // Create new batch
+                      const newBatch = {
+                          id: `batch_${Date.now()}_${Math.random()}`,
+                          batchNumber: item.batchNumber,
+                          expiryDate: item.expiryDate,
+                          stock: quantityToAdd,
+                          mrp: item.mrp,
+                          purchasePrice: item.purchasePrice,
+                          openingStock: 0 
+                      };
+                      product.batches.push(newBatch);
+                  }
+
                   batch.update(productRef, { batches: product.batches });
               } else {
-                  productRef = doc(collection(db, `users/${dataOwnerId}/products`));
+                  const productRef = doc(collection(db, `users/${dataOwnerId}/products`));
                   const newBatch = {
                       id: `batch_${Date.now()}_${Math.random()}`,
                       batchNumber: item.batchNumber,
