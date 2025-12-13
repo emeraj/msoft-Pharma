@@ -343,18 +343,22 @@ function App() {
                       purchasePrice: item.purchasePrice,
                       openingStock: 0
                   };
+                  
+                  // Construct new product object safely avoiding undefined values
                   const newProduct: Product = {
                       id: productRef.id,
                       name: item.productName,
                       company: item.company,
                       hsnCode: item.hsnCode,
                       gst: item.gst,
-                      barcode: item.barcode,
-                      composition: item.composition,
-                      unitsPerStrip: item.unitsPerStrip,
-                      isScheduleH: item.isScheduleH,
-                      batches: [newBatch]
+                      batches: [newBatch],
+                      // Conditionally add optional fields only if they have values to avoid "undefined" in Firestore
+                      ...(item.barcode ? { barcode: item.barcode } : {}),
+                      ...(item.composition ? { composition: item.composition } : {}),
+                      ...(item.unitsPerStrip ? { unitsPerStrip: item.unitsPerStrip } : {}),
+                      ...(item.isScheduleH !== undefined ? { isScheduleH: item.isScheduleH } : {})
                   };
+                  
                   batch.set(productRef, newProduct);
               }
           }
@@ -397,10 +401,14 @@ function App() {
                   if (batchIndex !== -1) {
                       const batch = product.batches[batchIndex];
                       const units = item.unitsPerStrip || (product.unitsPerStrip || 1);
+                      // Deduct from Current Stock - Allow negative stock (e.g. if sold already)
+                      // e.g. Purchased 10, Sold 2 (Stock 8). Delete Purchase (-10) -> Stock -2.
                       batch.stock = batch.stock - (item.quantity * units);
                       
                       if (batch.openingStock !== undefined) {
                           batch.openingStock = Math.max(0, batch.openingStock - (item.quantity * units));
+                      } else {
+                          batch.openingStock = 0;
                       }
 
                       productUpdates.set(product.id, product.batches);
