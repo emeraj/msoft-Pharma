@@ -300,7 +300,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     );
 };
 
-// ... (SelectedItemStockView, BatchWiseStockView, CompanyWiseStockView, ExpiredStockView, NearingExpiryStockView - KEEP AS IS)
+// ... (SelectedItemStockView, BatchWiseStockView, ExpiredStockView, NearingExpiryStockView - KEEP AS IS)
 const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purchases: Purchase[], onDeleteBatch: (productId: string, batchId: string) => void, systemConfig: SystemConfig, t: any, initialProduct: Product | null, onProductSelect: (p: Product | null) => void }> = ({ products, bills, purchases, onDeleteBatch, systemConfig, t, initialProduct, onProductSelect }) => {
     // ... [Same implementation as previous turn] ...
     const [searchTerm, setSearchTerm] = useState('');
@@ -406,30 +406,147 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
 };
 
 const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, systemConfig, t }) => {
-    // ... [Same implementation] ...
     const [selectedCompany, setSelectedCompany] = useState('All Companies');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const companies = useMemo(() => ['All Companies', ...[...new Set(products.map(p => p.company))].sort()], [products]);
-    const reportData = useMemo(() => {
-        const start = fromDate ? new Date(fromDate) : null; if (start) start.setHours(0, 0, 0, 0);
-        const end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999);
+    
+    interface BatchReportRow {
+        productId: string;
+        productName: string;
+        company: string;
+        batchNumber: string;
+        expiryDate: string;
+        unitsPerStrip: number;
+        openingStock: number;
+        purchasedQty: number;
+        soldQty: number;
+        closingStock: number;
+        stockValue: number;
+        mrp: number;
+        isFirstOfProduct: boolean;
+    }
+
+    const reportData = useMemo<BatchReportRow[]>(() => {
+        const start = fromDate ? new Date(fromDate) : null;
+        if (start) start.setHours(0, 0, 0, 0);
+        
+        const end = toDate ? new Date(toDate) : new Date();
+        end.setHours(23, 59, 59, 999);
+
+        // Filter products by company
         const filteredProducts = products.filter(p => selectedCompany === 'All Companies' || p.company === selectedCompany);
-        return filteredProducts.map(product => {
+        
+        const rows: BatchReportRow[] = [];
+
+        filteredProducts.forEach(product => {
             const unitsPerStrip = product.unitsPerStrip || 1;
-            const liveStock = product.batches.reduce((sum, b) => sum + b.stock, 0);
-            let futurePurchases = 0; let futureSales = 0; let periodPurchases = 0; let periodSales = 0;
-            purchases.forEach(pur => { const pDate = new Date(pur.invoiceDate); pur.items.forEach(item => { const isMatch = item.productId === product.id || (item.productName.toLowerCase() === product.name.toLowerCase() && item.company.toLowerCase() === product.company.toLowerCase()); if (isMatch) { const qty = item.quantity * (item.unitsPerStrip || unitsPerStrip); if (pDate > end) { futurePurchases += qty; } else if (!start || pDate >= start) { periodPurchases += qty; } } }); });
-            bills.forEach(bill => { const bDate = new Date(bill.date); bill.items.forEach(item => { if (item.productId === product.id) { const qty = item.quantity; if (bDate > end) { futureSales += qty; } else if (!start || bDate >= start) { periodSales += qty; } } }); });
-            const closingStock = liveStock - futurePurchases + futureSales;
-            const openingStock = closingStock - periodPurchases + periodSales;
-            const latestBatch = product.batches.length > 0 ? product.batches.reduce((prev, current) => (prev.mrp > current.mrp) ? prev : current) : null;
-            const mrpPerUnit = latestBatch ? (latestBatch.mrp / unitsPerStrip) : 0;
-            const stockValue = closingStock * mrpPerUnit;
-            return { id: product.id, name: product.name, company: product.company, openingStock, periodPurchases, periodSales, closingStock, stockValue, unitsPerStrip };
-        }).filter(item => true).sort((a, b) => a.name.localeCompare(b.name));
+            let isFirst = true;
+
+            product.batches.forEach(batch => {
+                // 1. Current Live Stock (Closing for "Now")
+                const currentStock = batch.stock;
+
+                // 2. Calculate Transactions AFTER 'end' date (Future relative to report period)
+                // We need to reverse these from Current Stock to find Closing Stock of Period
+                let futurePurchases = 0;
+                let futureSales = 0;
+                
+                // 3. Calculate Transactions WITHIN 'start' and 'end' date
+                let periodPurchases = 0;
+                let periodSales = 0;
+
+                // Purchases
+                purchases.forEach(pur => {
+                    const pDate = new Date(pur.invoiceDate);
+                    pur.items.forEach(item => {
+                        // Match Logic: BatchId preferred, else BatchNumber within same product
+                        const isMatch = (item.batchId && item.batchId === batch.id) || 
+                                        (!item.batchId && item.productId === product.id && item.batchNumber === batch.batchNumber) ||
+                                        (!item.batchId && !item.productId && item.productName === product.name && item.batchNumber === batch.batchNumber);
+                        
+                        if (isMatch) {
+                            const qty = item.quantity * (item.unitsPerStrip || unitsPerStrip);
+                            
+                            if (pDate > end) {
+                                futurePurchases += qty;
+                            } else if (!start || pDate >= start) {
+                                periodPurchases += qty;
+                            }
+                        }
+                    });
+                });
+
+                // Sales (Bills)
+                bills.forEach(bill => {
+                    const bDate = new Date(bill.date);
+                    bill.items.forEach(item => {
+                        // Bills usually have batchId
+                        if (item.batchId === batch.id) {
+                            const qty = item.quantity; // Stored as total units
+                            
+                            if (bDate > end) {
+                                futureSales += qty;
+                            } else if (!start || bDate >= start) {
+                                periodSales += qty;
+                            }
+                        }
+                    });
+                });
+
+                // 4. Calculate Closing Stock at 'end' date
+                // Closing = Current - FuturePurchases + FutureSales
+                const closingStock = currentStock - futurePurchases + futureSales;
+
+                // 5. Calculate Opening Stock at 'start' date
+                // Opening = Closing - PeriodPurchases + PeriodSales
+                const openingStock = closingStock - periodPurchases + periodSales;
+
+                // Filter out inactive batches:
+                // Hide if Opening=0 AND Closing=0 AND No Activity in Period
+                if (openingStock !== 0 || closingStock !== 0 || periodPurchases !== 0 || periodSales !== 0) {
+                    const stockValue = closingStock * (batch.mrp / unitsPerStrip);
+                    
+                    rows.push({
+                        productId: product.id,
+                        productName: product.name,
+                        company: product.company,
+                        batchNumber: batch.batchNumber,
+                        expiryDate: batch.expiryDate,
+                        unitsPerStrip,
+                        openingStock,
+                        purchasedQty: periodPurchases,
+                        soldQty: periodSales,
+                        closingStock,
+                        stockValue,
+                        mrp: batch.mrp,
+                        isFirstOfProduct: isFirst
+                    });
+                    isFirst = false;
+                }
+            });
+        });
+
+        return rows.sort((a, b) => a.productName.localeCompare(b.productName));
     }, [products, purchases, bills, selectedCompany, fromDate, toDate]);
-    const handleExport = () => { if (reportData.length === 0) { alert("No data to export."); return; } const data = reportData.map(r => ({ 'Product Name': r.name, 'Company': r.company, 'Opening Stock': formatStock(r.openingStock, r.unitsPerStrip), 'Purchased': formatStock(r.periodPurchases, r.unitsPerStrip), 'Sold': formatStock(r.periodSales, r.unitsPerStrip), 'Current Stock': formatStock(r.closingStock, r.unitsPerStrip), 'Stock Value': r.stockValue.toFixed(2) })); exportToCsv(`Company_Stock_${selectedCompany}_${fromDate}_to_${toDate}`, data); };
+
+    const handleExport = () => {
+        if (reportData.length === 0) { alert("No data to export."); return; }
+        
+        const data = reportData.map(r => ({
+            'Product': r.productName,
+            'Company': r.company,
+            'Batch': r.batchNumber,
+            'Expiry': r.expiryDate,
+            'Opening Stock': formatStock(r.openingStock, r.unitsPerStrip),
+            'Purchased': formatStock(r.purchasedQty, r.unitsPerStrip),
+            'Sold': formatStock(r.soldQty, r.unitsPerStrip),
+            'Closing Stock': formatStock(r.closingStock, r.unitsPerStrip),
+            'Value': r.stockValue.toFixed(2)
+        }));
+        
+        exportToCsv(`Company_Stock_${selectedCompany}_${fromDate}_to_${toDate}`, data);
+    };
 
     return (
         <Card title={t.inventory.companyStock}>
@@ -439,7 +556,58 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 <div className="flex items-center gap-2"><label className="text-sm font-medium whitespace-nowrap text-slate-700 dark:text-slate-300">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div>
                 <div><button onClick={handleExport} className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors"><DownloadIcon className="h-5 w-5" /> Export to Excel</button></div>
             </div>
-            <div className="overflow-x-auto rounded-lg border dark:border-slate-700"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs uppercase bg-slate-800 text-white dark:bg-slate-900"><tr><th className="px-6 py-3">Product Name</th><th className="px-6 py-3">Company</th><th className="px-6 py-3 text-center">Opening Stock</th><th className="px-6 py-3 text-center">Purchased (Period)</th><th className="px-6 py-3 text-center">Sold (Period)</th><th className="px-6 py-3 text-center">Current Stock</th><th className="px-6 py-3 text-right">Stock Value (MRP)</th></tr></thead><tbody className="divide-y divide-slate-200 dark:divide-slate-700">{reportData.map(item => (<tr key={item.id} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{item.name}</td><td className="px-6 py-4">{item.company}</td><td className="px-6 py-4 text-center">{formatStock(item.openingStock, item.unitsPerStrip)}</td><td className="px-6 py-4 text-center">{formatStock(item.periodPurchases, item.unitsPerStrip)}</td><td className="px-6 py-4 text-center">{formatStock(item.periodSales, item.unitsPerStrip)}</td><td className="px-6 py-4 text-center font-bold">{formatStock(item.closingStock, item.unitsPerStrip)}</td><td className="px-6 py-4 text-right font-bold">₹{item.stockValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>))}{reportData.length === 0 && (<tr><td colSpan={7} className="text-center py-8 text-slate-500">No products found for the selected company.</td></tr>)}</tbody></table></div>
+            
+            <div className="overflow-x-auto rounded-lg border dark:border-slate-700">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="text-xs uppercase bg-slate-800 text-slate-200">
+                        <tr>
+                            <th className="px-4 py-3 w-1/4">Product / Company</th>
+                            <th className="px-4 py-3">Batch / Expiry</th>
+                            <th className="px-4 py-3 text-center">Opening</th>
+                            <th className="px-4 py-3 text-center">Purchased</th>
+                            <th className="px-4 py-3 text-center">Sold</th>
+                            <th className="px-4 py-3 text-center">Closing</th>
+                            <th className="px-4 py-3 text-right">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-700 bg-slate-900 text-slate-300">
+                        {reportData.map((row, idx) => (
+                            <tr key={`${row.productId}-${row.batchNumber}-${idx}`} className="hover:bg-slate-800 transition-colors">
+                                <td className="px-4 py-3 align-top">
+                                    {row.isFirstOfProduct ? (
+                                        <>
+                                            <div className="font-bold text-white text-base">{row.productName}</div>
+                                            <div className="text-xs text-slate-400 mt-1 uppercase tracking-wide">{row.company}</div>
+                                        </>
+                                    ) : null}
+                                </td>
+                                <td className="px-4 py-3 align-top">
+                                    <div className="text-slate-200 font-medium">{row.batchNumber}</div>
+                                    <div className="text-xs text-slate-500 mt-0.5">{row.expiryDate}</div>
+                                </td>
+                                <td className="px-4 py-3 text-center align-top text-slate-400">
+                                    {formatStock(row.openingStock, row.unitsPerStrip)}
+                                </td>
+                                <td className="px-4 py-3 text-center align-top text-green-400">
+                                    {row.purchasedQty > 0 ? formatStock(row.purchasedQty, row.unitsPerStrip) : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-center align-top text-red-400">
+                                    {row.soldQty > 0 ? formatStock(row.soldQty, row.unitsPerStrip) : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-center align-top font-bold text-white">
+                                    {formatStock(row.closingStock, row.unitsPerStrip)}
+                                </td>
+                                <td className="px-4 py-3 text-right align-top font-mono">
+                                    {row.stockValue > 0 ? `₹${row.stockValue.toFixed(2)}` : '₹0.00'}
+                                </td>
+                            </tr>
+                        ))}
+                        {reportData.length === 0 && (
+                            <tr><td colSpan={7} className="text-center py-8 text-slate-500">No active stock found for the selected criteria.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </Card>
     );
 };
