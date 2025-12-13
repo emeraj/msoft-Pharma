@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
 
 interface InventoryProps {
@@ -137,6 +137,150 @@ const EditBatchModal: React.FC<{
                     <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Save Changes</button>
                 </div>
             </form>
+        </Modal>
+    );
+};
+
+// --- New Component: PrintBarcodeModal ---
+const PrintBarcodeModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product }> = ({ isOpen, onClose, product }) => {
+    const [quantity, setQuantity] = useState(1);
+    
+    // Pick max MRP from active batches for the label
+    const mrp = useMemo(() => {
+        if (!product.batches || product.batches.length === 0) return 0;
+        return Math.max(...product.batches.map(b => b.mrp));
+    }, [product]);
+
+    const handlePrint = () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert("Please allow popups to print labels.");
+            return;
+        }
+        
+        // Use Barcode or fallback to a portion of ID or HSN
+        const barcodeValue = product.barcode || product.hsnCode || product.id.substring(0, 8);
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Print Labels - ${product.name}</title>
+                <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+                <style>
+                    @media print {
+                        @page {
+                            size: 50mm 25mm;
+                            margin: 0;
+                        }
+                        body {
+                            margin: 0;
+                        }
+                    }
+                    body {
+                        margin: 0;
+                        padding: 0;
+                        font-family: sans-serif;
+                    }
+                    .label {
+                        width: 50mm;
+                        height: 25mm;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        text-align: center;
+                        overflow: hidden;
+                        page-break-inside: avoid;
+                        /* Optional border for preview, most thermal printers ignore page breaks without content flow, 
+                           but page-break-after helps */
+                        page-break-after: always;
+                    }
+                    .name {
+                        font-size: 10px;
+                        font-weight: bold;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        width: 48mm;
+                        margin-bottom: 1px;
+                        text-transform: uppercase;
+                    }
+                    .price {
+                        font-size: 10px;
+                        font-weight: bold;
+                        margin-top: 1px;
+                    }
+                    svg {
+                        width: 40mm;
+                        height: 10mm;
+                        display: block;
+                    }
+                </style>
+            </head>
+            <body>
+                ${Array.from({ length: quantity }).map(() => `
+                    <div class="label">
+                        <div class="name">${product.name}</div>
+                        <svg class="barcode"
+                            jsbarcode-format="auto"
+                            jsbarcode-value="${barcodeValue}"
+                            jsbarcode-textmargin="0"
+                            jsbarcode-fontoptions="bold"
+                            jsbarcode-height="30"
+                            jsbarcode-width="1"
+                            jsbarcode-displayValue="true"
+                            jsbarcode-fontSize="10"
+                        ></svg>
+                        <div class="price">MRP: ₹${mrp.toFixed(2)}</div>
+                    </div>
+                `).join('')}
+                <script>
+                    JsBarcode(".barcode").init();
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                            window.close();
+                        }, 500);
+                    }
+                </script>
+            </body>
+            </html>
+        `;
+        
+        printWindow.document.write(html);
+        printWindow.document.close();
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Print Barcode Labels (50x25mm)">
+            <div className="space-y-4">
+                <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg">
+                    <p className="text-lg font-bold text-slate-800 dark:text-white">{product.name}</p>
+                    <p className="text-sm text-slate-500">{product.company}</p>
+                    <p className="text-xs text-slate-400 mt-1">Barcode: {product.barcode || 'N/A (Auto-generated)'}</p>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Number of Labels</label>
+                    <input 
+                        type="number" 
+                        min="1" 
+                        value={quantity} 
+                        onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} 
+                        className={inputStyle} 
+                        autoFocus
+                    />
+                </div>
+                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700">
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button onClick={handlePrint} className="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 flex items-center gap-2">
+                        <PrinterIcon className="h-4 w-4" /> Print Labels
+                    </button>
+                </div>
+            </div>
         </Modal>
     );
 };
@@ -826,6 +970,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     const [isAddProductOpen, setAddProductOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
 
     const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -877,6 +1022,13 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                                         <td className="px-4 py-2">{p.company}</td>
                                         <td className="px-4 py-2">{p.gst}%</td>
                                         <td className="px-4 py-2 flex gap-2">
+                                            <button 
+                                                onClick={() => setPrintingProduct(p)} 
+                                                className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                                title="Print Barcode Label"
+                                            >
+                                                <BarcodeIcon className="h-4 w-4" />
+                                            </button>
                                             <button onClick={() => setEditingProduct(p)} className="text-blue-600"><PencilIcon className="h-4 w-4" /></button>
                                             <button onClick={() => onDeleteProduct(p.id)} className="text-red-600"><TrashIcon className="h-4 w-4" /></button>
                                         </td>
@@ -911,6 +1063,14 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                     systemConfig={systemConfig} 
                     gstRates={gstRates} 
                     isEdit={true}
+                />
+            )}
+
+            {printingProduct && (
+                <PrintBarcodeModal 
+                    isOpen={!!printingProduct}
+                    onClose={() => setPrintingProduct(null)}
+                    product={printingProduct}
                 />
             )}
         </div>
