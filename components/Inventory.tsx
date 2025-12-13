@@ -300,6 +300,7 @@ const AllItemStockView: React.FC<AllItemStockViewProps> = ({ products, purchases
     );
 };
 
+// ... (SelectedItemStockView, BatchWiseStockView, CompanyWiseStockView, ExpiredStockView, NearingExpiryStockView remain same)
 const SelectedItemStockView: React.FC<{products: Product[], bills: Bill[], purchases: Purchase[], onDeleteBatch: (productId: string, batchId: string) => void, systemConfig: SystemConfig, t: any, initialProduct: Product | null, onProductSelect: (p: Product | null) => void }> = ({ products, bills, purchases, onDeleteBatch, systemConfig, t, initialProduct, onProductSelect }) => {
     // ... [Same implementation as previous turn] ...
     const [searchTerm, setSearchTerm] = useState('');
@@ -489,6 +490,7 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
 };
 
 const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, systemConfig, t }) => {
+    // ... [Same implementation as previous turn] ...
     const [selectedCompany, setSelectedCompany] = useState('All Companies');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -696,6 +698,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
 };
 
 const ExpiredStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, t }) => {
+    // ... [Same implementation as previous turn] ...
     const today = new Date(); today.setHours(0,0,0,0);
     const expiredBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => item.stock > 0 && getExpiryDate(item.expiryDate) < today); }, [products, today]);
     
@@ -725,6 +728,7 @@ const ExpiredStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: str
 };
 
 const NearingExpiryStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, t }) => {
+    // ... [Same implementation as previous turn] ...
     const today = new Date(); today.setHours(0,0,0,0); const next30Days = new Date(today); next30Days.setDate(today.getDate() + 30);
     const nearExpiryBatches = useMemo(() => { return products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => { const exp = getExpiryDate(item.expiryDate); return item.stock > 0 && exp >= today && exp <= next30Days; }); }, [products, today, next30Days]);
     
@@ -899,7 +903,6 @@ const AddBatchModal: React.FC<{ isOpen: boolean, onClose: () => void, product: P
 };
 
 const EditProductModal: React.FC<{ isOpen: boolean, onClose: () => void, product: Product, onUpdateProduct: (pid: string, data: any) => void, systemConfig: SystemConfig, gstRates: GstRate[] }> = ({ isOpen, onClose, product, onUpdateProduct, systemConfig, gstRates }) => {
-    // ... [No changes to EditProductModal] ...
     const [formData, setFormData] = useState({ 
         ...product, 
         gst: String(product.gst),
@@ -970,7 +973,7 @@ const EditProductModal: React.FC<{ isOpen: boolean, onClose: () => void, product
                             onChange={e => setFormData({...formData, openingStock: e.target.value})} 
                             className={inputStyle} 
                         />
-                        <p className="text-xs text-slate-500 mt-1">Modifying this will adjust current stock.</p>
+                        <p className="text-xs text-slate-500 mt-1">This is the business starting qty (1st time entered). Modifying this will adjust current stock.</p>
                     </div>
                 )}
 
@@ -983,6 +986,7 @@ const EditProductModal: React.FC<{ isOpen: boolean, onClose: () => void, product
     );
 };
 
+// ... (PrintLabelModal, ImportProductsModal remain same) ...
 const PrintLabelModal: React.FC<{ isOpen: boolean, onClose: () => void, product: Product, companyProfile: CompanyProfile, systemConfig: SystemConfig }> = ({ isOpen, onClose, product, companyProfile }) => {
     const [copies, setCopies] = useState(1);
 
@@ -1133,7 +1137,6 @@ const PrintLabelModal: React.FC<{ isOpen: boolean, onClose: () => void, product:
 };
 
 const ImportProductsModal: React.FC<{ isOpen: boolean, onClose: () => void, onBulkAddProducts: (prods: any[]) => Promise<{success: number, skipped: number}> }> = ({ isOpen, onClose, onBulkAddProducts }) => {
-    // ... [No changes to ImportProductsModal] ...
     const [csvText, setCsvText] = useState('');
     const [status, setStatus] = useState('');
 
