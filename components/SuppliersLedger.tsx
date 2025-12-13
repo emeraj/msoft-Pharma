@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Supplier, Purchase, Payment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, PrinterIcon, PencilIcon } from './icons/Icons';
+import { DownloadIcon, PrinterIcon, PencilIcon, PlusIcon } from './icons/Icons';
 import PrintableSupplierLedger from './PrintableSupplierLedger';
 
 // --- Utility function to export data to CSV ---
@@ -45,6 +46,7 @@ interface SuppliersLedgerProps {
   payments: Payment[];
   companyProfile: CompanyProfile;
   onUpdateSupplier: (id: string, data: Omit<Supplier, 'id'>) => void;
+  onAddPayment?: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
 }
 
 interface SupplierLedgerEntry extends Supplier {
@@ -60,6 +62,9 @@ interface EditSupplierModalProps {
     supplier: Supplier;
     onUpdate: (id: string, data: Omit<Supplier, 'id'>) => void;
 }
+
+const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, supplier, onUpdate }) => {
     const [formState, setFormState] = useState({
@@ -97,8 +102,6 @@ const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, 
         onClose();
     };
 
-    const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
-    
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Edit Supplier: ${supplier.name}`}>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -133,7 +136,74 @@ const EditSupplierModal: React.FC<EditSupplierModalProps> = ({ isOpen, onClose, 
     );
 };
 
-const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, onUpdateSupplier }) => {
+const AddPaymentModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    supplierName: string;
+    onAddPayment: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
+}> = ({ isOpen, onClose, supplierName, onAddPayment }) => {
+    const [amount, setAmount] = useState('');
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [method, setMethod] = useState<'Cash' | 'Bank Transfer' | 'Cheque' | 'Other'>('Bank Transfer');
+    const [remarks, setRemarks] = useState('');
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            alert('Please enter a valid amount');
+            return;
+        }
+        await onAddPayment({
+            supplierName,
+            date: new Date(date).toISOString(),
+            amount: numAmount,
+            method,
+            remarks
+        });
+        setAmount('');
+        setRemarks('');
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Make Payment">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier</label>
+                    <input value={supplierName} className={`${formInputStyle} bg-slate-200 dark:bg-slate-700`} readOnly />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className={formInputStyle} required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Amount</label>
+                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className={formInputStyle} required min="0.01" step="0.01" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Payment Method</label>
+                    <select value={method} onChange={e => setMethod(e.target.value as any)} className={formSelectStyle}>
+                        <option>Bank Transfer</option>
+                        <option>Cash</option>
+                        <option>Cheque</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Remarks</label>
+                    <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)} className={formInputStyle} />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Save Payment</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, onUpdateSupplier, onAddPayment }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -305,6 +375,7 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                     payments={payments}
                     companyProfile={companyProfile}
                     dateRange={{ from: fromDate, to: toDate }}
+                    onAddPayment={onAddPayment}
                 />
             )}
             
@@ -328,10 +399,16 @@ interface SupplierDetailsModalProps {
     payments: Payment[];
     companyProfile: CompanyProfile;
     dateRange: { from: string; to: string };
+    onAddPayment?: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
 }
 
-const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onClose, supplier, purchases, payments, companyProfile, dateRange }) => {
+const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onClose, supplier, purchases, payments, companyProfile, dateRange, onAddPayment }) => {
+    const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
     
+    // Format helpers
+    const formatCurrency = (val: number) => `₹${Math.abs(val).toFixed(2)}`;
+    const formatDrCr = (val: number) => val >= 0 ? 'Cr' : 'Dr';
+
     const transactions = useMemo(() => {
         const startDate = dateRange.from ? new Date(dateRange.from) : null;
         if (startDate) startDate.setHours(0, 0, 0, 0);
@@ -403,40 +480,81 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
     let runningBalance = supplier.openingBalanceForPeriod;
     
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Ledger for ${supplier.name}`}>
-            <div className="space-y-4 text-slate-800 dark:text-slate-300">
-                <div className="p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Opening Balance:</div>
-                    <div className="text-right">
-                        ₹{Math.abs(supplier.openingBalanceForPeriod).toFixed(2)} {supplier.openingBalanceForPeriod >= 0 ? 'Cr' : 'Dr'}
+        <Modal isOpen={isOpen} onClose={onClose} title={`Ledger for ${supplier.name}`} maxWidth="max-w-5xl">
+            <div className="space-y-6">
+                
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900 text-white p-6 rounded-xl shadow-lg border border-slate-700">
+                    <div className="flex flex-col border-r border-slate-700 pr-4">
+                        <span className="text-slate-400 text-sm mb-1">Opening Balance</span>
+                        <span className="text-xl font-bold">{formatCurrency(supplier.openingBalanceForPeriod)} <span className="text-sm font-normal text-slate-400">{formatDrCr(supplier.openingBalanceForPeriod)}</span></span>
                     </div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Purchases (Credit):</div>
-                    <div className="text-right text-red-600 dark:text-red-400">₹{supplier.purchasesInPeriod.toFixed(2)}</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">Payments (Debit):</div>
-                    <div className="text-right text-green-600 dark:text-green-400">₹{supplier.paymentsInPeriod.toFixed(2)}</div>
-                    <div className="font-bold text-lg text-slate-800 dark:text-slate-100 col-span-2 border-t dark:border-slate-600 mt-2 pt-2 flex justify-between">
-                        <span>Outstanding Balance:</span>
-                        <span>₹{Math.abs(supplier.outstandingBalance).toFixed(2)} {supplier.outstandingBalance >= 0 ? 'Cr' : 'Dr'}</span>
+                    <div className="flex flex-col border-r border-slate-700 px-4">
+                        <span className="text-red-400 text-sm mb-1">Purchases (Credit)</span>
+                        <span className="text-xl font-bold">₹{supplier.purchasesInPeriod.toFixed(2)}</span>
+                    </div>
+                    <div className="flex flex-col border-r border-slate-700 px-4">
+                        <span className="text-green-400 text-sm mb-1">Payments (Debit)</span>
+                        <span className="text-xl font-bold">₹{supplier.paymentsInPeriod.toFixed(2)}</span>
+                    </div>
+                    <div className="flex flex-col pl-4">
+                        <span className="text-slate-400 text-sm mb-1">Outstanding Balance</span>
+                        <span className="text-2xl font-bold">{formatCurrency(supplier.outstandingBalance)} <span className="text-sm font-normal text-slate-400">{formatDrCr(supplier.outstandingBalance)}</span></span>
                     </div>
                 </div>
 
-                <div className="border-t dark:border-slate-700 pt-2">
-                    <h4 className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Transaction History (Period)</h4>
-                    <div className="max-h-60 overflow-y-auto">
-                        <table className="w-full text-xs text-left">
-                            <thead className="sticky top-0 bg-slate-100 dark:bg-slate-700">
+                {/* Actions Bar */}
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50 dark:bg-slate-700/30 p-3 rounded-lg border dark:border-slate-700">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Period:</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            {dateRange.from ? new Date(dateRange.from).toLocaleDateString() : 'Start'} - {dateRange.to ? new Date(dateRange.to).toLocaleDateString() : 'Now'}
+                        </span>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleExportPdf}
+                            className="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-600 dark:hover:bg-slate-500 text-slate-800 dark:text-white rounded-lg text-sm transition-colors"
+                        >
+                            <PrinterIcon className="h-4 w-4" /> Print
+                        </button>
+                        {onAddPayment && (
+                            <button 
+                                onClick={() => setPaymentModalOpen(true)}
+                                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 shadow-sm text-sm"
+                            >
+                                <PlusIcon className="h-4 w-4" /> Payments
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Transaction Table */}
+                <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm relative">
+                    <div className="bg-slate-800 text-slate-200 px-4 py-3 font-semibold border-b border-slate-700 flex justify-between items-center">
+                        <span>Transaction History</span>
+                    </div>
+                    <div className="overflow-x-auto max-h-[500px]">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold sticky top-0 z-10 border-b dark:border-slate-700 shadow-sm">
                                 <tr>
-                                    <th className="py-2 px-2">Date</th>
-                                    <th className="py-2 px-2">Particulars</th>
-                                    <th className="py-2 px-2 text-right">Debit (₹)</th>
-                                    <th className="py-2 px-2 text-right">Credit (₹)</th>
-                                    <th className="py-2 px-2 text-right">Balance (₹)</th>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Particulars</th>
+                                    <th className="px-4 py-3 text-right text-green-600 dark:text-green-400">Debit (₹)</th>
+                                    <th className="px-4 py-3 text-right text-red-600 dark:text-red-400">Credit (₹)</th>
+                                    <th className="px-4 py-3 text-right">Balance (₹)</th>
                                 </tr>
                             </thead>
-                            <tbody>
-                                <tr>
-                                    <td colSpan={4} className="py-2 px-2 font-bold">Opening Balance</td>
-                                    <td className="py-2 px-2 text-right font-bold">{Math.abs(supplier.openingBalanceForPeriod).toFixed(2)} {supplier.openingBalanceForPeriod >= 0 ? 'Cr' : 'Dr'}</td>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-900">
+                                <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                                    <td className="px-4 py-3 text-slate-500 italic">Opening</td>
+                                    <td className="px-4 py-3 text-slate-500 italic">Opening Balance</td>
+                                    <td className="px-4 py-3 text-right">-</td>
+                                    <td className="px-4 py-3 text-right">-</td>
+                                    <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
+                                        {formatCurrency(supplier.openingBalanceForPeriod)} {formatDrCr(supplier.openingBalanceForPeriod)}
+                                    </td>
                                 </tr>
                                 {transactions.map((tx, idx) => {
                                     const debit = tx.type === 'payment' ? tx.data.amount : 0;
@@ -447,30 +565,40 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                                         : `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`;
                                     
                                     return (
-                                        <tr key={idx} className="border-b dark:border-slate-600">
-                                            <td className="py-2 px-2">{tx.date.toLocaleDateString()}</td>
-                                            <td className="py-2 px-2">{particulars}</td>
-                                            <td className="py-2 px-2 text-right font-medium text-green-600 dark:text-green-400">{debit > 0 ? debit.toFixed(2) : '-'}</td>
-                                            <td className="py-2 px-2 text-right font-medium text-red-600 dark:text-red-400">{credit > 0 ? credit.toFixed(2) : '-'}</td>
-                                            <td className="py-2 px-2 text-right font-semibold">{Math.abs(runningBalance).toFixed(2)} {runningBalance >= 0 ? 'Cr' : 'Dr'}</td>
+                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                            <td className="px-4 py-3 font-medium text-slate-600 dark:text-slate-400">{tx.date.toLocaleDateString()}</td>
+                                            <td className="px-4 py-3 text-slate-800 dark:text-slate-200">{particulars}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-green-600 dark:text-green-400">{debit > 0 ? debit.toFixed(2) : '-'}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-red-600 dark:text-red-400">{credit > 0 ? credit.toFixed(2) : '-'}</td>
+                                            <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
+                                                {Math.abs(runningBalance).toFixed(2)} {formatDrCr(runningBalance)}
+                                            </td>
                                         </tr>
                                     );
                                 })}
+                                {transactions.length === 0 && (
+                                    <tr><td colSpan={5} className="text-center py-8 text-slate-500">No transactions found in this period.</td></tr>
+                                )}
                             </tbody>
                         </table>
-                        {transactions.length === 0 && <p className="text-center text-slate-500 dark:text-slate-400 py-4">No transactions found for this supplier in the selected period.</p>}
                     </div>
                 </div>
 
-                <div className="flex justify-end pt-4 border-t dark:border-slate-700 mt-4 gap-3">
-                    <button onClick={handleExportPdf} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 transition-colors">
-                       <PrinterIcon className="h-5 w-5" /> Export to PDF
-                    </button>
-                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500">Close</button>
+                <div className="flex justify-end pt-4">
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 font-medium text-slate-800 dark:text-slate-200 transition-colors">Close</button>
                 </div>
             </div>
+
+            {isPaymentModalOpen && onAddPayment && (
+                <AddPaymentModal 
+                    isOpen={isPaymentModalOpen}
+                    onClose={() => setPaymentModalOpen(false)}
+                    supplierName={supplier.name}
+                    onAddPayment={onAddPayment}
+                />
+            )}
         </Modal>
     );
-}
+};
 
 export default SuppliersLedger;

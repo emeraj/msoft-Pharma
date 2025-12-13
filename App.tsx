@@ -348,6 +348,16 @@ const App: React.FC = () => {
       } catch(e) { console.error(e); }
   };
 
+  const handleAddSupplierPayment = async (paymentData: Omit<Payment, 'id' | 'voucherNumber'>) => {
+      if (!dataOwnerId) return null;
+      try {
+          const voucherNumber = `PV-${Date.now().toString().slice(-6)}`;
+          const newPayment = { ...paymentData, voucherNumber };
+          const docRef = await addDoc(collection(db, `users/${dataOwnerId}/payments`), newPayment);
+          return { id: docRef.id, ...newPayment } as Payment;
+      } catch (e) { console.error(e); return null; }
+  };
+
   // --- End Handlers ---
 
   const handleAddProduct = async (productData: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => {
@@ -767,15 +777,7 @@ const App: React.FC = () => {
                 suppliers={suppliers}
                 payments={payments}
                 companyProfile={companyProfile}
-                onAddPayment={async (paymentData) => {
-                    if (!dataOwnerId) return null;
-                    try {
-                        const voucherNumber = `PV-${Date.now().toString().slice(-6)}`;
-                        const newPayment = { ...paymentData, voucherNumber };
-                        const docRef = await addDoc(collection(db, `users/${dataOwnerId}/payments`), newPayment);
-                        return { id: docRef.id, ...newPayment } as Payment;
-                    } catch (e) { console.error(e); return null; }
-                }}
+                onAddPayment={handleAddSupplierPayment}
                 onUpdatePayment={async (id, data) => {
                     if (!dataOwnerId) return;
                     const ref = doc(db, `users/${dataOwnerId}/payments`, id);
@@ -816,6 +818,7 @@ const App: React.FC = () => {
                     const ref = doc(db, `users/${dataOwnerId}/suppliers`, id);
                     await updateDoc(ref, data);
                 }}
+                onAddPayment={handleAddSupplierPayment}
               />
             )}
             
