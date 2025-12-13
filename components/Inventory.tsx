@@ -285,6 +285,98 @@ const PrintBarcodeModal: React.FC<{ isOpen: boolean; onClose: () => void; produc
     );
 };
 
+// --- New Component: AllItemStockView (Product-wise Summary) ---
+const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConfig, t: any }> = ({ products, systemConfig, t }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const stockData = useMemo(() => {
+        return products.map(p => {
+            const totalStock = p.batches.reduce((sum, b) => sum + b.stock, 0);
+            const unitsPerStrip = p.unitsPerStrip || 1;
+            // Calculate total valuation based on purchase price
+            const totalValue = p.batches.reduce((sum, b) => {
+                const unitPurchasePrice = b.purchasePrice / unitsPerStrip;
+                return sum + (b.stock * unitPurchasePrice);
+            }, 0);
+
+            return {
+                id: p.id,
+                name: p.name,
+                company: p.company,
+                unitsPerStrip,
+                totalStock,
+                totalValue
+            };
+        }).filter(item => 
+            item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+            item.company.toLowerCase().includes(searchTerm.toLowerCase())
+        ).sort((a, b) => a.name.localeCompare(b.name));
+    }, [products, searchTerm]);
+
+    const totalValuation = useMemo(() => stockData.reduce((sum, item) => sum + item.totalValue, 0), [stockData]);
+
+    const handleExport = () => {
+        if (stockData.length === 0) { alert("No data to export."); return; }
+        const data = stockData.map(item => ({
+            'Product': item.name,
+            'Company': item.company,
+            'Total Stock': formatStock(item.totalStock, item.unitsPerStrip),
+            'Stock Value': item.totalValue.toFixed(2)
+        }));
+        exportToCsv('all_item_stock_summary', data);
+    };
+
+    return (
+        <Card title={t.inventory.allStock}>
+            <div className="flex flex-col sm:flex-row gap-4 mb-4 justify-between items-end">
+                <input 
+                    type="text" 
+                    placeholder={t.inventory.searchPlaceholder} 
+                    value={searchTerm} 
+                    onChange={e => setSearchTerm(e.target.value)} 
+                    className={`${inputStyle} max-w-sm`} 
+                />
+                <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+                    <div className="bg-indigo-100 dark:bg-indigo-900/50 px-4 py-2 rounded-lg w-full sm:w-auto text-center sm:text-left">
+                        <span className="text-sm font-semibold text-indigo-800 dark:text-indigo-200">Total Valuation:</span>
+                        <span className="ml-2 text-lg font-bold text-indigo-900 dark:text-white">₹{totalValuation.toFixed(2)}</span>
+                    </div>
+                    <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors flex-shrink-0">
+                        <DownloadIcon className="h-5 w-5" /> Export
+                    </button>
+                </div>
+            </div>
+            <div className="overflow-x-auto max-h-[600px] rounded-lg border dark:border-slate-700">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs sticky top-0">
+                        <tr>
+                            <th className="px-4 py-3">Product Name</th>
+                            <th className="px-4 py-3">Company</th>
+                            <th className="px-4 py-3 text-center">Total Stock</th>
+                            <th className="px-4 py-3 text-right">Stock Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {stockData.map(item => (
+                            <tr key={item.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                <td className="px-4 py-3 font-medium">{item.name}</td>
+                                <td className="px-4 py-3">{item.company}</td>
+                                <td className="px-4 py-3 text-center font-bold text-slate-700 dark:text-slate-200">
+                                    {formatStock(item.totalStock, item.unitsPerStrip)}
+                                </td>
+                                <td className="px-4 py-3 text-right">₹{item.totalValue.toFixed(2)}</td>
+                            </tr>
+                        ))}
+                        {stockData.length === 0 && (
+                            <tr><td colSpan={4} className="text-center py-8 text-slate-500">No products found.</td></tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
+    );
+};
+
 // --- New Component: SelectedItemStockView ---
 interface Transaction {
     date: Date;
@@ -966,7 +1058,7 @@ const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (
 
 const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
     const t = getTranslation(systemConfig.language);
-    const [view, setView] = useState<'products' | 'selectedStock' | 'batches' | 'company' | 'expired' | 'nearExpiry'>('products');
+    const [view, setView] = useState<'products' | 'allStock' | 'selectedStock' | 'batches' | 'company' | 'expired' | 'nearExpiry'>('products');
     const [isAddProductOpen, setAddProductOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -1003,6 +1095,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
         <div className="p-4 sm:p-6 space-y-6">
             <div className="flex flex-wrap gap-2 mb-4">
                 <button onClick={() => setView('products')} className={`px-4 py-2 rounded-lg ${view === 'products' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>Product Master</button>
+                <button onClick={() => setView('allStock')} className={`px-4 py-2 rounded-lg ${view === 'allStock' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>All Item Stock</button>
                 <button onClick={() => setView('selectedStock')} className={`px-4 py-2 rounded-lg ${view === 'selectedStock' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.selectedStock}</button>
                 <button onClick={() => setView('batches')} className={`px-4 py-2 rounded-lg ${view === 'batches' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.batchStock}</button>
                 <button onClick={() => setView('company')} className={`px-4 py-2 rounded-lg ${view === 'company' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.companyStock}</button>
@@ -1057,6 +1150,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 </Card>
             )}
 
+            {view === 'allStock' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
             {view === 'selectedStock' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
             {view === 'batches' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
             {view === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
