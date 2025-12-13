@@ -425,14 +425,20 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
     
     const handleExport = () => {
         if (allBatches.length === 0) { alert("No data"); return; }
-        const data = allBatches.map(b => ({
-            'Product': b.product.name,
-            'Company': b.product.company,
-            'Batch': b.batchNumber,
-            'Expiry': b.expiryDate,
-            'MRP': b.mrp.toFixed(2),
-            'Stock': formatStock(b.stock, b.product.unitsPerStrip)
-        }));
+        const data = allBatches.map(b => {
+            const units = b.product.unitsPerStrip || 1;
+            const stockVal = (b.stock / units) * b.purchasePrice;
+            return {
+                'Product': b.product.name,
+                'Company': b.product.company,
+                'Batch': b.batchNumber,
+                'Expiry': b.expiryDate,
+                'MRP': b.mrp.toFixed(2),
+                'Rate': b.purchasePrice.toFixed(2),
+                'Stock': formatStock(b.stock, b.product.unitsPerStrip),
+                'Value': stockVal.toFixed(2)
+            };
+        });
         exportToCsv('all_batches_stock', data);
     };
 
@@ -444,7 +450,40 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
                     <DownloadIcon className="h-5 w-5" /> Export
                 </button>
             </div>
-            <div className="overflow-x-auto max-h-[600px]"><table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs sticky top-0"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2">Batch No</th><th className="px-4 py-2">Expiry</th><th className="px-4 py-2 text-right">MRP</th><th className="px-4 py-2 text-center">Stock</th><th className="px-4 py-2 text-center">Action</th></tr></thead><tbody>{allBatches.map(item => (<tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600"><td className="px-4 py-2 font-medium">{item.product.name}</td><td className="px-4 py-2">{item.batchNumber}</td><td className="px-4 py-2">{item.expiryDate}</td><td className="px-4 py-2 text-right">₹{item.mrp.toFixed(2)}</td><td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-4 py-2 text-center"><button onClick={() => { if(confirm('Delete batch?')) onDeleteBatch(item.product.id, item.id); }} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button></td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto max-h-[600px]">
+                <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs sticky top-0">
+                        <tr>
+                            <th className="px-4 py-2">Product</th>
+                            <th className="px-4 py-2">Company</th>
+                            <th className="px-4 py-2">Batch No</th>
+                            <th className="px-4 py-2">Expiry</th>
+                            <th className="px-4 py-2 text-right">MRP</th>
+                            <th className="px-4 py-2 text-right">Rate</th>
+                            <th className="px-4 py-2 text-center">Stock</th>
+                            <th className="px-4 py-2 text-right">Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {allBatches.map(item => {
+                            const units = item.product.unitsPerStrip || 1;
+                            const stockValue = (item.stock / units) * item.purchasePrice;
+                            return (
+                                <tr key={`${item.product.id}-${item.id}`} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                    <td className="px-4 py-2 font-medium">{item.product.name}</td>
+                                    <td className="px-4 py-2">{item.product.company}</td>
+                                    <td className="px-4 py-2">{item.batchNumber}</td>
+                                    <td className="px-4 py-2">{item.expiryDate}</td>
+                                    <td className="px-4 py-2 text-right">₹{item.mrp.toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-right">₹{item.purchasePrice.toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                    <td className="px-4 py-2 text-right">₹{stockValue.toFixed(2)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </Card>
     );
 };
