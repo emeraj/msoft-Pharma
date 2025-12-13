@@ -250,6 +250,100 @@ const App: React.FC = () => {
     }
   };
 
+  // --- Handlers for Bill and Payment Operations ---
+
+  const handleDeleteBill = async (bill: Bill) => {
+      if (!dataOwnerId) return;
+      if (!window.confirm(`Delete Bill ${bill.billNumber}? Stock will be restored.`)) return;
+      const batch = writeBatch(db);
+      const billRef = doc(db, `users/${dataOwnerId}/bills`, bill.id);
+      batch.delete(billRef);
+      
+      // Restore Stock
+      for (const item of bill.items) {
+          const product = products.find(p => p.id === item.productId);
+          if (product) {
+              const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
+              const updatedBatches = product.batches.map(b => {
+                  if (b.id === item.batchId) return { ...b, stock: b.stock + item.quantity };
+                  return b;
+              });
+              batch.update(productRef, { batches: updatedBatches });
+          }
+      }
+
+      // Update Customer Balance
+      if (systemConfig.maintainCustomerLedger && bill.paymentMode === 'Credit') {
+          let customer = bill.customerId ? customers.find(c => c.id === bill.customerId) : null;
+          if (!customer) {
+              const cleanName = bill.customerName.trim();
+              if (cleanName) {
+                  customer = customers.find(c => c.name.toLowerCase() === cleanName.toLowerCase());
+              }
+          }
+          
+          if (customer) {
+              const customerRef = doc(db, `users/${dataOwnerId}/customers`, customer.id);
+              const newBalance = (customer.balance || 0) - bill.grandTotal;
+              batch.update(customerRef, { balance: newBalance });
+          }
+      }
+
+      await batch.commit();
+  };
+
+  const handleEditBill = (bill: Bill) => {
+      setEditingBill(bill);
+      navigateTo('billing');
+  };
+
+  const handleUpdateCustomerPayment = async (id: string, data: Omit<CustomerPayment, 'id'>) => {
+      if (!dataOwnerId) return;
+      try {
+          const batch = writeBatch(db);
+          const paymentRef = doc(db, `users/${dataOwnerId}/customerPayments`, id);
+          
+          // Find old payment to calculate difference
+          const oldPayment = customerPayments.find(p => p.id === id);
+          if (!oldPayment) return;
+
+          const diff = data.amount - oldPayment.amount; 
+          // Balance = Receivable. Payment reduces Receivable. 
+          // If new amount is higher (positive diff), balance should reduce more (subtract diff).
+          
+          const customer = customers.find(c => c.id === data.customerId);
+          if (customer) {
+              const custRef = doc(db, `users/${dataOwnerId}/customers`, customer.id);
+              batch.update(custRef, { balance: customer.balance - diff });
+          }
+
+          batch.update(paymentRef, data);
+          await batch.commit();
+      } catch(e) { console.error(e); }
+  };
+
+  const handleDeleteCustomerPayment = async (payment: CustomerPayment) => {
+      if (!dataOwnerId) return;
+      if (!window.confirm("Delete this payment? Customer balance will increase.")) return;
+      
+      try {
+          const batch = writeBatch(db);
+          const paymentRef = doc(db, `users/${dataOwnerId}/customerPayments`, payment.id);
+          
+          const customer = customers.find(c => c.id === payment.customerId);
+          if (customer) {
+              const custRef = doc(db, `users/${dataOwnerId}/customers`, customer.id);
+              // Revert balance: Balance = Current + Payment Amount (since payment reduced it)
+              batch.update(custRef, { balance: customer.balance + payment.amount });
+          }
+          
+          batch.delete(paymentRef);
+          await batch.commit();
+      } catch(e) { console.error(e); }
+  };
+
+  // --- End Handlers ---
+
   const handleAddProduct = async (productData: Omit<Product, 'id' | 'batches'>, firstBatch: Omit<Batch, 'id'>) => {
     if (!dataOwnerId) return;
     try {
@@ -691,44 +785,8 @@ const App: React.FC = () => {
                 bills={bills} 
                 companyProfile={companyProfile}
                 systemConfig={systemConfig}
-                onDeleteBill={async (bill) => {
-                    if (!dataOwnerId) return;
-                    if (!window.confirm(`Delete Bill ${bill.billNumber}? Stock will be restored.`)) return;
-                    const batch = writeBatch(db);
-                    const billRef = doc(db, `users/${dataOwnerId}/bills`, bill.id);
-                    batch.delete(billRef);
-                    
-                    for (const item of bill.items) {
-                        const product = products.find(p => p.id === item.productId);
-                        if (product) {
-                            const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
-                            const updatedBatches = product.batches.map(b => {
-                                if (b.id === item.batchId) return { ...b, stock: b.stock + item.quantity };
-                                return b;
-                            });
-                            batch.update(productRef, { batches: updatedBatches });
-                        }
-                    }
-
-                    if (systemConfig.maintainCustomerLedger && bill.paymentMode === 'Credit') {
-                        let customer = bill.customerId ? customers.find(c => c.id === bill.customerId) : null;
-                        if (!customer) {
-                            const cleanName = bill.customerName.trim();
-                            if (cleanName) {
-                                customer = customers.find(c => c.name.toLowerCase() === cleanName.toLowerCase());
-                            }
-                        }
-                        
-                        if (customer) {
-                            const customerRef = doc(db, `users/${dataOwnerId}/customers`, customer.id);
-                            const newBalance = (customer.balance || 0) - bill.grandTotal;
-                            batch.update(customerRef, { balance: newBalance });
-                        }
-                    }
-
-                    await batch.commit();
-                }}
-                onEditBill={(bill) => { setEditingBill(bill); navigateTo('billing'); }}
+                onDeleteBill={handleDeleteBill}
+                onEditBill={handleEditBill}
                 onUpdateBillDetails={async (billId, updates) => {
                     if (!dataOwnerId) return;
                     const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
@@ -772,6 +830,10 @@ const App: React.FC = () => {
                     await batch.commit();
                 }}
                 onUpdateCustomer={handleUpdateCustomer}
+                onEditBill={handleEditBill}
+                onDeleteBill={handleDeleteBill}
+                onUpdatePayment={handleUpdateCustomerPayment}
+                onDeletePayment={handleDeleteCustomerPayment}
               />
             )}
 

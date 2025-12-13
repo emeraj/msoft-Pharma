@@ -1,10 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Customer, Bill, CustomerPayment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon, PencilIcon } from './icons/Icons';
+import { DownloadIcon, UserCircleIcon, PlusIcon, PrinterIcon, PencilIcon, TrashIcon } from './icons/Icons';
 import PrintableCustomerLedger from './PrintableCustomerLedger';
 
 // Helper for CSV Export
@@ -46,6 +46,10 @@ interface CustomerLedgerProps {
   companyProfile: CompanyProfile;
   onAddPayment: (payment: Omit<CustomerPayment, 'id'>) => Promise<void>;
   onUpdateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
+  onEditBill: (bill: Bill) => void;
+  onDeleteBill: (bill: Bill) => void;
+  onUpdatePayment: (id: string, data: Omit<CustomerPayment, 'id'>) => Promise<void>;
+  onDeletePayment: (payment: CustomerPayment) => Promise<void>;
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
@@ -109,15 +113,85 @@ const EditCustomerModal: React.FC<{
     );
 };
 
+const EditPaymentModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    payment: CustomerPayment;
+    onUpdate: (id: string, data: Omit<CustomerPayment, 'id'>) => Promise<void>;
+}> = ({ isOpen, onClose, payment, onUpdate }) => {
+    const [amount, setAmount] = useState(String(payment.amount));
+    const [method, setMethod] = useState<'Cash' | 'UPI' | 'Other'>(payment.method);
+    const [notes, setNotes] = useState(payment.notes || '');
+    const [date, setDate] = useState(new Date(payment.date).toISOString().split('T')[0]);
+
+    useEffect(() => {
+        setAmount(String(payment.amount));
+        setMethod(payment.method);
+        setNotes(payment.notes || '');
+        setDate(new Date(payment.date).toISOString().split('T')[0]);
+    }, [payment]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
+        await onUpdate(payment.id, {
+            customerId: payment.customerId,
+            customerName: payment.customerName,
+            date: new Date(date).toISOString(),
+            amount: numAmount,
+            method,
+            notes
+        });
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Payment">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className={formInputStyle} required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Amount</label>
+                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className={formInputStyle} required min="0.01" step="0.01" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Method</label>
+                    <select value={method} onChange={e => setMethod(e.target.value as any)} className={formSelectStyle}>
+                        <option value="Cash">Cash</option>
+                        <option value="UPI">UPI</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Notes</label>
+                    <input type="text" value={notes} onChange={e => setNotes(e.target.value)} className={formInputStyle} />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Update</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
 interface Transaction {
+    id: string; // Add ID to track selection
     date: Date;
     type: 'Bill' | 'Payment';
     ref: string;
     debit: number;
     credit: number;
+    original: Bill | CustomerPayment; // Store original object
 }
 
-const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment, onUpdateCustomer }) => {
+const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment, onUpdateCustomer, onEditBill, onDeleteBill, onUpdatePayment, onDeletePayment }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -126,6 +200,14 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Other'>('Cash');
   const [paymentNotes, setPaymentNotes] = useState('');
   
+  // Edit Payment State
+  const [paymentToEdit, setPaymentToEdit] = useState<CustomerPayment | null>(null);
+
+  // Transaction Selection State
+  const [selectedTxIndex, setSelectedTxIndex] = useState<number | null>(null);
+  const [showActionMenu, setShowActionMenu] = useState<{ x: number, y: number, tx: Transaction } | null>(null);
+  const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
+
   // Date Filtering for Ledger View
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -152,11 +234,13 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
         
         if (isThisCustomer && b.paymentMode === 'Credit') {
             allTransactions.push({
+                id: b.id,
                 date: new Date(b.date),
                 type: 'Bill',
                 ref: b.billNumber,
                 debit: b.grandTotal,
-                credit: 0
+                credit: 0,
+                original: b
             });
         }
     });
@@ -165,11 +249,13 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
     payments.forEach(p => {
         if (p.customerId === selectedCustomer.id) {
             allTransactions.push({
+                id: p.id,
                 date: new Date(p.date),
                 type: 'Payment',
                 ref: `${p.method}${p.notes ? ` - ${p.notes}` : ''}`,
                 debit: 0,
-                credit: p.amount
+                credit: p.amount,
+                original: p
             });
         }
     });
@@ -180,13 +266,11 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
     // 2. Filter by Date Range and Calculate Period Opening Balance
     let openingBalance = selectedCustomer.openingBalance || 0;
     
-    // If no start date, opening balance is just the customer's initial opening balance
     // If start date is set, calculate balance up to that date
     if (fromDate) {
         const startDate = new Date(fromDate);
         startDate.setHours(0, 0, 0, 0);
         
-        // Filter transactions BEFORE start date to adjust opening balance
         const prePeriodTransactions = allTransactions.filter(t => t.date < startDate);
         const prePeriodDebit = prePeriodTransactions.reduce((sum, t) => sum + t.debit, 0);
         const prePeriodCredit = prePeriodTransactions.reduce((sum, t) => sum + t.credit, 0);
@@ -224,6 +308,80 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
 
   }, [selectedCustomer, bills, payments, fromDate, toDate]);
 
+  // Handle Keyboard Navigation in Modal
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (!selectedCustomer) return;
+          if (showActionMenu) return; // Don't nav if menu is open
+
+          if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setSelectedTxIndex(prev => {
+                  const next = (prev === null ? -1 : prev) + 1;
+                  if (next < ledgerData.transactions.length) return next;
+                  return prev;
+              });
+          } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setSelectedTxIndex(prev => {
+                  const next = (prev === null ? ledgerData.transactions.length : prev) - 1;
+                  if (next >= 0) return next;
+                  return prev;
+              });
+          } else if (e.key === 'Enter') {
+              e.preventDefault();
+              if (selectedTxIndex !== null && ledgerData.transactions[selectedTxIndex]) {
+                  const tx = ledgerData.transactions[selectedTxIndex];
+                  const row = rowRefs.current[selectedTxIndex];
+                  if (row) {
+                      const rect = row.getBoundingClientRect();
+                      setShowActionMenu({ x: rect.left + rect.width / 2, y: rect.bottom, tx });
+                  }
+              }
+          } else if (e.key === 'Escape') {
+              if (showActionMenu) setShowActionMenu(null);
+              else setSelectedCustomer(null);
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedCustomer, ledgerData.transactions, showActionMenu, selectedTxIndex]);
+
+  // Scroll active row into view
+  useEffect(() => {
+      if (selectedTxIndex !== null && rowRefs.current[selectedTxIndex]) {
+          rowRefs.current[selectedTxIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+  }, [selectedTxIndex]);
+
+  const handleRowClick = (index: number, tx: Transaction, e: React.MouseEvent) => {
+      setSelectedTxIndex(index);
+      const rect = (e.currentTarget as HTMLTableRowElement).getBoundingClientRect();
+      setShowActionMenu({ x: e.clientX, y: rect.bottom, tx });
+  };
+
+  const handleAction = (action: 'edit' | 'delete') => {
+      if (!showActionMenu) return;
+      const { tx } = showActionMenu;
+      
+      if (action === 'edit') {
+          if (tx.type === 'Bill') {
+              onEditBill(tx.original as Bill);
+              setSelectedCustomer(null); // Close modal to navigate to billing
+          } else {
+              setPaymentToEdit(tx.original as CustomerPayment);
+          }
+      } else if (action === 'delete') {
+          if (tx.type === 'Bill') {
+              onDeleteBill(tx.original as Bill);
+          } else {
+              onDeletePayment(tx.original as CustomerPayment);
+          }
+      }
+      setShowActionMenu(null);
+  };
+
   const handleExport = () => {
       const data = filteredCustomers.map(c => ({
           'Name': c.name,
@@ -257,7 +415,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
             
             const root = ReactDOM.createRoot(printRoot);
             
-            // Re-map transactions for the print component which expects a simpler array
             const printableTransactions = ledgerData.transactions.map(tx => ({
                 date: tx.date,
                 particulars: `${tx.type} - ${tx.ref}`,
@@ -266,20 +423,12 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                 type: tx.type
             }));
 
-            // We pass the period's opening balance calculated here to the print component 
-            // so it starts correctly.
-            // Note: The PrintableCustomerLedger component logic needs to be aware of this initial balance.
-            // Currently PrintableCustomerLedger calculates running balance from 0. 
-            // I should update it or pass initialBalance prop. 
-            // For now, I'll assume PrintableCustomerLedger is simple and just dump the rows.
-            
-            // To make it correct, insert an "Opening Balance" row at the start for printing
             printableTransactions.unshift({
-                date: fromDate ? new Date(fromDate) : new Date(0), // Dummy date
+                date: fromDate ? new Date(fromDate) : new Date(0), 
                 particulars: 'Opening Balance',
                 debit: ledgerData.summary.opening > 0 ? ledgerData.summary.opening : 0,
                 credit: ledgerData.summary.opening < 0 ? Math.abs(ledgerData.summary.opening) : 0,
-                type: 'Bill' // Dummy type
+                type: 'Bill' 
             });
 
             root.render(
@@ -325,7 +474,6 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
   const formatCurrency = (val: number) => `₹${Math.abs(val).toFixed(2)}`;
   const formatDrCr = (val: number) => val >= 0 ? 'Dr' : 'Cr';
 
-  // Running balance calculator for display
   let runningBalance = ledgerData.summary.opening;
 
   return (
@@ -393,7 +541,7 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
 
       {selectedCustomer && (
           <Modal isOpen={!!selectedCustomer} onClose={() => setSelectedCustomer(null)} title={`Ledger for ${selectedCustomer.name}`} maxWidth="max-w-5xl">
-              <div className="space-y-6">
+              <div className="space-y-6 relative" onClick={() => setShowActionMenu(null)}>
                   
                   {/* Summary Cards */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900 text-white p-6 rounded-xl shadow-lg border border-slate-700">
@@ -441,11 +589,11 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                   </div>
 
                   {/* Transaction Table */}
-                  <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                  <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm relative">
                       <div className="bg-slate-800 text-slate-200 px-4 py-3 font-semibold border-b border-slate-700 flex justify-between items-center">
-                          <span>Transaction History {fromDate || toDate ? '(Period)' : ''}</span>
+                          <span>Transaction History</span>
                       </div>
-                      <div className="overflow-x-auto max-h-[500px]">
+                      <div className="overflow-x-auto max-h-[500px]" tabIndex={0} style={{outline: 'none'}}>
                           <table className="w-full text-sm text-left">
                               <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold sticky top-0 z-10 border-b dark:border-slate-700 shadow-sm">
                                   <tr>
@@ -454,6 +602,7 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                                       <th className="px-4 py-3 text-right text-red-600 dark:text-red-400">Debit (₹)</th>
                                       <th className="px-4 py-3 text-right text-green-600 dark:text-green-400">Credit (₹)</th>
                                       <th className="px-4 py-3 text-right">Balance (₹)</th>
+                                      <th className="px-4 py-3 w-10"></th>
                                   </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-900">
@@ -466,13 +615,24 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                                       <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
                                           {formatCurrency(ledgerData.summary.opening)} {formatDrCr(ledgerData.summary.opening)}
                                       </td>
+                                      <td></td>
                                   </tr>
                                   
                                   {/* Transactions */}
                                   {ledgerData.transactions.map((tx, idx) => {
                                       runningBalance = runningBalance + tx.debit - tx.credit;
+                                      const isSelected = selectedTxIndex === idx;
                                       return (
-                                          <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                          <tr 
+                                            key={tx.id} 
+                                            ref={el => {rowRefs.current[idx] = el}}
+                                            onClick={(e) => handleRowClick(idx, tx, e)}
+                                            className={`transition-colors cursor-pointer ${
+                                                isSelected 
+                                                ? 'bg-blue-50 dark:bg-blue-900/40 border-l-4 border-blue-500' 
+                                                : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent'
+                                            }`}
+                                          >
                                               <td className="px-4 py-3 font-medium text-slate-600 dark:text-slate-400">{tx.date.toLocaleDateString()}</td>
                                               <td className="px-4 py-3 text-slate-800 dark:text-slate-200">
                                                   {tx.type === 'Bill' ? `Bill - ${tx.ref}` : `Payment - ${tx.ref}`}
@@ -482,15 +642,42 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                                               <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
                                                   {Math.abs(runningBalance).toFixed(2)} {formatDrCr(runningBalance)}
                                               </td>
+                                              <td className="px-2">
+                                                  <div className="opacity-0 group-hover:opacity-100">...</div>
+                                              </td>
                                           </tr>
                                       );
                                   })}
                                   {ledgerData.transactions.length === 0 && (
-                                      <tr><td colSpan={5} className="text-center py-8 text-slate-500">No transactions in this period.</td></tr>
+                                      <tr><td colSpan={6} className="text-center py-8 text-slate-500">No transactions in this period.</td></tr>
                                   )}
                               </tbody>
                           </table>
                       </div>
+                      
+                      {/* Context Menu */}
+                      {showActionMenu && (
+                          <div 
+                            className="fixed bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-50 min-w-[150px] animate-fade-in"
+                            style={{ 
+                                left: Math.min(showActionMenu.x, window.innerWidth - 160), 
+                                top: Math.min(showActionMenu.y, window.innerHeight - 100) 
+                            }}
+                          >
+                              <button 
+                                onClick={() => handleAction('edit')}
+                                className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+                              >
+                                  <PencilIcon className="h-4 w-4" /> Edit
+                              </button>
+                              <button 
+                                onClick={() => handleAction('delete')}
+                                className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2 text-red-600"
+                              >
+                                  <TrashIcon className="h-4 w-4" /> Delete
+                              </button>
+                          </div>
+                      )}
                   </div>
                   
                   <div className="flex justify-end">
@@ -554,6 +741,15 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
               onClose={() => setEditingCustomer(null)}
               customer={editingCustomer}
               onUpdate={onUpdateCustomer}
+          />
+      )}
+
+      {paymentToEdit && (
+          <EditPaymentModal 
+            isOpen={!!paymentToEdit}
+            onClose={() => setPaymentToEdit(null)}
+            payment={paymentToEdit}
+            onUpdate={onUpdatePayment}
           />
       )}
     </div>
