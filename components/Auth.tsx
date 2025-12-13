@@ -58,7 +58,7 @@ const Auth: React.FC = () => {
           <div className="text-center mb-8">
               <h1 className="text-4xl font-extrabold text-slate-800 dark:text-slate-200 mt-2 flex items-center justify-center gap-3">
                   <CloudIcon className="h-10 w-10 text-indigo-600" />
-                  <span className="tracking-tight">Cloud - Retail</span>
+                  <span className="tracking-tight">Cloud-TAG</span>
               </h1>
               <p className="mt-3 text-lg font-serif italic font-medium text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">
                 “Tag Your Business to the Cloud”

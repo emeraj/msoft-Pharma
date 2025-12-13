@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -126,17 +126,8 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-              {systemConfig.softwareMode === 'Pharma' ? (
-                <>
-                  <PillIcon className="h-7 w-7 text-indigo-500" />
-                  <span>Medico<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
-                </>
-              ) : (
-                <>
-                  <CubeIcon className="h-7 w-7 text-indigo-500" />
-                  <span>Kirana<span className="text-indigo-600 dark:text-indigo-400"> - Retail</span></span>
-                </>
-              )}
+               <CloudIcon className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+               <span>Cloud-TAG</span>
             </h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
