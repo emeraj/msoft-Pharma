@@ -141,6 +141,232 @@ const EditBatchModal: React.FC<{
     );
 };
 
+// --- New Component: SelectedItemStockView ---
+interface Transaction {
+    date: Date;
+    type: 'Sale' | 'Purchase';
+    particulars: string;
+    inQty: number;
+    outQty: number;
+    balance: number;
+}
+
+const SelectedItemStockView: React.FC<{ 
+    products: Product[], 
+    purchases: Purchase[], 
+    bills: Bill[], 
+    systemConfig: SystemConfig, 
+    t: any 
+}> = ({ products, purchases, bills, systemConfig, t }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+    const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+
+    const productSuggestions = useMemo(() => {
+        if (!searchTerm) return [];
+        return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10);
+    }, [searchTerm, products]);
+
+    const handleSelectProduct = (p: Product) => {
+        setSelectedProduct(p);
+        setSearchTerm(p.name);
+        setIsSuggestionsOpen(false);
+    };
+
+    const currentTotalStock = useMemo(() => {
+        if (!selectedProduct) return 0;
+        return selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0);
+    }, [selectedProduct]);
+
+    const transactions = useMemo(() => {
+        if (!selectedProduct) return [];
+
+        const txs: Transaction[] = [];
+        const unitsPerStrip = selectedProduct.unitsPerStrip || 1;
+
+        // 1. Purchases
+        purchases.forEach(pur => {
+            pur.items.forEach(item => {
+                // Match by ID if available, else by Name
+                const isMatch = item.productId === selectedProduct.id || 
+                                (!item.productId && item.productName === selectedProduct.name && item.company === selectedProduct.company);
+                
+                if (isMatch) {
+                    txs.push({
+                        date: new Date(pur.invoiceDate),
+                        type: 'Purchase',
+                        particulars: `Inv: ${pur.invoiceNumber} (${pur.supplier})`,
+                        inQty: item.quantity * (item.unitsPerStrip || unitsPerStrip),
+                        outQty: 0,
+                        balance: 0 // To be calculated
+                    });
+                }
+            });
+        });
+
+        // 2. Sales
+        bills.forEach(bill => {
+            bill.items.forEach(item => {
+                if (item.productId === selectedProduct.id) {
+                    txs.push({
+                        date: new Date(bill.date),
+                        type: 'Sale',
+                        particulars: `Bill: ${bill.billNumber} (${bill.customerName})`,
+                        inQty: 0,
+                        outQty: item.quantity, // CartItem quantity is total units
+                        balance: 0 // To be calculated
+                    });
+                }
+            });
+        });
+
+        // Sort by Date
+        txs.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        // Calculate Running Balance
+        // We assume start from 0 if no manual opening stock is tracked in this view
+        // Ideally we should account for manual adjustments but they are not logged as transactions yet.
+        
+        return txs;
+    }, [selectedProduct, purchases, bills]);
+
+    const filteredTransactions = useMemo(() => {
+        let openingBalance = 0;
+        const startDate = fromDate ? new Date(fromDate) : null;
+        if (startDate) startDate.setHours(0,0,0,0);
+        
+        const endDate = toDate ? new Date(toDate) : new Date();
+        endDate.setHours(23,59,59,999);
+
+        // Calculate Opening Balance based on transactions BEFORE startDate
+        if (startDate) {
+            transactions.forEach(tx => {
+                if (tx.date < startDate) {
+                    openingBalance = openingBalance + tx.inQty - tx.outQty;
+                }
+            });
+        } else {
+            // If no start date, opening is 0 (or initial product opening stock if we had it)
+            openingBalance = 0;
+        }
+
+        const viewTxs = transactions.filter(tx => {
+            if (startDate && tx.date < startDate) return false;
+            if (tx.date > endDate) return false;
+            return true;
+        });
+
+        // Re-calculate running balance for the view
+        let running = openingBalance;
+        return {
+            openingBalance,
+            rows: viewTxs.map(tx => {
+                running = running + tx.inQty - tx.outQty;
+                return { ...tx, balance: running };
+            })
+        };
+
+    }, [transactions, fromDate, toDate]);
+
+    const unitsLabel = systemConfig.softwareMode === 'Pharma' ? 'Units' : 'Qty';
+
+    return (
+        <Card title={t.inventory.selectedStock}>
+            <div className="mb-6 relative">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Product</label>
+                <input 
+                    type="text" 
+                    value={searchTerm}
+                    onChange={e => { setSearchTerm(e.target.value); setIsSuggestionsOpen(true); }}
+                    onFocus={() => setIsSuggestionsOpen(true)}
+                    placeholder="Type product name..."
+                    className={inputStyle}
+                />
+                {isSuggestionsOpen && productSuggestions.length > 0 && (
+                    <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {productSuggestions.map(p => (
+                            <li 
+                                key={p.id}
+                                onClick={() => handleSelectProduct(p)}
+                                className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200"
+                            >
+                                <div className="font-medium">{p.name}</div>
+                                <div className="text-xs text-slate-500">{p.company}</div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            {selectedProduct && (
+                <div className="animate-fade-in space-y-6">
+                    <div className="bg-slate-700/90 text-white p-4 rounded-lg shadow-lg flex flex-col md:flex-row justify-between items-start md:items-center">
+                        <div>
+                            <h2 className="text-xl font-bold">{selectedProduct.name}</h2>
+                            <p className="text-slate-300">{selectedProduct.company}</p>
+                        </div>
+                        <div className="mt-2 md:mt-0 text-right">
+                            <p className="text-sm text-slate-300 uppercase tracking-wide">Current Stock</p>
+                            <p className="text-2xl font-bold">{formatStock(currentTotalStock, selectedProduct.unitsPerStrip)}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-4">
+                        <div className="flex-1">
+                            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
+                        </div>
+                        <div className="flex-1">
+                            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-lg border dark:border-slate-700">
+                        <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                            <thead className="bg-slate-800 text-slate-200 uppercase text-xs">
+                                <tr>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Type</th>
+                                    <th className="px-4 py-3 w-1/3">Particulars</th>
+                                    <th className="px-4 py-3 text-right">IN</th>
+                                    <th className="px-4 py-3 text-right">OUT</th>
+                                    <th className="px-4 py-3 text-right">Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700 bg-slate-900 text-slate-300">
+                                <tr className="bg-slate-800/50">
+                                    <td colSpan={5} className="px-4 py-3 text-right font-bold text-slate-400">Opening Balance:</td>
+                                    <td className="px-4 py-3 text-right font-bold text-white">{formatStock(filteredTransactions.openingBalance, selectedProduct.unitsPerStrip)}</td>
+                                </tr>
+                                {filteredTransactions.rows.map((row, idx) => (
+                                    <tr key={idx} className="hover:bg-slate-800 transition-colors">
+                                        <td className="px-4 py-3 text-slate-400">{row.date.toLocaleDateString()}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                                row.type === 'Sale' ? 'bg-indigo-900 text-indigo-300' : 'bg-green-900 text-green-300'
+                                            }`}>
+                                                {row.type}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-slate-300">{row.particulars}</td>
+                                        <td className="px-4 py-3 text-right text-green-400">{row.inQty > 0 ? `${row.inQty} ${unitsLabel}` : '-'}</td>
+                                        <td className="px-4 py-3 text-right text-red-400">{row.outQty > 0 ? `${row.outQty} ${unitsLabel}` : '-'}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-white">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td>
+                                    </tr>
+                                ))}
+                                {filteredTransactions.rows.length === 0 && (
+                                    <tr><td colSpan={6} className="text-center py-8 text-slate-500">No transactions in selected period.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+        </Card>
+    );
+};
+
 const BatchWiseStockView: React.FC<{ 
     products: Product[], 
     onDeleteBatch: (pid: string, bid: string) => void, 
@@ -596,7 +822,7 @@ const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (
 
 const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
     const t = getTranslation(systemConfig.language);
-    const [view, setView] = useState<'products' | 'batches' | 'company' | 'expired' | 'nearExpiry'>('products');
+    const [view, setView] = useState<'products' | 'selectedStock' | 'batches' | 'company' | 'expired' | 'nearExpiry'>('products');
     const [isAddProductOpen, setAddProductOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -615,6 +841,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
         <div className="p-4 sm:p-6 space-y-6">
             <div className="flex flex-wrap gap-2 mb-4">
                 <button onClick={() => setView('products')} className={`px-4 py-2 rounded-lg ${view === 'products' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>Product Master</button>
+                <button onClick={() => setView('selectedStock')} className={`px-4 py-2 rounded-lg ${view === 'selectedStock' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.selectedStock}</button>
                 <button onClick={() => setView('batches')} className={`px-4 py-2 rounded-lg ${view === 'batches' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.batchStock}</button>
                 <button onClick={() => setView('company')} className={`px-4 py-2 rounded-lg ${view === 'company' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.companyStock}</button>
                 <button onClick={() => setView('expired')} className={`px-4 py-2 rounded-lg ${view === 'expired' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.expiredStock}</button>
@@ -661,6 +888,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 </Card>
             )}
 
+            {view === 'selectedStock' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
             {view === 'batches' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
             {view === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
             {view === 'expired' && <ExpiredStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
