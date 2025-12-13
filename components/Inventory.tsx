@@ -942,7 +942,7 @@ const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (
                         </select>
                     </div>
                 </div>
-                {!isPharmaMode && <div><label className="block text-sm font-medium mb-1">Barcode</label><input type="text" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} /></div>}
+                {!isPharmaMode && <div><label className="block text-sm font-medium mb-1">Barcode</label><input type="text" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Leave blank for auto-generate" /></div>}
                 {isPharmaMode && (
                     <>
                         <div><label className="block text-sm font-medium mb-1">Composition</label><input type="text" value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} /></div>
@@ -980,6 +980,23 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
             const updatedBatches = product.batches.filter(b => b.id !== bid);
             onUpdateProduct(pid, { batches: updatedBatches });
         }
+    };
+
+    const handleAddProductWrapper = async (productData: any) => {
+        if (systemConfig.softwareMode === 'Retail' && (!productData.barcode || productData.barcode.trim() === '')) {
+            let maxBarcode = 0;
+            products.forEach(p => {
+                if (p.barcode && /^\d+$/.test(p.barcode)) {
+                    const num = parseInt(p.barcode, 10);
+                    if (!isNaN(num) && num > maxBarcode) {
+                        maxBarcode = num;
+                    }
+                }
+            });
+            const nextBarcode = (maxBarcode + 1).toString().padStart(6, '0');
+            productData.barcode = nextBarcode;
+        }
+        await onAddProduct(productData);
     };
 
     return (
@@ -1049,7 +1066,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
             <AddProductModal 
                 isOpen={isAddProductOpen} 
                 onClose={() => setAddProductOpen(false)} 
-                onAdd={onAddProduct} 
+                onAdd={handleAddProductWrapper}
                 systemConfig={systemConfig} 
                 gstRates={gstRates} 
             />

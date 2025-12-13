@@ -315,6 +315,17 @@ function App() {
 
           const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
           
+          // Determine the max numeric barcode for auto-generation
+          let runningMaxBarcode = 0;
+          if (systemConfig.softwareMode === 'Retail') {
+              currentProducts.forEach(p => {
+                  if (p.barcode && /^\d+$/.test(p.barcode)) {
+                      const num = parseInt(p.barcode, 10);
+                      if (num > runningMaxBarcode) runningMaxBarcode = num;
+                  }
+              });
+          }
+
           for (const item of itemsWithIds) {
               let product = currentProducts.find(p => p.name === item.productName && p.company === item.company);
               let productRef;
@@ -344,6 +355,13 @@ function App() {
                       openingStock: 0
                   };
                   
+                  // Auto-generate barcode if Retail mode and not provided
+                  let itemBarcode = item.barcode;
+                  if (systemConfig.softwareMode === 'Retail' && (!itemBarcode || itemBarcode.trim() === '')) {
+                      runningMaxBarcode++;
+                      itemBarcode = runningMaxBarcode.toString().padStart(6, '0');
+                  }
+
                   // Construct new product object safely avoiding undefined values
                   const newProduct: Product = {
                       id: productRef.id,
@@ -353,7 +371,7 @@ function App() {
                       gst: item.gst,
                       batches: [newBatch],
                       // Conditionally add optional fields only if they have values to avoid "undefined" in Firestore
-                      ...(item.barcode ? { barcode: item.barcode } : {}),
+                      ...(itemBarcode ? { barcode: itemBarcode } : {}),
                       ...(item.composition ? { composition: item.composition } : {}),
                       ...(item.unitsPerStrip ? { unitsPerStrip: item.unitsPerStrip } : {}),
                       ...(item.isScheduleH !== undefined ? { isScheduleH: item.isScheduleH } : {})
