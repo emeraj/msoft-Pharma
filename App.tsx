@@ -80,6 +80,11 @@ const App: React.FC = () => {
     aiInvoiceQuota: 5,
   });
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  
+  // Track where to return after editing a bill
+  const [editReturnView, setEditReturnView] = useState<AppView | null>(null);
+  // Track selected customer in Ledger to persist state across views
+  const [ledgerCustomerId, setLedgerCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -292,8 +297,9 @@ const App: React.FC = () => {
       await batch.commit();
   };
 
-  const handleEditBill = (bill: Bill) => {
+  const handleEditBill = (bill: Bill, returnView: AppView = 'daybook') => {
       setEditingBill(bill);
+      setEditReturnView(returnView);
       navigateTo('billing');
   };
 
@@ -645,7 +651,11 @@ const App: React.FC = () => {
                         return { ...billData, id: billId } as Bill;
                     } catch (e) { console.error(e); return null; }
                 }}
-                onCancelEdit={() => { setEditingBill(null); navigateTo('daybook'); }}
+                onCancelEdit={() => { 
+                    setEditingBill(null); 
+                    navigateTo(editReturnView || 'daybook'); 
+                    setEditReturnView(null);
+                }}
               />
             )}
             
@@ -786,7 +796,7 @@ const App: React.FC = () => {
                 companyProfile={companyProfile}
                 systemConfig={systemConfig}
                 onDeleteBill={handleDeleteBill}
-                onEditBill={handleEditBill}
+                onEditBill={(bill) => handleEditBill(bill, 'daybook')}
                 onUpdateBillDetails={async (billId, updates) => {
                     if (!dataOwnerId) return;
                     const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
@@ -815,6 +825,8 @@ const App: React.FC = () => {
                 bills={bills}
                 payments={customerPayments}
                 companyProfile={companyProfile}
+                initialCustomerId={ledgerCustomerId}
+                onCustomerSelected={(id) => setLedgerCustomerId(id)}
                 onAddPayment={async (paymentData) => {
                     if (!dataOwnerId) return;
                     const batch = writeBatch(db);
@@ -830,7 +842,7 @@ const App: React.FC = () => {
                     await batch.commit();
                 }}
                 onUpdateCustomer={handleUpdateCustomer}
-                onEditBill={handleEditBill}
+                onEditBill={(bill) => handleEditBill(bill, 'customerLedger')}
                 onDeleteBill={handleDeleteBill}
                 onUpdatePayment={handleUpdateCustomerPayment}
                 onDeletePayment={handleDeleteCustomerPayment}

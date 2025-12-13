@@ -44,6 +44,8 @@ interface CustomerLedgerProps {
   bills: Bill[];
   payments: CustomerPayment[];
   companyProfile: CompanyProfile;
+  initialCustomerId?: string | null;
+  onCustomerSelected?: (customerId: string | null) => void;
   onAddPayment: (payment: Omit<CustomerPayment, 'id'>) => Promise<void>;
   onUpdateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   onEditBill: (bill: Bill) => void;
@@ -191,7 +193,7 @@ interface Transaction {
     original: Bill | CustomerPayment; // Store original object
 }
 
-const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, onAddPayment, onUpdateCustomer, onEditBill, onDeleteBill, onUpdatePayment, onDeletePayment }) => {
+const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payments, companyProfile, initialCustomerId, onCustomerSelected, onAddPayment, onUpdateCustomer, onEditBill, onDeleteBill, onUpdatePayment, onDeletePayment }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -211,6 +213,21 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
   // Date Filtering for Ledger View
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+
+  // Handle Initial Load from Props
+  useEffect(() => {
+      if (initialCustomerId) {
+          const cust = customers.find(c => c.id === initialCustomerId);
+          if (cust) setSelectedCustomer(cust);
+      }
+  }, [initialCustomerId, customers]);
+
+  // Sync back to Parent
+  useEffect(() => {
+      if (onCustomerSelected) {
+          onCustomerSelected(selectedCustomer?.id || null);
+      }
+  }, [selectedCustomer]);
 
   const filteredCustomers = useMemo(() => {
     if (!searchTerm) return customers;
@@ -355,7 +372,11 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
       }
   }, [selectedTxIndex]);
 
-  const handleRowClick = (index: number, tx: Transaction, e: React.MouseEvent) => {
+  const handleRowClick = (index: number) => {
+      setSelectedTxIndex(index);
+  };
+
+  const handleRowDoubleClick = (index: number, tx: Transaction, e: React.MouseEvent) => {
       setSelectedTxIndex(index);
       const rect = (e.currentTarget as HTMLTableRowElement).getBoundingClientRect();
       setShowActionMenu({ x: e.clientX, y: rect.bottom, tx });
@@ -368,7 +389,7 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
       if (action === 'edit') {
           if (tx.type === 'Bill') {
               onEditBill(tx.original as Bill);
-              setSelectedCustomer(null); // Close modal to navigate to billing
+              // We do not set selectedCustomer(null) here because App.tsx handles navigation and return
           } else {
               setPaymentToEdit(tx.original as CustomerPayment);
           }
@@ -626,8 +647,9 @@ const CustomerLedger: React.FC<CustomerLedgerProps> = ({ customers, bills, payme
                                           <tr 
                                             key={tx.id} 
                                             ref={el => {rowRefs.current[idx] = el}}
-                                            onClick={(e) => handleRowClick(idx, tx, e)}
-                                            className={`transition-colors cursor-pointer ${
+                                            onClick={(e) => handleRowClick(idx)}
+                                            onDoubleClick={(e) => handleRowDoubleClick(idx, tx, e)}
+                                            className={`transition-colors cursor-pointer select-none ${
                                                 isSelected 
                                                 ? 'bg-blue-50 dark:bg-blue-900/40 border-l-4 border-blue-500' 
                                                 : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent'
