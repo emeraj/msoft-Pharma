@@ -76,9 +76,20 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
         'Bill No.': bill.billNumber,
         'Time': new Date(bill.date).toLocaleTimeString(),
         'Customer': bill.customerName,
-        'Items': bill.items.length,
+        'Type': bill.paymentMode || 'Cash',
         'Amount': bill.grandTotal.toFixed(2),
     }));
+
+    // Add Total Row
+    const totalAmount = billsForSelectedDate.reduce((sum, bill) => sum + bill.grandTotal, 0);
+    exportData.push({
+        'Bill No.': '',
+        'Time': '',
+        'Customer': '',
+        'Type': 'TOTAL',
+        'Amount': totalAmount.toFixed(2),
+    });
+
     exportToCsv(`day_book_${selectedDate}`, exportData);
   };
   
@@ -181,7 +192,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                 <th scope="col" className="px-6 py-3">Bill No.</th>
                 <th scope="col" className="px-6 py-3">Time</th>
                 <th scope="col" className="px-6 py-3">Customer</th>
-                <th scope="col" className="px-6 py-3">Items</th>
+                <th scope="col" className="px-6 py-3 text-center">Type</th>
                 <th scope="col" className="px-6 py-3">Amount</th>
                 <th scope="col" className="px-6 py-3 text-center">Actions</th>
               </tr>
@@ -192,7 +203,15 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
                   <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{bill.billNumber}</td>
                   <td className="px-6 py-4">{new Date(bill.date).toLocaleTimeString()}</td>
                   <td className="px-6 py-4">{bill.customerName}</td>
-                  <td className="px-6 py-4 text-center">{bill.items.length}</td>
+                  <td className="px-6 py-4 text-center">
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        (bill.paymentMode || 'Cash') === 'Cash' 
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' 
+                            : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                      }`}>
+                        {bill.paymentMode || 'Cash'}
+                      </span>
+                  </td>
                   <td className="px-6 py-4 font-semibold">₹{bill.grandTotal.toFixed(2)}</td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-center gap-4">
