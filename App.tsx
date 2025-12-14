@@ -69,7 +69,9 @@ function App() {
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
+  const [currentLedgerSupplierId, setCurrentLedgerSupplierId] = useState<string | null>(null);
   const [isEditingFromLedger, setIsEditingFromLedger] = useState(false);
+  const [isEditingPurchaseFromLedger, setIsEditingPurchaseFromLedger] = useState(false);
 
   // Auth & User Mapping Logic
   useEffect(() => {
@@ -570,6 +572,11 @@ function App() {
 
           await batch.commit();
           setEditingPurchase(null);
+          
+          if (isEditingPurchaseFromLedger) {
+              setActiveView('suppliersLedger');
+              setIsEditingPurchaseFromLedger(false);
+          }
       } catch (e) {
           console.error("Error updating purchase", e);
           alert("Failed to update purchase");
@@ -636,10 +643,18 @@ function App() {
       setActiveView('purchases');
   };
 
+  const handleEditPurchaseFromLedger = (purchase: Purchase) => {
+      setEditingPurchase(purchase);
+      setIsEditingPurchaseFromLedger(true);
+      setActiveView('purchases');
+  };
+
   const handleFinishEditPurchase = () => {
       setEditingPurchase(null);
-      // Stay on Purchases view or go back to ledger? Typically stay or go to where list is.
-      // If we came from ledger, we are now in Purchases view.
+      if (isEditingPurchaseFromLedger) {
+          setActiveView('suppliersLedger');
+          setIsEditingPurchaseFromLedger(false);
+      }
   };
 
   const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>) => {
@@ -834,10 +849,12 @@ function App() {
             purchases={purchases}
             payments={supplierPayments}
             companyProfile={companyProfile}
+            initialSupplierId={currentLedgerSupplierId}
+            onSupplierSelected={setCurrentLedgerSupplierId}
             onUpdateSupplier={handleUpdateSupplier}
             onAddPayment={handleAddSupplierPayment}
             onDeletePurchase={handleDeletePurchase}
-            onEditPurchase={handleEditPurchase}
+            onEditPurchase={handleEditPurchaseFromLedger}
             onUpdatePayment={handleUpdateSupplierPayment}
             onDeletePayment={handleDeleteSupplierPayment}
           />

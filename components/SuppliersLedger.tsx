@@ -45,6 +45,8 @@ interface SuppliersLedgerProps {
   purchases: Purchase[];
   payments: Payment[];
   companyProfile: CompanyProfile;
+  initialSupplierId?: string | null;
+  onSupplierSelected?: (supplierId: string | null) => void;
   onUpdateSupplier: (id: string, data: Omit<Supplier, 'id'>) => void;
   onAddPayment?: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
   onDeletePurchase: (purchase: Purchase) => void;
@@ -286,7 +288,7 @@ interface Transaction {
     data: Purchase | Payment;
 }
 
-const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, onUpdateSupplier, onAddPayment, onDeletePurchase, onEditPurchase, onUpdatePayment, onDeletePayment }) => {
+const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, initialSupplierId, onSupplierSelected, onUpdateSupplier, onAddPayment, onDeletePurchase, onEditPurchase, onUpdatePayment, onDeletePayment }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -354,10 +356,25 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
         }).sort((a, b) => a.name.localeCompare(b.name));
     }, [suppliers, purchases, payments, fromDate, toDate]);
     
+    // Sync Selected Supplier with Prop ID and Latest Data (critical for refresh after edit/delete)
+    useEffect(() => {
+        if (initialSupplierId) {
+            const found = supplierLedgerData.find(s => s.id === initialSupplierId);
+            setSelectedSupplier(found || null);
+        }
+    }, [initialSupplierId, supplierLedgerData]);
+
     const filteredLedger = useMemo(() => {
         if (!searchTerm) return supplierLedgerData;
         return supplierLedgerData.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [supplierLedgerData, searchTerm]);
+
+    const handleSelectSupplier = (supplier: SupplierLedgerEntry | null) => {
+        setSelectedSupplier(supplier);
+        if (onSupplierSelected) {
+            onSupplierSelected(supplier ? supplier.id : null);
+        }
+    };
 
     const handleOpenEditModal = (supplier: Supplier) => {
         setEditingSupplier(supplier);
@@ -432,7 +449,7 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                                     <td className="px-6 py-4 text-right font-bold">₹{Math.abs(supplier.outstandingBalance).toFixed(2)} {supplier.outstandingBalance >= 0 ? 'Cr' : 'Dr'}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-4">
-                                            <button onClick={() => setSelectedSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                                            <button onClick={() => handleSelectSupplier(supplier)} className="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
                                                 View Details
                                             </button>
                                             <button onClick={() => handleOpenEditModal(supplier)} title="Edit Supplier" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
@@ -455,7 +472,7 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
             {selectedSupplier && (
                 <SupplierDetailsModal
                     isOpen={!!selectedSupplier}
-                    onClose={() => setSelectedSupplier(null)}
+                    onClose={() => handleSelectSupplier(null)}
                     supplier={selectedSupplier}
                     purchases={purchases}
                     payments={payments}
