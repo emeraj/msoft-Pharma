@@ -1065,6 +1065,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
 
     const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    const isPharmaMode = systemConfig.softwareMode === 'Pharma';
 
     const handleDeleteBatch = (pid: string, bid: string) => {
         const product = products.find(p => p.id === pid);
@@ -1097,10 +1098,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 <button onClick={() => setView('products')} className={`px-4 py-2 rounded-lg ${view === 'products' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>Product Master</button>
                 <button onClick={() => setView('allStock')} className={`px-4 py-2 rounded-lg ${view === 'allStock' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>All Item Stock</button>
                 <button onClick={() => setView('selectedStock')} className={`px-4 py-2 rounded-lg ${view === 'selectedStock' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.selectedStock}</button>
-                <button onClick={() => setView('batches')} className={`px-4 py-2 rounded-lg ${view === 'batches' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.batchStock}</button>
+                {isPharmaMode && <button onClick={() => setView('batches')} className={`px-4 py-2 rounded-lg ${view === 'batches' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.batchStock}</button>}
                 <button onClick={() => setView('company')} className={`px-4 py-2 rounded-lg ${view === 'company' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.companyStock}</button>
-                <button onClick={() => setView('expired')} className={`px-4 py-2 rounded-lg ${view === 'expired' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.expiredStock}</button>
-                <button onClick={() => setView('nearExpiry')} className={`px-4 py-2 rounded-lg ${view === 'nearExpiry' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.nearExpiry}</button>
+                {isPharmaMode && <button onClick={() => setView('expired')} className={`px-4 py-2 rounded-lg ${view === 'expired' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.expiredStock}</button>}
+                {isPharmaMode && <button onClick={() => setView('nearExpiry')} className={`px-4 py-2 rounded-lg ${view === 'nearExpiry' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800'}`}>{t.inventory.nearExpiry}</button>}
             </div>
 
             {view === 'products' && (
@@ -1152,10 +1153,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
 
             {view === 'allStock' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
             {view === 'selectedStock' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
-            {view === 'batches' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
+            {view === 'batches' && isPharmaMode && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
             {view === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
-            {view === 'expired' && <ExpiredStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
-            {view === 'nearExpiry' && <NearingExpiryStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
+            {view === 'expired' && isPharmaMode && <ExpiredStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
+            {view === 'nearExpiry' && isPharmaMode && <NearingExpiryStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
 
             <AddProductModal 
                 isOpen={isAddProductOpen} 
