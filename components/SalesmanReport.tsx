@@ -265,6 +265,22 @@ const SalesmanReport: React.FC<SalesmanReportProps> = ({ bills, salesmen }) => {
                         </tr>
                     )}
                 </tbody>
+                <tfoot>
+                    <tr className="bg-slate-100 dark:bg-slate-700 font-bold border-t-2 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white">
+                        {selectedSalesmanId === 'All' ? (
+                            <>
+                                <td className="px-6 py-4">TOTAL</td>
+                                <td className="px-6 py-4 text-center">{grandTotals.bills}</td>
+                                <td className="px-6 py-4 text-right">₹{grandTotals.sales.toFixed(2)}</td>
+                            </>
+                        ) : (
+                            <>
+                                <td colSpan={3} className="px-6 py-4 text-right">TOTAL</td>
+                                <td className="px-6 py-4 text-right">₹{grandTotals.sales.toFixed(2)}</td>
+                            </>
+                        )}
+                    </tr>
+                </tfoot>
             </table>
         </div>
       </Card>
