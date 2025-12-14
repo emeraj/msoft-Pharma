@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
@@ -189,6 +190,21 @@ function App() {
 
   const handleDeleteProduct = async (id: string) => {
     if (!dataOwnerId) return;
+
+    // Check if product is used in Sales (Bills)
+    const isUsedInBills = bills.some(bill => bill.items.some(item => item.productId === id));
+    if (isUsedInBills) {
+        alert("Cannot delete product. It is associated with existing Sales transactions.");
+        return;
+    }
+
+    // Check if product is used in Purchases
+    const isUsedInPurchases = purchases.some(purchase => purchase.items.some(item => item.productId === id));
+    if (isUsedInPurchases) {
+        alert("Cannot delete product. It is associated with existing Purchase transactions.");
+        return;
+    }
+
     if (window.confirm('Delete product?')) {
         await deleteDoc(doc(db, `users/${dataOwnerId}/products`, id));
     }
