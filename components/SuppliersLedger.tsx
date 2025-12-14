@@ -1,10 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Supplier, Purchase, Payment, CompanyProfile } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, PrinterIcon, PencilIcon, PlusIcon } from './icons/Icons';
+import { DownloadIcon, PrinterIcon, PencilIcon, PlusIcon, TrashIcon } from './icons/Icons';
 import PrintableSupplierLedger from './PrintableSupplierLedger';
 
 // --- Utility function to export data to CSV ---
@@ -47,6 +47,10 @@ interface SuppliersLedgerProps {
   companyProfile: CompanyProfile;
   onUpdateSupplier: (id: string, data: Omit<Supplier, 'id'>) => void;
   onAddPayment?: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
+  onDeletePurchase: (purchase: Purchase) => void;
+  onEditPurchase: (purchase: Purchase) => void;
+  onUpdatePayment: (id: string, data: Omit<Payment, 'id'>) => Promise<void>;
+  onDeletePayment: (id: string) => Promise<void>;
 }
 
 interface SupplierLedgerEntry extends Supplier {
@@ -203,13 +207,95 @@ const AddPaymentModal: React.FC<{
     );
 };
 
-const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, onUpdateSupplier, onAddPayment }) => {
+const EditPaymentModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    payment: Payment;
+    onUpdate: (id: string, data: Omit<Payment, 'id'>) => Promise<void>;
+}> = ({ isOpen, onClose, payment, onUpdate }) => {
+    const [amount, setAmount] = useState(String(payment.amount));
+    const [method, setMethod] = useState<'Cash' | 'Bank Transfer' | 'Cheque' | 'Other'>(payment.method);
+    const [remarks, setRemarks] = useState(payment.remarks || '');
+    const [date, setDate] = useState(new Date(payment.date).toISOString().split('T')[0]);
+
+    useEffect(() => {
+        setAmount(String(payment.amount));
+        setMethod(payment.method);
+        setRemarks(payment.remarks || '');
+        setDate(new Date(payment.date).toISOString().split('T')[0]);
+    }, [payment]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            alert("Please enter a valid amount");
+            return;
+        }
+        await onUpdate(payment.id, {
+            supplierName: payment.supplierName,
+            date: new Date(date).toISOString(),
+            amount: numAmount,
+            method,
+            remarks,
+            voucherNumber: payment.voucherNumber
+        });
+        onClose();
+    };
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Edit Payment: ${payment.voucherNumber}`}>
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Date</label>
+                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className={formInputStyle} required />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Amount</label>
+                    <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className={formInputStyle} required min="0.01" step="0.01" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Payment Method</label>
+                    <select value={method} onChange={e => setMethod(e.target.value as any)} className={formSelectStyle}>
+                        <option>Bank Transfer</option>
+                        <option>Cash</option>
+                        <option>Cheque</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Remarks</label>
+                    <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)} className={formInputStyle} />
+                </div>
+                <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">Update</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
+interface Transaction {
+    id: string;
+    date: Date;
+    particulars: string;
+    debit: number;
+    credit: number;
+    type: 'purchase' | 'payment';
+    data: Purchase | Payment;
+}
+
+const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases, payments, companyProfile, onUpdateSupplier, onAddPayment, onDeletePurchase, onEditPurchase, onUpdatePayment, onDeletePayment }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedSupplier, setSelectedSupplier] = useState<SupplierLedgerEntry | null>(null);
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+    
+    // Edit Payment State
+    const [paymentToEdit, setPaymentToEdit] = useState<Payment | null>(null);
 
     const supplierLedgerData = useMemo<SupplierLedgerEntry[]>(() => {
         const startDate = fromDate ? new Date(fromDate) : null;
@@ -376,6 +462,10 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                     companyProfile={companyProfile}
                     dateRange={{ from: fromDate, to: toDate }}
                     onAddPayment={onAddPayment}
+                    onDeletePurchase={onDeletePurchase}
+                    onEditPurchase={onEditPurchase}
+                    onDeletePayment={onDeletePayment}
+                    onEditPayment={(payment) => setPaymentToEdit(payment)}
                 />
             )}
             
@@ -385,6 +475,15 @@ const SuppliersLedger: React.FC<SuppliersLedgerProps> = ({ suppliers, purchases,
                     onClose={handleCloseEditModal}
                     supplier={editingSupplier}
                     onUpdate={onUpdateSupplier}
+                />
+            )}
+
+            {paymentToEdit && (
+                <EditPaymentModal 
+                    isOpen={!!paymentToEdit}
+                    onClose={() => setPaymentToEdit(null)}
+                    payment={paymentToEdit}
+                    onUpdate={onUpdatePayment}
                 />
             )}
         </div>
@@ -400,10 +499,17 @@ interface SupplierDetailsModalProps {
     companyProfile: CompanyProfile;
     dateRange: { from: string; to: string };
     onAddPayment?: (payment: Omit<Payment, 'id' | 'voucherNumber'>) => Promise<Payment | null>;
+    onDeletePurchase: (purchase: Purchase) => void;
+    onEditPurchase: (purchase: Purchase) => void;
+    onDeletePayment: (id: string) => Promise<void>;
+    onEditPayment: (payment: Payment) => void;
 }
 
-const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onClose, supplier, purchases, payments, companyProfile, dateRange, onAddPayment }) => {
+const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onClose, supplier, purchases, payments, companyProfile, dateRange, onAddPayment, onDeletePurchase, onEditPurchase, onDeletePayment, onEditPayment }) => {
     const [isPaymentModalOpen, setPaymentModalOpen] = useState(false);
+    const [selectedTxIndex, setSelectedTxIndex] = useState<number | null>(null);
+    const [showActionMenu, setShowActionMenu] = useState<{ x: number, y: number, tx: Transaction } | null>(null);
+    const rowRefs = useRef<(HTMLTableRowElement | null)[]>([]);
     
     // Format helpers
     const formatCurrency = (val: number) => `₹${Math.abs(val).toFixed(2)}`;
@@ -423,7 +529,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                 const isAfterStart = startDate ? purchaseDate >= startDate : true;
                 return isAfterStart && purchaseDate <= endDate;
             })
-            .map(p => ({ type: 'purchase' as const, date: new Date(p.invoiceDate), data: p }));
+            .map(p => ({ id: p.id, type: 'purchase' as const, date: new Date(p.invoiceDate), data: p, particulars: `Purchase - Inv #${p.invoiceNumber}`, debit: 0, credit: p.totalAmount }));
 
         const periodPayments = payments
             .filter(p => p.supplierName === supplier.name)
@@ -432,10 +538,85 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                 const isAfterStart = startDate ? paymentDate >= startDate : true;
                 return isAfterStart && paymentDate <= endDate;
             })
-            .map(p => ({ type: 'payment' as const, date: new Date(p.date), data: p }));
+            .map(p => ({ id: p.id, type: 'payment' as const, date: new Date(p.date), data: p, particulars: `Payment - ${p.method} (V: ${p.voucherNumber})`, debit: p.amount, credit: 0 }));
 
         return [...periodPurchases, ...periodPayments].sort((a, b) => a.date.getTime() - b.date.getTime());
     }, [purchases, payments, supplier.name, dateRange]);
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (!isOpen) return;
+            if (showActionMenu) return; 
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setSelectedTxIndex(prev => {
+                    const next = (prev === null ? -1 : prev) + 1;
+                    if (next < transactions.length) return next;
+                    return prev;
+                });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setSelectedTxIndex(prev => {
+                    const next = (prev === null ? transactions.length : prev) - 1;
+                    if (next >= 0) return next;
+                    return prev;
+                });
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedTxIndex !== null && transactions[selectedTxIndex]) {
+                    const tx = transactions[selectedTxIndex];
+                    const row = rowRefs.current[selectedTxIndex];
+                    if (row) {
+                        const rect = row.getBoundingClientRect();
+                        setShowActionMenu({ x: rect.left + rect.width / 2, y: rect.bottom, tx });
+                    }
+                }
+            } else if (e.key === 'Escape') {
+                if (showActionMenu) setShowActionMenu(null);
+                else onClose();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, transactions, showActionMenu, selectedTxIndex, onClose]);
+
+    useEffect(() => {
+        if (selectedTxIndex !== null && rowRefs.current[selectedTxIndex]) {
+            rowRefs.current[selectedTxIndex]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }, [selectedTxIndex]);
+
+    const handleRowClick = (index: number) => {
+        setSelectedTxIndex(index);
+    };
+
+    const handleRowDoubleClick = (index: number, tx: Transaction, e: React.MouseEvent) => {
+        setSelectedTxIndex(index);
+        const rect = (e.currentTarget as HTMLTableRowElement).getBoundingClientRect();
+        setShowActionMenu({ x: e.clientX, y: rect.bottom, tx });
+    };
+
+    const handleAction = (action: 'edit' | 'delete') => {
+        if (!showActionMenu) return;
+        const { tx } = showActionMenu;
+        
+        if (action === 'edit') {
+            if (tx.type === 'purchase') {
+                onEditPurchase(tx.data as Purchase);
+            } else {
+                onEditPayment(tx.data as Payment);
+            }
+        } else if (action === 'delete') {
+            if (tx.type === 'purchase') {
+                onDeletePurchase(tx.data as Purchase);
+            } else {
+                onDeletePayment((tx.data as Payment).id);
+            }
+        }
+        setShowActionMenu(null);
+    };
 
     const handleExportPdf = () => {
         const printWindow = window.open('', '_blank', 'height=800,width=800');
@@ -460,10 +641,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
             root.render(
                 <PrintableSupplierLedger
                     supplier={supplier}
-                    transactions={transactions.map(tx => tx.type === 'purchase' ? 
-                        { date: tx.date, particulars: `Purchase - Inv #${tx.data.invoiceNumber}`, debit: 0, credit: tx.data.totalAmount } :
-                        { date: tx.date, particulars: `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`, debit: tx.data.amount, credit: 0 }
-                    )}
+                    transactions={transactions.map(tx => ({ date: tx.date, particulars: tx.particulars, debit: tx.debit, credit: tx.credit }))}
                     companyProfile={companyProfile}
                     openingBalance={supplier.openingBalanceForPeriod}
                     dateRange={dateRange}
@@ -481,7 +659,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
     
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Ledger for ${supplier.name}`} maxWidth="max-w-5xl">
-            <div className="space-y-6">
+            <div className="space-y-6 relative" onClick={() => setShowActionMenu(null)}>
                 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900 text-white p-6 rounded-xl shadow-lg border border-slate-700">
@@ -535,7 +713,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                     <div className="bg-slate-800 text-slate-200 px-4 py-3 font-semibold border-b border-slate-700 flex justify-between items-center">
                         <span>Transaction History</span>
                     </div>
-                    <div className="overflow-x-auto max-h-[500px]">
+                    <div className="overflow-x-auto max-h-[500px]" tabIndex={0} style={{outline: 'none'}}>
                         <table className="w-full text-sm text-left">
                             <thead className="bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold sticky top-0 z-10 border-b dark:border-slate-700 shadow-sm">
                                 <tr>
@@ -544,6 +722,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                                     <th className="px-4 py-3 text-right text-green-600 dark:text-green-400">Debit (₹)</th>
                                     <th className="px-4 py-3 text-right text-red-600 dark:text-red-400">Credit (₹)</th>
                                     <th className="px-4 py-3 text-right">Balance (₹)</th>
+                                    <th className="px-4 py-3 w-10"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-900">
@@ -555,33 +734,67 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
                                     <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
                                         {formatCurrency(supplier.openingBalanceForPeriod)} {formatDrCr(supplier.openingBalanceForPeriod)}
                                     </td>
+                                    <td></td>
                                 </tr>
                                 {transactions.map((tx, idx) => {
-                                    const debit = tx.type === 'payment' ? tx.data.amount : 0;
-                                    const credit = tx.type === 'purchase' ? tx.data.totalAmount : 0;
-                                    runningBalance = runningBalance + credit - debit;
-                                    const particulars = tx.type === 'purchase'
-                                        ? `Purchase - Inv #${tx.data.invoiceNumber}`
-                                        : `Payment - ${tx.data.method} (V: ${tx.data.voucherNumber})`;
+                                    runningBalance = runningBalance + tx.credit - tx.debit;
+                                    const isSelected = selectedTxIndex === idx;
                                     
                                     return (
-                                        <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <tr 
+                                            key={tx.id} 
+                                            ref={el => {rowRefs.current[idx] = el}}
+                                            onClick={() => handleRowClick(idx)}
+                                            onDoubleClick={(e) => handleRowDoubleClick(idx, tx, e)}
+                                            className={`transition-colors cursor-pointer select-none ${
+                                                isSelected 
+                                                ? 'bg-blue-50 dark:bg-blue-900/40 border-l-4 border-blue-500' 
+                                                : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 border-l-4 border-transparent'
+                                            }`}
+                                        >
                                             <td className="px-4 py-3 font-medium text-slate-600 dark:text-slate-400">{tx.date.toLocaleDateString()}</td>
-                                            <td className="px-4 py-3 text-slate-800 dark:text-slate-200">{particulars}</td>
-                                            <td className="px-4 py-3 text-right font-medium text-green-600 dark:text-green-400">{debit > 0 ? debit.toFixed(2) : '-'}</td>
-                                            <td className="px-4 py-3 text-right font-medium text-red-600 dark:text-red-400">{credit > 0 ? credit.toFixed(2) : '-'}</td>
+                                            <td className="px-4 py-3 text-slate-800 dark:text-slate-200">{tx.particulars}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-green-600 dark:text-green-400">{tx.debit > 0 ? tx.debit.toFixed(2) : '-'}</td>
+                                            <td className="px-4 py-3 text-right font-medium text-red-600 dark:text-red-400">{tx.credit > 0 ? tx.credit.toFixed(2) : '-'}</td>
                                             <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">
                                                 {Math.abs(runningBalance).toFixed(2)} {formatDrCr(runningBalance)}
+                                            </td>
+                                            <td className="px-2">
+                                                <div className="opacity-0 group-hover:opacity-100 text-slate-400">...</div>
                                             </td>
                                         </tr>
                                     );
                                 })}
                                 {transactions.length === 0 && (
-                                    <tr><td colSpan={5} className="text-center py-8 text-slate-500">No transactions found in this period.</td></tr>
+                                    <tr><td colSpan={6} className="text-center py-8 text-slate-500">No transactions found in this period.</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+                    
+                    {/* Context Menu */}
+                    {showActionMenu && (
+                        <div 
+                        className="fixed bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 py-1 z-50 min-w-[150px] animate-fade-in"
+                        style={{ 
+                            left: Math.min(showActionMenu.x, window.innerWidth - 160), 
+                            top: Math.min(showActionMenu.y, window.innerHeight - 100) 
+                        }}
+                        >
+                            <button 
+                            onClick={() => handleAction('edit')}
+                            className="w-full text-left px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2 text-slate-700 dark:text-slate-200"
+                            >
+                                <PencilIcon className="h-4 w-4" /> Edit
+                            </button>
+                            <button 
+                            onClick={() => handleAction('delete')}
+                            className="w-full text-left px-4 py-2 hover:bg-red-50 dark:hover:bg-red-900/30 flex items-center gap-2 text-red-600"
+                            >
+                                <TrashIcon className="h-4 w-4" /> Delete
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex justify-end pt-4">

@@ -20,10 +20,12 @@ interface PurchasesProps {
     onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
     onUpdateConfig: (config: SystemConfig) => void;
+    editingPurchase?: Purchase | null;
+    onCancelEdit?: () => void;
 }
 
 // ... exportToCsv, formInputStyle, formSelectStyle ...
-// (I'll reuse the helper functions from original file to keep context)
+// (Retain helper functions exactly as they are)
 const exportToCsv = (filename: string, data: any[]) => {
   if (data.length === 0) {
     alert("No data to export.");
@@ -61,7 +63,7 @@ const exportToCsv = (filename: string, data: any[]) => {
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-// ... AddSupplierModal ...
+// ... AddSupplierModal ... (Retain exactly as is)
 const AddSupplierModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -132,7 +134,7 @@ const AddSupplierModal: React.FC<{
     );
 };
 
-// ... PremiumModal ...
+// ... PremiumModal ... (Retain exactly as is)
 const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const upiId = "9890072651@upi"; // M. Soft India
   const amount = "5000";
@@ -175,9 +177,7 @@ const PremiumModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
   );
 };
 
-// ... OcrPreviewModal ... (Keep existing code)
-// Note: I am assuming existing OcrPreviewModal code is fine, just re-declaring to make file valid
-// For brevity, I will copy-paste the OcrPreviewModal code from previous turn exactly.
+// ... OcrPreviewModal ... (Retain exactly as is - copying full block)
 interface OcrPreviewModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -195,8 +195,6 @@ interface OcrPreviewModalProps {
 }
 
 const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data, suppliers, onImport, isPharmaMode }) => {
-    // ... [Implementation from previous file content] ...
-    // Since I need to output full file content, I'll paste the logic here.
     const [supplierName, setSupplierName] = useState(data.supplierName);
     const [supplierGstin, setSupplierGstin] = useState(data.supplierGstin || '');
     const [supplierAddress, setSupplierAddress] = useState(data.supplierAddress || '');
@@ -266,7 +264,6 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Verify Scanned Invoice" maxWidth="max-w-6xl">
             <div className="space-y-4">
-                {/* ... (UI code exactly as before) ... */}
                 <div className="p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
@@ -456,9 +453,9 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     );
 };
 
-// ... AddItemForm ... (Keep existing code)
+// ... AddItemForm ... (Retain exactly as is)
 const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLineItem) => void, companies: Company[], systemConfig: SystemConfig, gstRates: GstRate[], disabled?: boolean, itemToEdit?: PurchaseLineItem | null }> = ({ products, onAddItem, companies, systemConfig, gstRates, disabled = false, itemToEdit }) => {
-    // ... [Implementation from previous file content] ...
+    // ... [Implementation from previous file content, unchanged] ...
     const sortedGstRates = useMemo(() => [...gstRates].sort((a, b) => a.rate - b.rate), [gstRates]);
     const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
     
@@ -813,7 +810,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 };
 
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig, editingPurchase, onCancelEdit }) => {
     // ... [Same logic as before] ...
     const initialFormState = {
         supplierName: '',
@@ -824,7 +821,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
     
     const [formState, setFormState] = useState(initialFormState);
-    const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+    const [localEditingPurchase, setLocalEditingPurchase] = useState<Purchase | null>(null);
     const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
     const [itemToEdit, setItemToEdit] = useState<PurchaseLineItem | null>(null);
@@ -850,6 +847,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     const [activeSupplierIndex, setActiveSupplierIndex] = useState(-1);
     const activeSupplierRef = useRef<HTMLLIElement>(null);
 
+    // Sync with prop
+    useEffect(() => {
+        if (editingPurchase) {
+            setLocalEditingPurchase(editingPurchase);
+        }
+    }, [editingPurchase]);
+
     const calculateLineTotal = (item: PurchaseLineItem) => {
         const amount = item.purchasePrice * item.quantity;
         const discountAmount = amount * ((item.discount || 0) / 100);
@@ -859,24 +863,24 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     };
 
     useEffect(() => {
-        if (editingPurchase) {
-            const itemsSum = editingPurchase.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
-            const existingRoundOff = editingPurchase.roundOff !== undefined 
-                ? editingPurchase.roundOff 
-                : (editingPurchase.totalAmount - itemsSum);
+        if (localEditingPurchase) {
+            const itemsSum = localEditingPurchase.items.reduce((sum, item) => sum + calculateLineTotal(item), 0);
+            const existingRoundOff = localEditingPurchase.roundOff !== undefined 
+                ? localEditingPurchase.roundOff 
+                : (localEditingPurchase.totalAmount - itemsSum);
 
             setFormState({
-                supplierName: editingPurchase.supplier,
-                invoiceNumber: editingPurchase.invoiceNumber,
-                invoiceDate: new Date(editingPurchase.invoiceDate).toISOString().split('T')[0],
-                currentItems: editingPurchase.items || [],
+                supplierName: localEditingPurchase.supplier,
+                invoiceNumber: localEditingPurchase.invoiceNumber,
+                invoiceDate: new Date(localEditingPurchase.invoiceDate).toISOString().split('T')[0],
+                currentItems: localEditingPurchase.items || [],
                 roundOff: parseFloat(existingRoundOff.toFixed(2))
             });
             window.scrollTo(0, 0); 
         } else {
             setFormState(initialFormState);
         }
-    }, [editingPurchase]);
+    }, [localEditingPurchase]);
 
     const supplierSuggestions = useMemo(() => {
         if (!formState.supplierName) return [];
@@ -976,7 +980,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
     }, [itemsTotal, formState.roundOff]);
     
     const resetForm = () => {
-        setEditingPurchase(null);
+        setLocalEditingPurchase(null);
+        if (onCancelEdit) onCancelEdit();
         setFormState(initialFormState);
         setItemToEdit(null);
     };
@@ -1006,27 +1011,26 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             roundOff: parseFloat(formState.roundOff.toString()) || 0
         };
 
-        if (editingPurchase && editingPurchase.id) {
-             onUpdatePurchase(editingPurchase.id, purchaseData, editingPurchase);
+        if (localEditingPurchase && localEditingPurchase.id) {
+             onUpdatePurchase(localEditingPurchase.id, purchaseData, localEditingPurchase);
         } else {
             onAddPurchase(purchaseData);
         }
         resetForm();
     };
 
-    // --- Gemini AI Analysis Logic ---
+    // ... Gemini AI Analysis Logic (Retain all helper functions convertFileToBase64, convertPdfToImageBase64, analyzeInvoiceWithGemini, parseNumber, normalizeDate, processAiResult, handleImportFromOcr, handleFileUpload) ...
+    // Since I must output full file content, I am including them below.
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        // --- Premium/Quota Check ---
         if (!systemConfig.isPremium) {
             const usageCount = systemConfig.aiInvoiceUsageCount || 0;
-            const limit = systemConfig.aiInvoiceQuota ?? 5; // Use dynamic limit from config
+            const limit = systemConfig.aiInvoiceQuota ?? 5; 
             if (usageCount >= limit) {
                 setShowPremiumModal(true);
                 if (fileInputRef.current) fileInputRef.current.value = '';
                 return;
             } else {
-                // Increment Usage Count
                 onUpdateConfig({ ...systemConfig, aiInvoiceUsageCount: usageCount + 1 });
             }
         }
@@ -1384,8 +1388,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         <div className="p-4 sm:p-6 space-y-6">
             <Card title={
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                    <span>{editingPurchase ? `Editing Purchase: ${editingPurchase.invoiceNumber}` : 'New Purchase Entry'}</span>
-                    {!editingPurchase && (
+                    <span>{localEditingPurchase ? `Editing Purchase: ${localEditingPurchase.invoiceNumber}` : 'New Purchase Entry'}</span>
+                    {!localEditingPurchase && (
                         <div className="relative">
                             <input 
                                 type="file" 
@@ -1415,7 +1419,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                     )}
                 </div>
             }>
-                {/* ... (UI code mostly same, just updating props) ... */}
+                {/* ... (UI code exactly as before) ... */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Supplier Name</label>
@@ -1561,13 +1565,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                          </div>
 
                          <div className="flex flex-col sm:flex-row justify-end items-center mt-4 gap-4">
-                            {editingPurchase && (
+                            {localEditingPurchase && (
                                 <button type="button" onClick={resetForm} className="bg-slate-500 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-slate-600 transition-colors w-full sm:w-auto">
                                     Cancel Edit
                                 </button>
                             )}
                             <button onClick={handleSavePurchase} className="bg-green-600 text-white px-6 py-3 rounded-lg text-lg font-semibold shadow-md hover:bg-green-700 transition-colors w-full sm:w-auto">
-                                {editingPurchase ? 'Update Purchase' : 'Save Purchase'}
+                                {localEditingPurchase ? 'Update Purchase' : 'Save Purchase'}
                             </button>
                          </div>
                     </div>
@@ -1596,7 +1600,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             />
 
             <Card title="Purchase History">
-                {/* ... (Existing purchase history table UI) ... */}
+                {/* ... (Existing purchase history table UI, kept identical) ... */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
                     <div className="flex items-center gap-2">
                         <label htmlFor="fromDate" className="text-sm font-medium text-slate-700 dark:text-slate-300">From</label>
@@ -1632,7 +1636,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
                                     <td className="px-6 py-4 font-semibold text-right">₹{p.totalAmount.toFixed(2)}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex justify-center items-center gap-4">
-                                            <button onClick={() => setEditingPurchase(p)} title="Edit Purchase" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                            <button onClick={() => setLocalEditingPurchase(p)} title="Edit Purchase" className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
                                                 <PencilIcon className="h-5 w-5" />
                                             </button>
                                             <button onClick={() => onDeletePurchase(p)} title="Delete Purchase" className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">

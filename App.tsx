@@ -67,6 +67,7 @@ function App() {
 
   // Edit & Navigation State
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
   const [isEditingFromLedger, setIsEditingFromLedger] = useState(false);
 
@@ -497,6 +498,84 @@ function App() {
       }
   };
 
+  const handleUpdatePurchase = async (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => {
+      if (!dataOwnerId) return;
+      try {
+          const batch = writeBatch(db);
+          const purchaseRef = doc(db, `users/${dataOwnerId}/purchases`, id);
+          
+          let totalAmount = 0;
+          const itemsWithIds = updatedData.items.map(item => {
+              const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0)/100);
+              const tax = itemTotal * (item.gst / 100);
+              totalAmount += itemTotal + tax;
+              return { ...item };
+          });
+          
+          totalAmount += (updatedData.roundOff || 0);
+          batch.update(purchaseRef, { ...updatedData, items: itemsWithIds, totalAmount });
+
+          const productUpdates = new Map<string, any[]>();
+          const tempProducts = JSON.parse(JSON.stringify(products)) as Product[];
+
+          // 1. Revert Old Stock
+          originalPurchase.items.forEach(item => {
+              let product: Product | undefined;
+              if (item.productId) product = tempProducts.find(p => p.id === item.productId);
+              if (!product) product = tempProducts.find(p => p.name === item.productName && p.company === item.company);
+
+              if (product) {
+                  const batchIndex = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
+                  if (batchIndex !== -1) {
+                      const units = item.unitsPerStrip || product.unitsPerStrip || 1;
+                      product.batches[batchIndex].stock -= (item.quantity * units); // Deduct what was added
+                      productUpdates.set(product.id, product.batches);
+                  }
+              }
+          });
+
+          // 2. Apply New Stock
+          itemsWithIds.forEach(item => {
+              let product: Product | undefined;
+              if (item.productId) product = tempProducts.find(p => p.id === item.productId);
+              if (!product) product = tempProducts.find(p => p.name === item.productName && p.company === item.company);
+
+              if (product) {
+                  const batchIndex = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
+                  const units = item.unitsPerStrip || product.unitsPerStrip || 1;
+                  
+                  if (batchIndex !== -1) {
+                      product.batches[batchIndex].stock += (item.quantity * units);
+                      product.batches[batchIndex].purchasePrice = item.purchasePrice;
+                  } else {
+                      // New batch in update (less likely but possible)
+                      product.batches.push({
+                          id: `batch_${Date.now()}_${Math.random()}`,
+                          batchNumber: item.batchNumber,
+                          expiryDate: item.expiryDate,
+                          stock: item.quantity * units,
+                          mrp: item.mrp,
+                          purchasePrice: item.purchasePrice,
+                          openingStock: 0
+                      });
+                  }
+                  productUpdates.set(product.id, product.batches);
+              }
+          });
+
+          productUpdates.forEach((batches, productId) => {
+              const pRef = doc(db, `users/${dataOwnerId}/products`, productId);
+              batch.update(pRef, { batches });
+          });
+
+          await batch.commit();
+          setEditingPurchase(null);
+      } catch (e) {
+          console.error("Error updating purchase", e);
+          alert("Failed to update purchase");
+      }
+  };
+
   const handleDeletePurchase = async (purchase: Purchase) => {
       if (!dataOwnerId) return;
       if (!window.confirm(`Delete Purchase Invoice ${purchase.invoiceNumber}? Stock will be reversed and deducted from inventory.`)) return;
@@ -550,6 +629,17 @@ function App() {
           console.error("Error deleting purchase", e);
           alert("Failed to delete purchase.");
       }
+  };
+
+  const handleEditPurchase = (purchase: Purchase) => {
+      setEditingPurchase(purchase);
+      setActiveView('purchases');
+  };
+
+  const handleFinishEditPurchase = () => {
+      setEditingPurchase(null);
+      // Stay on Purchases view or go back to ledger? Typically stay or go to where list is.
+      // If we came from ledger, we are now in Purchases view.
   };
 
   const handleAddSupplier = async (supplierData: Omit<Supplier, 'id'>) => {
@@ -716,9 +806,11 @@ function App() {
             systemConfig={systemConfig}
             gstRates={gstRates}
             onAddPurchase={handleAddPurchase}
-            onUpdatePurchase={(id, data, original) => {/* Implement Update logic if needed */ console.log(id, data)}}
+            onUpdatePurchase={handleUpdatePurchase}
             onDeletePurchase={handleDeletePurchase}
             onAddSupplier={handleAddSupplier}
+            editingPurchase={editingPurchase}
+            onCancelEdit={handleFinishEditPurchase}
             onUpdateConfig={(cfg) => {
                 if (dataOwnerId) {
                     setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), cfg);
@@ -744,6 +836,10 @@ function App() {
             companyProfile={companyProfile}
             onUpdateSupplier={handleUpdateSupplier}
             onAddPayment={handleAddSupplierPayment}
+            onDeletePurchase={handleDeletePurchase}
+            onEditPurchase={handleEditPurchase}
+            onUpdatePayment={handleUpdateSupplierPayment}
+            onDeletePayment={handleDeleteSupplierPayment}
           />
         )}
         {activeView === 'paymentEntry' && (
