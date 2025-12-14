@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
-import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import Header from './components/Header';
 import Billing from './components/Billing';
@@ -63,6 +63,11 @@ function App() {
   // Config State
   const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(defaultProfile);
   const [systemConfig, setSystemConfig] = useState<SystemConfig>(defaultConfig);
+
+  // Edit & Navigation State
+  const [editingBill, setEditingBill] = useState<Bill | null>(null);
+  const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
+  const [isEditingFromLedger, setIsEditingFromLedger] = useState(false);
 
   // Auth & User Mapping Logic
   useEffect(() => {
@@ -226,10 +231,7 @@ function App() {
         // 3. Update Customer Balance if credit
         if (billData.paymentMode === 'Credit' && billData.customerId) {
             const custRef = doc(db, `users/${dataOwnerId}/customers`, billData.customerId);
-            const customer = customers.find(c => c.id === billData.customerId);
-            if (customer) {
-                batch.update(custRef, { balance: customer.balance + billData.grandTotal });
-            }
+            batch.update(custRef, { balance: increment(billData.grandTotal) });
         }
 
         await batch.commit();
@@ -241,10 +243,86 @@ function App() {
     }
   };
 
+  const handleEditBill = (bill: Bill) => {
+      setEditingBill(bill);
+      setIsEditingFromLedger(false);
+      setActiveView('billing');
+  };
+
+  const handleEditBillFromLedger = (bill: Bill) => {
+      setEditingBill(bill);
+      setIsEditingFromLedger(true);
+      setActiveView('billing');
+  };
+
+  const handleFinishEdit = () => {
+      setEditingBill(null);
+      if (isEditingFromLedger) {
+          setActiveView('customerLedger');
+          setIsEditingFromLedger(false);
+      } else {
+          setActiveView('billing');
+      }
+  };
+
   const handleUpdateBill = async (billId: string, billData: Omit<Bill, 'id'>, originalBill: Bill) => {
       if (!dataOwnerId) return null;
-      await updateDoc(doc(db, `users/${dataOwnerId}/bills`, billId), billData);
-      return { ...billData, id: billId } as Bill;
+      
+      try {
+          const batch = writeBatch(db);
+          const billRef = doc(db, `users/${dataOwnerId}/bills`, billId);
+          
+          batch.update(billRef, billData);
+
+          // 1. Revert Old Stock
+          const tempProducts = JSON.parse(JSON.stringify(products)) as Product[];
+          
+          originalBill.items.forEach(item => {
+              const p = tempProducts.find(prod => prod.id === item.productId);
+              if (p) {
+                  const b = p.batches.find(batch => batch.id === item.batchId);
+                  if (b) b.stock += item.quantity;
+              }
+          });
+
+          // 2. Apply New Stock
+          billData.items.forEach(item => {
+              const p = tempProducts.find(prod => prod.id === item.productId);
+              if (p) {
+                  const b = p.batches.find(batch => batch.id === item.batchId);
+                  if (b) b.stock -= item.quantity;
+              }
+          });
+
+          // Update modified products in batch
+          const modifiedProductIds = new Set([...originalBill.items.map(i => i.productId), ...billData.items.map(i => i.productId)]);
+          modifiedProductIds.forEach(pid => {
+              const p = tempProducts.find(prod => prod.id === pid);
+              if (p) {
+                  batch.update(doc(db, `users/${dataOwnerId}/products`, pid), { batches: p.batches });
+              }
+          });
+
+          // 3. Revert Old Customer Balance (if Credit)
+          if (originalBill.paymentMode === 'Credit' && originalBill.customerId) {
+              const custRef = doc(db, `users/${dataOwnerId}/customers`, originalBill.customerId);
+              batch.update(custRef, { balance: increment(-originalBill.grandTotal) });
+          }
+
+          // 4. Apply New Customer Balance (if Credit)
+          if (billData.paymentMode === 'Credit' && billData.customerId) {
+              const custRef = doc(db, `users/${dataOwnerId}/customers`, billData.customerId);
+              batch.update(custRef, { balance: increment(billData.grandTotal) });
+          }
+
+          await batch.commit();
+          // NOTE: Navigation back is handled by the calling component (Billing) triggering onCancelEdit/onEditComplete
+          return { id: billId, ...billData } as Bill;
+      } catch (e) {
+          console.error("Error updating bill", e);
+          alert("Failed to update bill");
+          return null;
+      }
   };
 
   const handleDeleteBill = async (bill: Bill) => {
@@ -277,11 +355,8 @@ function App() {
 
       // Restore Customer Balance if Credit
       if (bill.paymentMode === 'Credit' && bill.customerId) {
-          const customer = customers.find(c => c.id === bill.customerId);
-          if (customer) {
-              const custRef = doc(db, `users/${dataOwnerId}/customers`, bill.customerId);
-              batch.update(custRef, { balance: customer.balance - bill.grandTotal });
-          }
+          const custRef = doc(db, `users/${dataOwnerId}/customers`, bill.customerId);
+          batch.update(custRef, { balance: increment(-bill.grandTotal) });
       }
 
       await batch.commit();
@@ -315,7 +390,6 @@ function App() {
 
           const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
           
-          // Determine the max numeric barcode for auto-generation
           let runningMaxBarcode = 0;
           if (systemConfig.softwareMode === 'Retail') {
               currentProducts.forEach(p => {
@@ -329,11 +403,9 @@ function App() {
           for (const item of itemsWithIds) {
               let product: Product | undefined;
               
-              // 1. Try finding by ID first
               if (item.productId) {
                   product = currentProducts.find(p => p.id === item.productId);
               }
-              // 2. Fallback to Name + Company
               if (!product) {
                   product = currentProducts.find(p => p.name === item.productName && p.company === item.company);
               }
@@ -341,7 +413,6 @@ function App() {
               if (product) {
                   const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
                   
-                  // Check for existing batch with same Batch Number AND MRP
                   const existingBatchIndex = product.batches.findIndex(b => 
                       b.batchNumber.trim().toLowerCase() === item.batchNumber.trim().toLowerCase() && 
                       Math.abs(b.mrp - item.mrp) < 0.01
@@ -351,12 +422,9 @@ function App() {
                   const quantityToAdd = item.quantity * units;
 
                   if (existingBatchIndex >= 0) {
-                      // Merge into existing batch
                       product.batches[existingBatchIndex].stock += quantityToAdd;
-                      // Update purchase price to the latest one
                       product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
                   } else {
-                      // Create new batch
                       const newBatch = {
                           id: `batch_${Date.now()}_${Math.random()}`,
                           batchNumber: item.batchNumber,
@@ -382,14 +450,12 @@ function App() {
                       openingStock: 0
                   };
                   
-                  // Auto-generate barcode if Retail mode and not provided
                   let itemBarcode = item.barcode;
                   if (systemConfig.softwareMode === 'Retail' && (!itemBarcode || itemBarcode.trim() === '')) {
                       runningMaxBarcode++;
                       itemBarcode = runningMaxBarcode.toString().padStart(6, '0');
                   }
 
-                  // Construct new product object safely avoiding undefined values
                   const newProduct: Product = {
                       id: productRef.id,
                       name: item.productName,
@@ -397,7 +463,6 @@ function App() {
                       hsnCode: item.hsnCode,
                       gst: item.gst,
                       batches: [newBatch],
-                      // Conditionally add optional fields only if they have values to avoid "undefined" in Firestore
                       ...(itemBarcode ? { barcode: itemBarcode } : {}),
                       ...(item.composition ? { composition: item.composition } : {}),
                       ...(item.unitsPerStrip ? { unitsPerStrip: item.unitsPerStrip } : {}),
@@ -446,8 +511,6 @@ function App() {
                   if (batchIndex !== -1) {
                       const batch = product.batches[batchIndex];
                       const units = item.unitsPerStrip || (product.unitsPerStrip || 1);
-                      // Deduct from Current Stock - Allow negative stock (e.g. if sold already)
-                      // e.g. Purchased 10, Sold 2 (Stock 8). Delete Purchase (-10) -> Stock -2.
                       batch.stock = batch.stock - (item.quantity * units);
                       
                       if (batch.openingStock !== undefined) {
@@ -522,10 +585,41 @@ function App() {
       batch.set(payRef, paymentData);
 
       const custRef = doc(db, `users/${dataOwnerId}/customers`, paymentData.customerId);
-      const customer = customers.find(c => c.id === paymentData.customerId);
-      if (customer) {
-          batch.update(custRef, { balance: customer.balance - paymentData.amount });
+      batch.update(custRef, { balance: increment(-paymentData.amount) }); // Credit Balance (Payment reduces debt)
+
+      await batch.commit();
+  };
+
+  const handleUpdateCustomerPayment = async (id: string, data: Omit<CustomerPayment, 'id'>) => {
+      if (!dataOwnerId) return;
+      const batch = writeBatch(db);
+      
+      // Get old payment to revert balance
+      const oldPayment = customerPayments.find(p => p.id === id);
+      if (oldPayment) {
+           const oldCustRef = doc(db, `users/${dataOwnerId}/customers`, oldPayment.customerId);
+           batch.update(oldCustRef, { balance: increment(oldPayment.amount) }); // Revert (Debit back)
       }
+
+      const payRef = doc(db, `users/${dataOwnerId}/customerPayments`, id);
+      batch.update(payRef, data);
+
+      const newCustRef = doc(db, `users/${dataOwnerId}/customers`, data.customerId);
+      batch.update(newCustRef, { balance: increment(-data.amount) }); // Apply new (Credit)
+
+      await batch.commit();
+  };
+
+  const handleDeleteCustomerPayment = async (payment: CustomerPayment) => {
+      if (!dataOwnerId) return;
+      if (!window.confirm("Delete payment?")) return;
+
+      const batch = writeBatch(db);
+      const payRef = doc(db, `users/${dataOwnerId}/customerPayments`, payment.id);
+      batch.delete(payRef);
+
+      const custRef = doc(db, `users/${dataOwnerId}/customers`, payment.customerId);
+      batch.update(custRef, { balance: increment(payment.amount) }); // Restore balance (Debit back)
 
       await batch.commit();
   };
@@ -580,6 +674,9 @@ function App() {
             onGenerateBill={handleGenerateBill}
             onAddCustomer={handleAddCustomer}
             onAddSalesman={handleAddSalesman}
+            editingBill={editingBill}
+            onUpdateBill={handleUpdateBill}
+            onCancelEdit={handleFinishEdit}
           />
         )}
         {activeView === 'inventory' && (
@@ -603,7 +700,7 @@ function App() {
             systemConfig={systemConfig}
             gstRates={gstRates}
             onAddPurchase={handleAddPurchase}
-            onUpdatePurchase={(id, data) => {/* Implement Update logic */ console.log(id, data)}}
+            onUpdatePurchase={(id, data, original) => {/* Implement Update logic if needed */ console.log(id, data)}}
             onDeletePurchase={handleDeletePurchase}
             onAddSupplier={handleAddSupplier}
             onUpdateConfig={(cfg) => {
@@ -619,7 +716,7 @@ function App() {
             companyProfile={companyProfile}
             systemConfig={systemConfig}
             onDeleteBill={handleDeleteBill}
-            onEditBill={(bill) => {/* Implement logic to switch to Billing with bill data */}}
+            onEditBill={handleEditBill}
             onUpdateBillDetails={(id, updates) => updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), updates)}
           />
         )}
@@ -649,12 +746,14 @@ function App() {
             bills={bills}
             payments={customerPayments}
             companyProfile={companyProfile}
+            initialCustomerId={currentLedgerCustomerId}
+            onCustomerSelected={setCurrentLedgerCustomerId}
             onAddPayment={handleAddCustomerPayment}
             onUpdateCustomer={handleUpdateCustomer}
-            onEditBill={(bill) => {/* Navigate to Billing */}}
+            onEditBill={handleEditBillFromLedger}
             onDeleteBill={handleDeleteBill}
-            onUpdatePayment={(id, data) => {/* update customer payment */}}
-            onDeletePayment={(payment) => {/* delete customer payment */}}
+            onUpdatePayment={handleUpdateCustomerPayment}
+            onDeletePayment={handleDeleteCustomerPayment}
           />
         )}
         {activeView === 'salesReport' && <SalesReport bills={bills} />}

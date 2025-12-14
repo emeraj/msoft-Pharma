@@ -116,8 +116,10 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             );
             
             if (isCancelled) {
-                await html5QrCode.stop();
-                html5QrCode.clear();
+                // If cancelled after start success, stop immediately
+                if (html5QrCode) {
+                    html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+                }
             } else {
                 isRunningRef.current = true;
                 setErrorMessage(null);
@@ -153,18 +155,29 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             }
 
         } catch (err: any) {
-            if (isCancelled) {
-                // Ensure cleanup if cancelled during start failure or interruption
+            // Check for benign interruption errors first
+            const errorMsg = err?.message || err?.toString() || '';
+            const isBenign = 
+                err?.name === 'NotAllowedError' || 
+                err?.name === 'AbortError' ||
+                errorMsg.includes('play() request was interrupted') ||
+                errorMsg.includes('media was removed');
+
+            if (isCancelled || isBenign) {
+                // Suppress error log for benign cases
+                if (!isBenign) {
+                    console.warn("Scanner start cancelled/failed:", errorMsg);
+                }
+                
+                // Ensure cleanup
                 if (html5QrCode) {
-                    try { html5QrCode.clear(); } catch (e) {}
+                    // Use catch to prevent Uncaught Promise Rejection during cleanup
+                    // If the media was removed, clear() might fail, which is expected.
+                    try { 
+                        html5QrCode.clear().catch(() => {}); 
+                    } catch (e) {}
                 }
                 return;
-            }
-            
-            // Suppress specific "play() interrupted" error which happens on rapid unmounts
-            if (err?.name === 'NotAllowedError' || err?.message?.includes('play() request was interrupted')) {
-                 console.warn("Scanner start interrupted (benign):", err.message);
-                 return; 
             }
 
             console.error("Scanner start error", err);
@@ -195,7 +208,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             if (isRunningRef.current) {
                 isRunningRef.current = false;
                 scanner.stop().then(() => {
-                    try { scanner.clear(); } catch(e) {}
+                    return scanner.clear();
                 }).catch((err: any) => {
                     console.warn("Stop failed during cleanup", err); 
                 });
