@@ -410,14 +410,14 @@ function App() {
           const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
           
           let runningMaxBarcode = 0;
-          if (systemConfig.softwareMode === 'Retail') {
-              currentProducts.forEach(p => {
-                  if (p.barcode && /^\d+$/.test(p.barcode)) {
-                      const num = parseInt(p.barcode, 10);
-                      if (num > runningMaxBarcode) runningMaxBarcode = num;
-                  }
-              });
-          }
+          
+          // Calculate max barcode irrespective of mode
+          currentProducts.forEach(p => {
+              if (p.barcode && /^\d+$/.test(p.barcode)) {
+                  const num = parseInt(p.barcode, 10);
+                  if (num > runningMaxBarcode) runningMaxBarcode = num;
+              }
+          });
 
           for (const item of itemsWithIds) {
               let product: Product | undefined;
@@ -470,7 +470,8 @@ function App() {
                   };
                   
                   let itemBarcode = item.barcode;
-                  if (systemConfig.softwareMode === 'Retail' && (!itemBarcode || itemBarcode.trim() === '')) {
+                  // Auto-generate barcode if blank for ANY mode
+                  if (!itemBarcode || itemBarcode.trim() === '') {
                       runningMaxBarcode++;
                       itemBarcode = runningMaxBarcode.toString().padStart(6, '0');
                   }

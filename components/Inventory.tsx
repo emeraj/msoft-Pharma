@@ -508,6 +508,40 @@ const SelectedItemStockView: React.FC<{
 
     const unitsLabel = systemConfig.softwareMode === 'Pharma' ? 'Units' : 'Qty';
 
+    const handleExport = () => {
+        if (!selectedProduct) return;
+        if (filteredTransactions.rows.length === 0 && filteredTransactions.openingBalance === 0) {
+            alert("No data to export.");
+            return;
+        }
+
+        const data = [];
+        
+        // Add Opening Balance Row
+        data.push({
+            'Date': fromDate || 'Start',
+            'Type': 'Opening',
+            'Particulars': 'Opening Balance',
+            'IN': '',
+            'OUT': '',
+            'Balance': formatStock(filteredTransactions.openingBalance, selectedProduct.unitsPerStrip)
+        });
+
+        // Add Transactions
+        filteredTransactions.rows.forEach(row => {
+            data.push({
+                'Date': row.date.toLocaleDateString(),
+                'Type': row.type,
+                'Particulars': row.particulars,
+                'IN': row.inQty > 0 ? formatStock(row.inQty, selectedProduct.unitsPerStrip) : '',
+                'OUT': row.outQty > 0 ? formatStock(row.outQty, selectedProduct.unitsPerStrip) : '',
+                'Balance': formatStock(row.balance, selectedProduct.unitsPerStrip)
+            });
+        });
+
+        exportToCsv(`${selectedProduct.name.replace(/\s+/g, '_')}_stock_ledger`, data);
+    };
+
     return (
         <Card title={t.inventory.selectedStock}>
             <div className="mb-6 relative">
@@ -549,12 +583,19 @@ const SelectedItemStockView: React.FC<{
                         </div>
                     </div>
 
-                    <div className="flex gap-4">
-                        <div className="flex-1">
+                    <div className="flex flex-col sm:flex-row gap-4 items-end">
+                        <div className="flex-1 w-full">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From</label>
                             <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 w-full">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To</label>
                             <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
+                        </div>
+                        <div className="w-full sm:w-auto">
+                             <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors h-[42px]">
+                                <DownloadIcon className="h-5 w-5" /> Export
+                            </button>
                         </div>
                     </div>
 
@@ -1076,16 +1117,19 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     };
 
     const handleAddProductWrapper = async (productData: any) => {
-        if (systemConfig.softwareMode === 'Retail' && (!productData.barcode || productData.barcode.trim() === '')) {
+        // Auto-generate barcode if blank, regardless of mode.
+        if (!productData.barcode || productData.barcode.trim() === '') {
             let maxBarcode = 0;
             products.forEach(p => {
                 if (p.barcode && /^\d+$/.test(p.barcode)) {
                     const num = parseInt(p.barcode, 10);
-                    if (!isNaN(num) && num > maxBarcode) {
+                    // Filter: Only consider barcodes with length <= 8 for the sequence to keep it clean from EANs
+                    if (!isNaN(num) && num > maxBarcode && p.barcode.length <= 8) {
                         maxBarcode = num;
                     }
                 }
             });
+            // Ensure even if there are no products, we start with 000001
             const nextBarcode = (maxBarcode + 1).toString().padStart(6, '0');
             productData.barcode = nextBarcode;
         }
@@ -1159,25 +1203,21 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
             {view === 'nearExpiry' && isPharmaMode && <NearingExpiryStockView products={products} onDeleteBatch={handleDeleteBatch} systemConfig={systemConfig} t={t} />}
 
             <AddProductModal 
-                isOpen={isAddProductOpen} 
-                onClose={() => setAddProductOpen(false)} 
-                onAdd={handleAddProductWrapper}
+                isOpen={isAddProductOpen || !!editingProduct} 
+                onClose={() => { setAddProductOpen(false); setEditingProduct(null); }} 
+                onAdd={async (data) => {
+                    if (editingProduct) {
+                        await onUpdateProduct(editingProduct.id, data);
+                    } else {
+                        await handleAddProductWrapper(data);
+                    }
+                }}
                 systemConfig={systemConfig} 
                 gstRates={gstRates} 
+                initialData={editingProduct || undefined}
+                isEdit={!!editingProduct}
             />
             
-            {editingProduct && (
-                <AddProductModal 
-                    isOpen={!!editingProduct} 
-                    onClose={() => setEditingProduct(null)} 
-                    onAdd={(data: any) => { onUpdateProduct(editingProduct.id, data); }} 
-                    initialData={editingProduct}
-                    systemConfig={systemConfig} 
-                    gstRates={gstRates} 
-                    isEdit={true}
-                />
-            )}
-
             {printingProduct && (
                 <PrintBarcodeModal 
                     isOpen={!!printingProduct}
