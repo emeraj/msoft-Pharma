@@ -601,7 +601,7 @@ const SelectedItemStockView: React.FC<{
 
                     <div className="overflow-x-auto rounded-lg border dark:border-slate-700">
                         <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                            <thead className="bg-slate-800 text-slate-200 uppercase text-xs">
+                            <thead className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 uppercase text-xs">
                                 <tr>
                                     <th className="px-4 py-3">Date</th>
                                     <th className="px-4 py-3">Type</th>
@@ -611,25 +611,27 @@ const SelectedItemStockView: React.FC<{
                                     <th className="px-4 py-3 text-right">Balance</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700 bg-slate-900 text-slate-300">
-                                <tr className="bg-slate-800/50">
-                                    <td colSpan={5} className="px-4 py-3 text-right font-bold text-slate-400">Opening Balance:</td>
-                                    <td className="px-4 py-3 text-right font-bold text-white">{formatStock(filteredTransactions.openingBalance, selectedProduct.unitsPerStrip)}</td>
+                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                <tr className="bg-slate-50 dark:bg-slate-700/50">
+                                    <td colSpan={5} className="px-4 py-3 text-right font-bold text-slate-600 dark:text-slate-400">Opening Balance:</td>
+                                    <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">{formatStock(filteredTransactions.openingBalance, selectedProduct.unitsPerStrip)}</td>
                                 </tr>
                                 {filteredTransactions.rows.map((row, idx) => (
-                                    <tr key={idx} className="hover:bg-slate-800 transition-colors">
-                                        <td className="px-4 py-3 text-slate-400">{row.date.toLocaleDateString()}</td>
+                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+                                        <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{row.date.toLocaleDateString()}</td>
                                         <td className="px-4 py-3">
                                             <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                                                row.type === 'Sale' ? 'bg-indigo-900 text-indigo-300' : 'bg-green-900 text-green-300'
+                                                row.type === 'Sale' 
+                                                ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300' 
+                                                : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
                                             }`}>
                                                 {row.type}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 text-slate-300">{row.particulars}</td>
-                                        <td className="px-4 py-3 text-right text-green-400">{row.inQty > 0 ? `${row.inQty} ${unitsLabel}` : '-'}</td>
-                                        <td className="px-4 py-3 text-right text-red-400">{row.outQty > 0 ? `${row.outQty} ${unitsLabel}` : '-'}</td>
-                                        <td className="px-4 py-3 text-right font-bold text-white">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td>
+                                        <td className="px-4 py-3 text-slate-800 dark:text-slate-300">{row.particulars}</td>
+                                        <td className="px-4 py-3 text-right text-green-600 dark:text-green-400">{row.inQty > 0 ? `${row.inQty} ${unitsLabel}` : '-'}</td>
+                                        <td className="px-4 py-3 text-right text-red-600 dark:text-red-400">{row.outQty > 0 ? `${row.outQty} ${unitsLabel}` : '-'}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-slate-900 dark:text-white">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td>
                                     </tr>
                                 ))}
                                 {filteredTransactions.rows.length === 0 && (
@@ -912,7 +914,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
             
             <div className="overflow-x-auto rounded-lg border dark:border-slate-700">
                 <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                    <thead className="text-xs uppercase bg-slate-800 text-slate-200">
+                    <thead className="text-xs uppercase bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
                         <tr>
                             <th className="px-4 py-3 w-1/4">Product / Company</th>
                             <th className="px-4 py-3">Batch / Expiry</th>
@@ -923,31 +925,31 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                             <th className="px-4 py-3 text-right">Value</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-700 bg-slate-900 text-slate-300">
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                         {reportData.map((row, idx) => (
-                            <tr key={`${row.productId}-${row.batchNumber}-${idx}`} className="hover:bg-slate-800 transition-colors">
+                            <tr key={`${row.productId}-${row.batchNumber}-${idx}`} className="hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                                 <td className="px-4 py-3 align-top">
                                     {row.isFirstOfProduct ? (
                                         <>
-                                            <div className="font-bold text-white text-base">{row.productName}</div>
-                                            <div className="text-xs text-slate-400 mt-1 uppercase tracking-wide">{row.company}</div>
+                                            <div className="font-bold text-slate-900 dark:text-white text-base">{row.productName}</div>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 uppercase tracking-wide">{row.company}</div>
                                         </>
                                     ) : null}
                                 </td>
                                 <td className="px-4 py-3 align-top">
-                                    <div className="text-slate-200 font-medium">{row.batchNumber}</div>
-                                    <div className="text-xs text-slate-500 mt-0.5">{row.expiryDate}</div>
+                                    <div className="text-slate-800 dark:text-slate-200 font-medium">{row.batchNumber}</div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{row.expiryDate}</div>
                                 </td>
-                                <td className="px-4 py-3 text-center align-top text-slate-400">
+                                <td className="px-4 py-3 text-center align-top text-slate-600 dark:text-slate-400">
                                     {formatStock(row.openingStock, row.unitsPerStrip)}
                                 </td>
-                                <td className="px-4 py-3 text-center align-top text-green-400">
+                                <td className="px-4 py-3 text-center align-top text-green-600 dark:text-green-400">
                                     {row.purchasedQty > 0 ? formatStock(row.purchasedQty, row.unitsPerStrip) : '-'}
                                 </td>
-                                <td className="px-4 py-3 text-center align-top text-red-400">
+                                <td className="px-4 py-3 text-center align-top text-red-600 dark:text-red-400">
                                     {row.soldQty > 0 ? formatStock(row.soldQty, row.unitsPerStrip) : '-'}
                                 </td>
-                                <td className="px-4 py-3 text-center align-top font-bold text-white">
+                                <td className="px-4 py-3 text-center align-top font-bold text-slate-900 dark:text-white">
                                     {formatStock(row.closingStock, row.unitsPerStrip)}
                                 </td>
                                 <td className="px-4 py-3 text-right align-top font-mono">
