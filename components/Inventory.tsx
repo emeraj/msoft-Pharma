@@ -1165,30 +1165,58 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                             <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
                                 <tr>
                                     <th className="px-4 py-2">Name</th>
+                                    <th className="px-4 py-2">Barcode</th>
                                     <th className="px-4 py-2">Company</th>
                                     <th className="px-4 py-2">GST</th>
-                                    <th className="px-4 py-2">Actions</th>
+                                    <th className="px-4 py-2 text-right">MRP</th>
+                                    <th className="px-4 py-2 text-right">Rate</th>
+                                    <th className="px-4 py-2 text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredProducts.map(p => (
-                                    <tr key={p.id} className="border-b dark:border-slate-700">
-                                        <td className="px-4 py-2">{p.name}</td>
+                                {filteredProducts.map(p => {
+                                    // Logic for display MRP/Rate
+                                    const batches = p.batches || [];
+                                    const activeBatches = batches.filter(b => b.stock > 0);
+                                    const targetBatches = activeBatches.length > 0 ? activeBatches : batches;
+                                    // Heuristic: Max MRP as representative
+                                    const displayBatch = targetBatches.length > 0 
+                                        ? targetBatches.reduce((prev, current) => (prev.mrp > current.mrp) ? prev : current)
+                                        : null;
+
+                                    const mrpDisplay = displayBatch ? `₹${displayBatch.mrp.toFixed(2)}` : '-';
+                                    const rateDisplay = displayBatch ? `₹${displayBatch.purchasePrice.toFixed(2)}` : '-';
+
+                                    return (
+                                    <tr key={p.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                        <td className="px-4 py-2 font-medium">
+                                            {p.name}
+                                            {isPharmaMode && p.composition && <div className="text-xs text-slate-500 dark:text-slate-400">{p.composition}</div>}
+                                        </td>
+                                        <td className="px-4 py-2 font-mono text-xs">{p.barcode || '-'}</td>
                                         <td className="px-4 py-2">{p.company}</td>
                                         <td className="px-4 py-2">{p.gst}%</td>
-                                        <td className="px-4 py-2 flex gap-2">
-                                            <button 
-                                                onClick={() => setPrintingProduct(p)} 
-                                                className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-                                                title="Print Barcode Label"
-                                            >
-                                                <BarcodeIcon className="h-4 w-4" />
-                                            </button>
-                                            <button onClick={() => setEditingProduct(p)} className="text-blue-600"><PencilIcon className="h-4 w-4" /></button>
-                                            <button onClick={() => onDeleteProduct(p.id)} className="text-red-600"><TrashIcon className="h-4 w-4" /></button>
+                                        <td className="px-4 py-2 text-right">{mrpDisplay}</td>
+                                        <td className="px-4 py-2 text-right">{rateDisplay}</td>
+                                        <td className="px-4 py-2 text-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button 
+                                                    onClick={() => setPrintingProduct(p)} 
+                                                    className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                                    title="Print Barcode Label"
+                                                >
+                                                    <BarcodeIcon className="h-4 w-4" />
+                                                </button>
+                                                <button onClick={() => setEditingProduct(p)} className="text-blue-600 hover:text-blue-800"><PencilIcon className="h-4 w-4" /></button>
+                                                <button onClick={() => onDeleteProduct(p.id)} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button>
+                                            </div>
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
+                                {filteredProducts.length === 0 && (
+                                    <tr><td colSpan={7} className="text-center py-8 text-slate-500">No products found.</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
