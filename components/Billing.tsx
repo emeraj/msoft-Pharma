@@ -1,4 +1,5 @@
-// ... (Existing imports remain same)
+
+// ... (imports remain same)
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
@@ -36,8 +37,6 @@ const modalInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-sla
 // (I am omitting them here for brevity but in real output they must be present if not using partial update. 
 //  Since XML format requires FULL content for file update, I must include EVERYTHING.
 //  So I will paste the entire file content but with the specific logic change in handleSaveBill)
-
-// ... (Pasting previous full content with modifications below) ...
 
 // ... (All Helper Components & Functions from previous turn are retained here) ...
 const getExpiryDate = (expiryString: string): Date => {
@@ -440,6 +439,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const [lastSavedBill, setLastSavedBill] = useState<Bill | null>(null);
   const [orderSeconds, setOrderSeconds] = useState(0);
   const startTimeRef = useRef<number | null>(null);
+
+  // Sync scanner state with system config updates (e.g. initial load)
+  useEffect(() => {
+    if (isPharmaMode) {
+        setShowScanner(false);
+    } else {
+        setShowScanner(systemConfig.barcodeScannerOpenByDefault !== false);
+    }
+  }, [systemConfig.barcodeScannerOpenByDefault, isPharmaMode]);
 
   // ... (Effect hooks logic for startTime, refs, editingBill) ... 
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
