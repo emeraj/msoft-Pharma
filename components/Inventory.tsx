@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
@@ -1025,11 +1025,14 @@ const NearingExpiryStockView: React.FC<{ products: Product[], onDeleteBatch: (pi
     );
 };
 
-const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (p: any) => void, systemConfig: SystemConfig, gstRates: GstRate[], initialData?: Product, isEdit?: boolean }> = ({ isOpen, onClose, onAdd, systemConfig, gstRates, initialData, isEdit }) => {
+const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (p: any) => void, systemConfig: SystemConfig, gstRates: GstRate[], initialData?: Product, isEdit?: boolean, existingCompanies: string[] }> = ({ isOpen, onClose, onAdd, systemConfig, gstRates, initialData, isEdit, existingCompanies }) => {
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const [formData, setFormData] = useState<any>({
         name: '', company: '', hsnCode: '', gst: 0, barcode: '', composition: '', unitsPerStrip: 1, isScheduleH: false
     });
+    const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
+    const [activeCompanyIndex, setActiveCompanyIndex] = useState(-1);
+    const activeSuggestionRef = useRef<HTMLLIElement>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -1047,6 +1050,8 @@ const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (
             } else {
                 setFormData({ name: '', company: '', hsnCode: '', gst: 0, barcode: '', composition: '', unitsPerStrip: 1, isScheduleH: false });
             }
+            setShowCompanySuggestions(false);
+            setActiveCompanyIndex(-1);
         }
     }, [isOpen, initialData]);
 
@@ -1061,13 +1066,134 @@ const AddProductModal: React.FC<{ isOpen: boolean, onClose: () => void, onAdd: (
         onClose();
     };
 
+    const companySuggestions = useMemo(() => {
+        const input = (formData.company || '').toLowerCase();
+        return existingCompanies.filter(c => c.toLowerCase().includes(input));
+    }, [existingCompanies, formData.company]);
+
+    // Reset index when suggestions change
+    useEffect(() => {
+        setActiveCompanyIndex(-1);
+    }, [companySuggestions]);
+
+    // Scroll active item into view
+    useEffect(() => {
+        activeSuggestionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, [activeCompanyIndex]);
+
+    const handleSelectCompany = (company: string) => {
+        setFormData({ ...formData, company });
+        setShowCompanySuggestions(false);
+    };
+
+    const handleCompanyKeyDown = (e: React.KeyboardEvent) => {
+        // If suggestions are not showing, only allow typing normally.
+        // We might want to open suggestions on arrow down if closed.
+        if (!showCompanySuggestions) {
+            if (e.key === 'ArrowDown') {
+                setShowCompanySuggestions(true);
+            }
+            return;
+        }
+
+        const exactMatch = companySuggestions.some(c => c.toLowerCase() === formData.company.toLowerCase());
+        const hasAddOption = !exactMatch && formData.company.trim().length > 0;
+        
+        // Total navigable items: suggestions + optional "Add new" item at the end
+        const totalItems = companySuggestions.length + (hasAddOption ? 1 : 0);
+
+        if (totalItems === 0) return;
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                setActiveCompanyIndex(prev => (prev + 1) % totalItems);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                setActiveCompanyIndex(prev => (prev - 1 + totalItems) % totalItems);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (activeCompanyIndex >= 0 && activeCompanyIndex < companySuggestions.length) {
+                    handleSelectCompany(companySuggestions[activeCompanyIndex]);
+                } else if (hasAddOption && activeCompanyIndex === companySuggestions.length) {
+                    handleSelectCompany(formData.company);
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                setShowCompanySuggestions(false);
+                break;
+            case 'Tab':
+                // Optional: Select current if highlighted on tab out
+                if (activeCompanyIndex >= 0 && activeCompanyIndex < companySuggestions.length) {
+                    handleSelectCompany(companySuggestions[activeCompanyIndex]);
+                }
+                setShowCompanySuggestions(false);
+                break;
+        }
+    };
+
     if (!isOpen) return null;
+
+    const exactMatch = companySuggestions.some(c => c.toLowerCase() === (formData.company || '').toLowerCase());
+    const showAddOption = !exactMatch && (formData.company || '').trim().length > 0;
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? 'Edit Product' : 'Add New Product'}>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
                 <div><label className="block text-sm font-medium mb-1">Product Name</label><input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required /></div>
-                <div><label className="block text-sm font-medium mb-1">Company</label><input type="text" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className={inputStyle} required /></div>
+                
+                <div className="relative">
+                    <label className="block text-sm font-medium mb-1">Company</label>
+                    <input 
+                        type="text" 
+                        value={formData.company} 
+                        onChange={e => {
+                            setFormData({...formData, company: e.target.value});
+                            setShowCompanySuggestions(true);
+                        }}
+                        onFocus={() => setShowCompanySuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)}
+                        onKeyDown={handleCompanyKeyDown}
+                        className={inputStyle} 
+                        required 
+                        placeholder="Type to search or add new"
+                    />
+                    {showCompanySuggestions && (companySuggestions.length > 0 || showAddOption) && (
+                        <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                            {companySuggestions.map((c, idx) => (
+                                <li 
+                                    key={idx} 
+                                    ref={idx === activeCompanyIndex ? activeSuggestionRef : null}
+                                    onMouseDown={() => handleSelectCompany(c)}
+                                    className={`px-4 py-2 cursor-pointer text-sm text-slate-800 dark:text-slate-200 ${
+                                        idx === activeCompanyIndex 
+                                        ? 'bg-indigo-100 dark:bg-indigo-900' 
+                                        : 'hover:bg-slate-100 dark:hover:bg-slate-600'
+                                    }`}
+                                >
+                                    {c}
+                                </li>
+                            ))}
+                            {showAddOption && (
+                                <li 
+                                    ref={companySuggestions.length === activeCompanyIndex ? activeSuggestionRef : null}
+                                    onMouseDown={() => handleSelectCompany(formData.company)}
+                                    className={`px-4 py-2 cursor-pointer text-sm font-semibold text-green-600 dark:text-green-400 flex items-center gap-2 ${
+                                        companySuggestions.length === activeCompanyIndex 
+                                        ? 'bg-green-100 dark:bg-green-900/30' 
+                                        : 'hover:bg-slate-100 dark:hover:bg-slate-600'
+                                    }`}
+                                >
+                                    <PlusIcon className="h-4 w-4" /> Add "{formData.company}"
+                                </li>
+                            )}
+                        </ul>
+                    )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-sm font-medium mb-1">HSN Code</label><input type="text" value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div>
                     <div>
@@ -1109,6 +1235,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
 
     const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+
+    const uniqueCompanies = useMemo(() => {
+        return Array.from(new Set(products.map(p => p.company))).sort();
+    }, [products]);
 
     const handleDeleteBatch = (pid: string, bid: string) => {
         const product = products.find(p => p.id === pid);
@@ -1246,6 +1376,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 gstRates={gstRates} 
                 initialData={editingProduct || undefined}
                 isEdit={!!editingProduct}
+                existingCompanies={uniqueCompanies}
             />
             
             {printingProduct && (

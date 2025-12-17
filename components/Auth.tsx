@@ -131,7 +131,7 @@ const Auth: React.FC = () => {
             <span className="mx-2">|</span>
             Contact: <a href="tel:9890072651" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">9890072651</a>
             <span className="mx-2">|</span>
-            Visit: <a href="http://webs.msoftindia.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">webs.msoftindia.com</a>
+            Visit: <a href="http://msoftindia.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">msoftindia.com</a>
           </p>
         </div>
       </footer>
