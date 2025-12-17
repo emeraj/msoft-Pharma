@@ -188,32 +188,33 @@ const PrintBarcodeModal: React.FC<{ isOpen: boolean; onClose: () => void; produc
                         display: flex;
                         flex-direction: column;
                         align-items: center;
-                        justify-content: center;
+                        justify-content: space-evenly;
                         text-align: center;
                         overflow: hidden;
                         page-break-inside: avoid;
-                        /* Optional border for preview, most thermal printers ignore page breaks without content flow, 
-                           but page-break-after helps */
                         page-break-after: always;
+                        padding: 1mm 0;
+                        box-sizing: border-box;
                     }
                     .name {
-                        font-size: 10px;
+                        font-size: 9px;
                         font-weight: bold;
                         white-space: nowrap;
                         overflow: hidden;
                         text-overflow: ellipsis;
                         width: 48mm;
-                        margin-bottom: 1px;
                         text-transform: uppercase;
+                        line-height: 1;
                     }
                     .price {
-                        font-size: 10px;
+                        font-size: 9px;
                         font-weight: bold;
-                        margin-top: 1px;
+                        line-height: 1;
                     }
                     svg {
-                        width: 40mm;
-                        height: 10mm;
+                        width: 95%;
+                        height: auto;
+                        max-height: 15mm;
                         display: block;
                     }
                 </style>
@@ -227,10 +228,12 @@ const PrintBarcodeModal: React.FC<{ isOpen: boolean; onClose: () => void; produc
                             jsbarcode-value="${barcodeValue}"
                             jsbarcode-textmargin="0"
                             jsbarcode-fontoptions="bold"
-                            jsbarcode-height="30"
-                            jsbarcode-width="1"
+                            jsbarcode-height="45"
+                            jsbarcode-width="2"
                             jsbarcode-displayValue="true"
-                            jsbarcode-fontSize="10"
+                            jsbarcode-fontSize="14"
+                            jsbarcode-marginTop="0"
+                            jsbarcode-marginBottom="0"
                         ></svg>
                         <div class="price">MRP: ₹${mrp.toFixed(2)}</div>
                     </div>
