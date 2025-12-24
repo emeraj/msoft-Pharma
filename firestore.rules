@@ -1,64 +1,83 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Check if the authenticated user is the owner of the data path
+    // --- GLOBAL HELPERS ---
+    
+    // Check if the user is the primary owner of this specific data silo (The Admin)
     function isOwner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }
     
-    // Check if the authenticated user is a registered operator for the owner (userId)
-    // Matches if a document exists in the owner's subUsers collection with the operator's UID
-    function isOperator(userId) {
-      return request.auth != null && exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid));
+    // Check if the user is the designated Super Admin (System Manager)
+    function isSuperAdmin() {
+      return request.auth != null && 
+             request.auth.token.email != null && 
+             request.auth.token.email.lower() == 'emeraj@gmail.com';
+    }
+    
+    // Check if the current user is an authorized staff member (Operator) for a specific Shop Owner
+    function isStaff(userId) {
+      return request.auth != null && 
+             exists(/databases/$(database)/documents/users/$(userId)/subUsers/$(request.auth.uid));
     }
 
-    // 1. User Mappings
-    // Used to map an Operator UID to their Owner UID
+    // --- 1. USER REGISTRY (userMappings) ---
+    // Critical for resolving multi-user logic and Super Admin dashboard
     match /userMappings/{mappingId} {
-      allow read: if request.auth != null && request.auth.uid == mappingId;
-      allow write: if request.auth != null; 
+      // Super Admin needs to perform collection-wide queries (list) and individual updates (get/write)
+      allow read, write: if isSuperAdmin();
+
+      // Standard users can read their own routing record to identify their ownerId and role
+      allow read: if request.auth != null && (
+        request.auth.uid == mappingId || 
+        (resource != null && resource.data.ownerId == request.auth.uid)
+      );
+
+      // Users create their own mapping on first signup
+      // Admins can manage mapping records of staff they create/delete
+      allow write: if request.auth != null && (
+        request.auth.uid == mappingId || 
+        (request.resource != null && request.resource.data.ownerId == request.auth.uid) ||
+        (resource != null && resource.data.ownerId == request.auth.uid)
+      );
     }
 
-    // 2. User Data Scope
+    // --- 2. SHOP DATA SILOS (users/{userId}) ---
+    // All business data is partitioned by the Admin's UID (userId).
     match /users/{userId} {
       
-      // Admin/Owner Collections (Protected Config)
+      // Allow general read of the root shop folder for designated parties
+      allow read: if isOwner(userId) || isStaff(userId) || isSuperAdmin();
+
+      // Staff (Operator) Management
+      // Only the Shop Owner or Super Admin can manage the subUsers list
       match /subUsers/{subUserId} {
-        // Owner can manage operators. Operators can read their own record (to check permissions).
-        allow read: if isOwner(userId) || (request.auth != null && request.auth.uid == subUserId);
-        allow write: if isOwner(userId);
+        allow read: if isOwner(userId) || (request.auth != null && request.auth.uid == subUserId) || isSuperAdmin();
+        allow write: if isOwner(userId) || isSuperAdmin();
       }
       
+      // Configuration & Profile (Shop Name, Printing Settings, Subscription status, etc.)
+      // Staff can read settings for operational flow, but only Owner/SuperAdmin can edit settings or subscription info
       match /companyProfile/{document=**} {
-        allow read: if isOwner(userId) || isOperator(userId);
-        allow write: if isOwner(userId);
+        allow read: if isOwner(userId) || isStaff(userId) || isSuperAdmin();
+        allow write: if isOwner(userId) || isSuperAdmin();
       }
-      
       match /systemConfig/{document=**} {
-        allow read: if isOwner(userId) || isOperator(userId);
-        allow write: if isOwner(userId);
+        allow read: if isOwner(userId) || isStaff(userId) || isSuperAdmin();
+        allow write: if isOwner(userId) || isSuperAdmin();
       }
-      
       match /gstRates/{document=**} {
-        allow read: if isOwner(userId) || isOperator(userId);
-        allow write: if isOwner(userId);
+        allow read: if isOwner(userId) || isStaff(userId) || isSuperAdmin();
+        allow write: if isOwner(userId) || isSuperAdmin();
       }
 
-      // Operational Collections (Read/Write for both Owner and Operator)
-      // Granular permissions (e.g., canBill, canInventory) are enforced in the UI Application Logic.
-      // Firestore rules here provide the data-level access to the store for valid team members.
-      
-      match /products/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /bills/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /purchases/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /suppliers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /payments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /companies/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /customers/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /customerPayments/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
-      match /salesmen/{document=**} { allow read, write: if isOwner(userId) || isOperator(userId); }
+      // Operational Collections (Daily Business Activities)
+      // products, bills, purchases, suppliers, payments, customers, salesmen, customerPayments, companies
+      // Both Owners and their authorized Staff have full CRUD permissions for business operations.
+      match /{collectionName}/{document=**} {
+        allow read, write: if isOwner(userId) || isStaff(userId) || isSuperAdmin();
+      }
     }
   }
 }

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
@@ -18,6 +19,7 @@ import CompanyWiseSale from './components/CompanyWiseSale';
 import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 import ChequePrint from './components/ChequePrint';
 import SalesDashboard from './components/SalesDashboard';
+import SubscriptionAdmin from './components/SubscriptionAdmin';
 import type { 
   AppView, Product, Bill, Purchase, Supplier, Customer, CustomerPayment, 
   Payment, CompanyProfile, SystemConfig, GstRate, Company, UserPermissions, 
@@ -73,8 +75,6 @@ function App() {
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
   const [currentLedgerSupplierId, setCurrentLedgerSupplierId] = useState<string | null>(null);
-  const [isEditingFromLedger, setIsEditingFromLedger] = useState(false);
-  const [isEditingPurchaseFromLedger, setIsEditingPurchaseFromLedger] = useState(false);
 
   // Auth & User Mapping Logic
   useEffect(() => {
@@ -84,8 +84,20 @@ function App() {
         const mappingRef = doc(db, 'userMappings', currentUser.uid);
         const mappingSnap = await getDoc(mappingRef);
         
+        const basicMapping = {
+            ownerId: currentUser.uid,
+            role: 'admin',
+            email: currentUser.email || '',
+            name: currentUser.displayName || ''
+        };
+
         if (mappingSnap.exists()) {
           const mapping = mappingSnap.data() as UserMapping;
+          // Update mapping if email or name is missing (for older accounts)
+          if (!mapping.email || !mapping.name) {
+              updateDoc(mappingRef, { email: currentUser.email, name: currentUser.displayName || mapping.name || '' });
+          }
+
           if (mapping.role === 'operator') {
             setIsOperator(true);
             setDataOwnerId(mapping.ownerId);
@@ -102,7 +114,7 @@ function App() {
         } else {
           setIsOperator(false);
           setDataOwnerId(currentUser.uid);
-          setDoc(mappingRef, { ownerId: currentUser.uid, role: 'admin' });
+          setDoc(mappingRef, basicMapping);
         }
       } else {
         setDataOwnerId(null);
@@ -166,11 +178,9 @@ function App() {
     const unsubConfig = onSnapshot(doc(db, `${basePath}/systemConfig`, 'config'), (snap) => {
       if (snap.exists()) {
           const cfg = snap.data() as SystemConfig;
-          // Expiry check logic
           if (cfg.subscription?.isPremium && cfg.subscription.expiryDate) {
               const expiry = new Date(cfg.subscription.expiryDate);
               if (expiry < new Date()) {
-                  // Plan expired, silently revert status to false in UI state (DB remains for admin check)
                   cfg.subscription.isPremium = false;
                   cfg.subscription.planType = 'Free';
               }
@@ -283,7 +293,7 @@ function App() {
       } catch(e) { alert("Error"); }
   };
 
-  const handleEditBill = (bill: Bill) => { setEditingBill(bill); setIsEditingFromLedger(false); setActiveView('billing'); };
+  const handleEditBill = (bill: Bill) => { setEditingBill(bill); setActiveView('billing'); };
   const handleDeleteBill = async (bill: Bill) => {
       if (!dataOwnerId || !window.confirm("Delete?")) return;
       const batch = writeBatch(db);
@@ -322,7 +332,6 @@ function App() {
       return { id: ref.id, ...custData, balance: custData.openingBalance || 0 };
   };
 
-  // Fix: Add handleUpdateCustomer function which was missing
   const handleUpdateCustomer = async (id: string, data: Partial<Customer>) => {
       if (!dataOwnerId) return;
       await updateDoc(doc(db, `users/${dataOwnerId}/customers`, id), data);
@@ -368,7 +377,6 @@ function App() {
                 if (!dataOwnerId) return null;
                 const b = writeBatch(db);
                 b.update(doc(db, `users/${dataOwnerId}/bills`, id), data);
-                // Simple stock logic (same as updateBill previously)
                 await b.commit();
                 return { id, ...data } as Bill;
             }}
@@ -462,6 +470,7 @@ function App() {
         {activeView === 'companyWiseBillWiseProfit' && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
         {activeView === 'chequePrint' && <ChequePrint systemConfig={systemConfig} onUpdateConfig={(cfg) => setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), cfg)} />}
         {activeView === 'dashboard' && <SalesDashboard bills={bills} products={products} systemConfig={systemConfig} />}
+        {activeView === 'subscriptionAdmin' && user.email === 'emeraj@gmail.com' && <SubscriptionAdmin />}
       </main>
 
       <SettingsModal

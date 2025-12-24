@@ -58,7 +58,6 @@ export interface Bill {
   paymentMode?: 'Cash' | 'Credit';
 }
 
-// New Types for Purchase Module
 export interface PurchaseLineItem {
   isNewProduct: boolean;
   productName: string;
@@ -72,7 +71,6 @@ export interface PurchaseLineItem {
   productId?: string; // Firestore document ID of existing product
   batchId?: string; // ID of the batch created by this line item
   
-  // New batch details
   batchNumber: string;
   expiryDate: string; // YYYY-MM
   quantity: number; // in strips/boxes
@@ -120,7 +118,6 @@ export interface Salesman {
   name: string;
 }
 
-// Payment from Customer
 export interface CustomerPayment {
   id: string;
   customerId: string;
@@ -131,7 +128,6 @@ export interface CustomerPayment {
   notes?: string;
 }
 
-// New type for Supplier Payments
 export interface Payment {
   id: string; // Firestore Document ID
   supplierName: string;
@@ -142,19 +138,16 @@ export interface Payment {
   remarks?: string;
 }
 
-// New type for GST Master
 export interface GstRate {
   id: string; // Firestore Document ID
   rate: number;
 }
 
 
-// New Types for Reports
-export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit' | 'salesmanReport' | 'chequePrint';
+export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit' | 'salesmanReport' | 'chequePrint' | 'subscriptionAdmin';
 
 export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
 
-// New Types for Settings
 export interface CompanyProfile {
   name: string;
   address: string;
@@ -216,14 +209,12 @@ export interface SystemConfig {
   subscription?: SubscriptionInfo;
 }
 
-// User Management Types
 export interface UserPermissions {
   canBill: boolean;
   canInventory: boolean;
   canPurchase: boolean;
   canPayment: boolean;
   canReports: boolean;
-  // Settings are always Admin only
 }
 
 export interface SubUser {
@@ -238,6 +229,8 @@ export interface SubUser {
 export interface UserMapping {
   ownerId: string;
   role: 'admin' | 'operator';
+  email: string;
+  name?: string;
 }
 
 declare global {

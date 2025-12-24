@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon, AdjustmentsIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -43,11 +43,14 @@ const ReportsDropdown: React.FC<{
   activeView: AppView;
   setActiveView: (view: AppView) => void;
   t: any;
-}> = ({ activeView, setActiveView, t }) => {
+  isSuperAdmin: boolean;
+}> = ({ activeView, setActiveView, t, isSuperAdmin }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const reportViews: ReportView[] = ['dashboard', 'daybook', 'suppliersLedger', 'customerLedger', 'salesReport', 'salesmanReport', 'companyWiseSale', 'companyWiseBillWiseProfit', 'chequePrint'];
+  if (isSuperAdmin) reportViews.push('subscriptionAdmin');
+
   const isReportsActive = reportViews.includes(activeView as ReportView);
 
   useEffect(() => {
@@ -72,6 +75,7 @@ const ReportsDropdown: React.FC<{
     companyWiseSale: t.reports.companyWiseSale,
     companyWiseBillWiseProfit: t.reports.companyWiseBillWiseProfit,
     chequePrint: t.reports.chequePrint,
+    subscriptionAdmin: 'Subscription Admin',
   };
 
   return (
@@ -117,8 +121,8 @@ const ReportsDropdown: React.FC<{
 const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout, systemConfig, userPermissions, isOperator }) => {
   const t = getTranslation(systemConfig.language);
   const isPremium = systemConfig.subscription?.isPremium || false;
+  const isSuperAdmin = user.email === 'emeraj@gmail.com';
 
-  // Helper to check permission. If admin (not operator), always true.
   const hasPermission = (perm: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[perm]);
 
   return (
@@ -143,8 +147,19 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
               {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
               {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
               {hasPermission('canPayment') && <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />}
-              {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
+              {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
             </nav>
+
+            {isSuperAdmin && (
+                <button
+                    onClick={() => setActiveView('subscriptionAdmin')}
+                    className={`p-2 rounded-full transition-colors ${activeView === 'subscriptionAdmin' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}
+                    title="Subscription Management"
+                >
+                    <AdjustmentsIcon className="h-6 w-6" />
+                </button>
+            )}
+
             {!isOperator && (
              <button
               onClick={onOpenSettings}
@@ -168,7 +183,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
             {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
             {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
             {hasPermission('canPayment') && <NavButton label={t.nav.payments} view="paymentEntry" activeView={activeView} onClick={setActiveView} icon={<CashIcon className="h-5 w-5" />} />}
-            {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
+            {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
         </nav>
       </div>
     </header>
