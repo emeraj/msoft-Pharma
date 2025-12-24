@@ -56,14 +56,62 @@ const getExpiryDate = (expiryString: string): Date => {
 };
 
 const formatStock = (stock: number, unitsPerStrip?: number): string => {
-    if (stock === 0) return '0 U';
+    const isNegative = stock < 0;
+    const absStock = Math.abs(stock);
+    
+    if (absStock === 0) return '0 U';
     if (!unitsPerStrip || unitsPerStrip <= 1) return `${stock} U`;
-    const strips = Math.floor(stock / unitsPerStrip);
-    const looseUnits = stock % unitsPerStrip;
+    
+    const strips = Math.floor(absStock / unitsPerStrip);
+    const looseUnits = absStock % unitsPerStrip;
+    
     let result = '';
     if (strips > 0) result += `${strips} S`;
     if (looseUnits > 0) result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`;
-    return result || '0 U';
+    
+    return isNegative ? `-${result}` : result;
+};
+
+const PrintLabelModal: React.FC<{ 
+    isOpen: boolean; 
+    onClose: () => void; 
+    product: Product | null; 
+    onPrint: (quantity: number) => void; 
+}> = ({ isOpen, onClose, product, onPrint }) => {
+    const [quantity, setQuantity] = useState(1);
+    
+    if (!isOpen || !product) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Print Label">
+            <div className="space-y-4">
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Product: <span className="font-bold">{product.name}</span>
+                </p>
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Number of Labels</label>
+                    <input 
+                        type="number" 
+                        min="1" 
+                        max="100" 
+                        value={quantity} 
+                        onChange={e => setQuantity(parseInt(e.target.value) || 1)} 
+                        className={inputStyle} 
+                    />
+                </div>
+                <div className="flex justify-end gap-2 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button>
+                    <button 
+                        type="button" 
+                        onClick={() => { onPrint(quantity); onClose(); }} 
+                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow"
+                    >
+                        Print
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
 };
 
 const ProductMasterView: React.FC<{ 
@@ -74,6 +122,7 @@ const ProductMasterView: React.FC<{
     t: any 
 }> = ({ products, systemConfig, onEdit, onDelete, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
     const isRetail = systemConfig.softwareMode === 'Retail';
     
     const filtered = useMemo(() => 
@@ -84,7 +133,7 @@ const ProductMasterView: React.FC<{
         ).sort((a,b) => a.name.localeCompare(b.name))
     , [products, searchTerm]);
 
-    const handlePrintLabel = (product: Product) => {
+    const handlePrintLabels = (product: Product, quantity: number) => {
         const barcodeValue = product.barcode || '00000000';
         const mrp = product.batches[0]?.mrp?.toFixed(2) || '0.00';
         
@@ -100,21 +149,25 @@ const ProductMasterView: React.FC<{
                             body { 
                                 margin: 0; 
                                 padding: 0; 
-                                display: flex; 
-                                flex-direction: column; 
-                                align-items: center; 
-                                justify-content: center; 
-                                height: 25mm; 
-                                width: 50mm;
                                 font-family: Arial, sans-serif;
-                                overflow: hidden;
                                 background: white;
+                            }
+                            .label-container {
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                height: 25mm;
+                                width: 50mm;
+                                box-sizing: border-box;
+                                page-break-after: always;
+                                overflow: hidden;
                             }
                             .name { 
                                 font-size: 11pt; 
                                 font-weight: bold; 
                                 text-transform: uppercase; 
-                                margin-bottom: 2px;
+                                margin-bottom: 1px;
                                 text-align: center;
                                 width: 95%;
                                 white-space: nowrap;
@@ -122,13 +175,9 @@ const ProductMasterView: React.FC<{
                                 text-overflow: ellipsis;
                                 color: black;
                             }
-                            #barcode-container {
+                            .barcode-svg {
                                 width: 90%;
-                                display: flex;
-                                justify-content: center;
-                            }
-                            #barcode {
-                                width: 100%;
+                                max-height: 40px;
                             }
                             .price { 
                                 font-size: 14pt; 
@@ -140,24 +189,28 @@ const ProductMasterView: React.FC<{
                         </style>
                     </head>
                     <body>
-                        <div class="name">${product.name}</div>
-                        <div id="barcode-container">
-                            <svg id="barcode"></svg>
-                        </div>
-                        <div class="price">MRP: ₹${mrp}</div>
+                        ${Array(quantity).fill(0).map((_, i) => `
+                            <div class="label-container">
+                                <div class="name">${product.name}</div>
+                                <svg id="barcode-${i}" class="barcode-svg"></svg>
+                                <div class="price">MRP: ₹${mrp}</div>
+                            </div>
+                        `).join('')}
                         <script>
                             window.onload = function() {
                                 try {
-                                    JsBarcode("#barcode", "${barcodeValue}", {
-                                        format: "CODE128",
-                                        width: 1.8,
-                                        height: 35,
-                                        displayValue: true,
-                                        fontSize: 10,
-                                        font: "Arial",
-                                        margin: 0,
-                                        textMargin: 0
-                                    });
+                                    for (let i = 0; i < ${quantity}; i++) {
+                                        JsBarcode("#barcode-" + i, "${barcodeValue}", {
+                                            format: "CODE128",
+                                            width: 1.8,
+                                            height: 35,
+                                            displayValue: true,
+                                            fontSize: 10,
+                                            font: "Arial",
+                                            margin: 0,
+                                            textMargin: 0
+                                        });
+                                    }
                                     setTimeout(() => {
                                         window.print();
                                         window.close();
@@ -224,7 +277,7 @@ const ProductMasterView: React.FC<{
                                     <div className="flex justify-center items-center gap-3">
                                         {isRetail && p.barcode && (
                                             <button 
-                                                onClick={() => handlePrintLabel(p)} 
+                                                onClick={() => setPrintingProduct(p)} 
                                                 className="p-1 text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 transition-colors" 
                                                 title="Print Professional Barcode Label"
                                             >
@@ -257,126 +310,216 @@ const ProductMasterView: React.FC<{
                     </div>
                 )}
             </div>
+
+            <PrintLabelModal 
+                isOpen={!!printingProduct} 
+                onClose={() => setPrintingProduct(null)} 
+                product={printingProduct} 
+                onPrint={(qty) => printingProduct && handlePrintLabels(printingProduct, qty)} 
+            />
         </Card>
     );
 };
 
-const ProductImportModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    onDownloadTemplate: () => void;
-}> = ({ isOpen, onClose, onImport, onDownloadTemplate }) => {
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Import Products">
-            <div className="space-y-6">
-                <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                    <h4 className="text-indigo-900 dark:text-indigo-200 font-bold mb-2">Instructions</h4>
-                    <ul className="text-sm text-indigo-700 dark:text-indigo-300 list-disc pl-5 space-y-1">
-                        <li>Download the CSV template below.</li>
-                        <li>Fill in your product details.</li>
-                        <li>Save and upload the file to bulk import items.</li>
-                    </ul>
-                </div>
-                <div className="flex flex-col gap-4">
-                    <button onClick={onDownloadTemplate} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
-                        <DownloadIcon className="h-5 w-5" /> Download Template
-                    </button>
-                    <div className="relative">
-                        <input 
-                            type="file" 
-                            accept=".csv" 
-                            onChange={onImport} 
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                        />
-                        <div className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
-                            <UploadIcon className="h-5 w-5" /> Import CSV File
-                        </div>
-                    </div>
-                </div>
-                <div className="flex justify-end pt-4 border-t dark:border-slate-700">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-300 transition-colors">Close</button>
-                </div>
-            </div>
-        </Modal>
-    );
-};
+const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], t: any }> = ({ products, purchases, bills, t }) => {
+    const [selectedCompany, setSelectedCompany] = useState('All');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
-const CompanyWiseStockView: React.FC<{ products: Product[], t: any }> = ({ products, t }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    
-    const companyData = useMemo(() => {
-        const map = new Map<string, { company: string, totalValue: number, itemCount: number }>();
-        
+    const companies = useMemo(() => {
+        return ['All', ...new Set(products.map(p => p.company))].sort();
+    }, [products]);
+
+    const detailedStockData = useMemo(() => {
+        const start = fromDate ? new Date(fromDate) : null;
+        if (start) start.setHours(0, 0, 0, 0);
+        const end = toDate ? new Date(toDate) : new Date();
+        end.setHours(23, 59, 59, 999);
+
+        const rows: any[] = [];
+
         products.forEach(p => {
-            const totalValue = p.batches.reduce((sum, b) => {
-                const units = p.unitsPerStrip || 1;
-                return sum + (b.stock * (b.purchasePrice / units));
-            }, 0);
+            if (selectedCompany !== 'All' && p.company !== selectedCompany) return;
 
-            const current = map.get(p.company) || { company: p.company, totalValue: 0, itemCount: 0 };
-            current.totalValue += totalValue;
-            current.itemCount += 1;
-            map.set(p.company, current);
+            const unitsPerStrip = p.unitsPerStrip || 1;
+
+            // Group movements by batch number to avoid duplication in the report view
+            const batchMap = new Map<string, {
+                batchNumber: string;
+                expiryDate: string;
+                opening: number;
+                purchased: number;
+                sold: number;
+                purchasePrice: number;
+                batchIds: Set<string>;
+            }>();
+
+            // Initialize from current batch objects
+            p.batches.forEach(b => {
+                const existing = batchMap.get(b.batchNumber) || {
+                    batchNumber: b.batchNumber,
+                    expiryDate: b.expiryDate,
+                    opening: 0,
+                    purchased: 0,
+                    sold: 0,
+                    purchasePrice: b.purchasePrice,
+                    batchIds: new Set<string>()
+                };
+                existing.batchIds.add(b.id);
+                batchMap.set(b.batchNumber, existing);
+            });
+
+            // Iterate through batch groupings to calculate movements
+            batchMap.forEach((agg, bName) => {
+                let opening = 0;
+                let purchased = 0;
+                let sold = 0;
+
+                // 1. Calculate Purchased in period (Match by batch name)
+                purchases.forEach(pur => {
+                    const purDate = new Date(pur.invoiceDate);
+                    pur.items.forEach(item => {
+                        const isMatch = item.productId === p.id && item.batchNumber === bName;
+                        if (!isMatch) return;
+
+                        const qtyInUnits = item.quantity * unitsPerStrip;
+                        if (purDate < (start || new Date(0))) {
+                            opening += qtyInUnits;
+                        } else if (purDate <= end) {
+                            purchased += qtyInUnits;
+                        }
+                    });
+                });
+
+                // 2. Calculate Sold in period (Match by batch ID)
+                bills.forEach(bill => {
+                    const billDate = new Date(bill.date);
+                    bill.items.forEach(item => {
+                        const isMatch = item.productId === p.id && agg.batchIds.has(item.batchId);
+                        if (!isMatch) return;
+
+                        if (billDate < (start || new Date(0))) {
+                            opening -= item.quantity;
+                        } else if (billDate <= end) {
+                            sold += item.quantity;
+                        }
+                    });
+                });
+
+                const closing = opening + purchased - sold;
+                const valuation = closing * (agg.purchasePrice / unitsPerStrip);
+
+                if (purchased !== 0 || sold !== 0 || closing !== 0 || opening !== 0) {
+                    rows.push({
+                        productId: p.id,
+                        productName: p.name,
+                        company: p.company,
+                        batchNumber: agg.batchNumber,
+                        expiryDate: agg.expiryDate,
+                        opening,
+                        purchased,
+                        sold,
+                        closing,
+                        valuation,
+                        unitsPerStrip
+                    });
+                }
+            });
         });
 
-        return Array.from(map.values())
-            .filter(i => i.company.toLowerCase().includes(searchTerm.toLowerCase()))
-            .sort((a, b) => a.company.localeCompare(b.company));
-    }, [products, searchTerm]);
-
-    const totalValuation = useMemo(() => companyData.reduce((sum, item) => sum + item.totalValue, 0), [companyData]);
+        return rows.sort((a, b) => a.productName.localeCompare(b.productName));
+    }, [products, purchases, bills, fromDate, toDate, selectedCompany]);
 
     const handleExport = () => {
-        exportToCsv('company_wise_stock', companyData.map(item => ({
-            'Company': item.company,
-            'Total Items': item.itemCount,
-            'Valuation (Purchase)': item.totalValue.toFixed(2)
+        exportToCsv('company_wise_stock_detailed', detailedStockData.map(d => ({
+            'Product': d.productName,
+            'Company': d.company,
+            'Batch': d.batchNumber,
+            'Expiry': d.expiryDate,
+            'Opening': d.opening,
+            'Purchased': d.purchased,
+            'Sold': d.sold,
+            'Closing': d.closing,
+            'Value': d.valuation.toFixed(2)
         })));
     };
 
     return (
-        <Card title={t.inventory.companyStock}>
-            <div className="flex flex-col sm:flex-row gap-4 mb-4 justify-between items-end">
-                <div className="relative flex-grow max-w-md">
-                    <input 
-                        type="text" 
-                        placeholder="Search company..." 
-                        value={searchTerm} 
-                        onChange={e => setSearchTerm(e.target.value)} 
-                        className={`${inputStyle} pl-10`} 
-                    />
-                    <SearchIcon className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+        <Card title="Company Wise Stock">
+            <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
+                <div className="w-full md:w-1/3">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Company</label>
+                    <select 
+                        value={selectedCompany} 
+                        onChange={e => setSelectedCompany(e.target.value)} 
+                        className={inputStyle}
+                    >
+                        {companies.map(c => <option key={c} value={c}>{c === 'All' ? 'All Companies' : c}</option>)}
+                    </select>
                 </div>
-                <div className="flex items-center gap-4">
-                    <div className="bg-indigo-50 dark:bg-indigo-900/30 px-4 py-2 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                        <span className="text-sm font-semibold text-indigo-800 dark:text-indigo-300">Total Value:</span>
-                        <span className="ml-2 text-lg font-bold text-indigo-900 dark:text-indigo-100">₹{totalValuation.toFixed(2)}</span>
+                <div className="flex gap-2 w-full md:w-auto">
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">From</label>
+                        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} />
                     </div>
-                    <button onClick={handleExport} className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-green-700">
-                        <DownloadIcon className="h-5 w-5" /> Export
-                    </button>
+                    <div className="flex-1">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">To</label>
+                        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
+                    </div>
                 </div>
+                <button onClick={handleExport} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-green-700 shadow-md">
+                    <DownloadIcon className="h-5 w-5" /> Export to Excel
+                </button>
             </div>
-            <div className="overflow-x-auto border dark:border-slate-700 rounded-lg">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs font-bold">
+
+            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                <table className="w-full text-[13px] text-left border-collapse">
+                    <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider sticky top-0 z-10">
                         <tr>
-                            <th className="px-4 py-3">Company Name</th>
-                            <th className="px-4 py-3 text-center">No. of Items</th>
-                            <th className="px-4 py-3 text-right">Total Stock Value</th>
+                            <th className="px-4 py-4">PRODUCT / COMPANY</th>
+                            <th className="px-4 py-4">BATCH / EXPIRY</th>
+                            <th className="px-4 py-4 text-center">OPENING</th>
+                            <th className="px-4 py-4 text-center">PURCHASED</th>
+                            <th className="px-4 py-4 text-center">SOLD</th>
+                            <th className="px-4 py-4 text-center">CLOSING</th>
+                            <th className="px-4 py-4 text-right">VALUE</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {companyData.map((item, idx) => (
-                            <tr key={idx} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
-                                <td className="px-4 py-3 font-medium text-slate-900 dark:text-white uppercase">{item.company}</td>
-                                <td className="px-4 py-3 text-center font-bold text-slate-500">{item.itemCount}</td>
-                                <td className="px-4 py-3 text-right font-black text-indigo-600 dark:text-indigo-400">₹{item.totalValue.toFixed(2)}</td>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                        {detailedStockData.map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                <td className="px-4 py-3">
+                                    <div className="font-bold text-slate-800 dark:text-slate-200">{row.productName}</div>
+                                    <div className="text-[10px] text-slate-400 uppercase">{row.company}</div>
+                                </td>
+                                <td className="px-4 py-3">
+                                    <div className="font-mono text-slate-700 dark:text-slate-300">{row.batchNumber}</div>
+                                    <div className="text-[10px] text-slate-500 italic">{row.expiryDate}</div>
+                                </td>
+                                <td className="px-4 py-3 text-center font-medium text-slate-500">
+                                    {formatStock(row.opening, row.unitsPerStrip)}
+                                </td>
+                                <td className="px-4 py-3 text-center text-teal-600 dark:text-teal-400 font-bold">
+                                    {row.purchased > 0 ? formatStock(row.purchased, row.unitsPerStrip) : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-center text-rose-500 font-bold">
+                                    {row.sold > 0 ? formatStock(row.sold, row.unitsPerStrip) : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/40">
+                                    {formatStock(row.closing, row.unitsPerStrip)}
+                                </td>
+                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">
+                                    ₹{row.valuation.toFixed(2)}
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
+                {detailedStockData.length === 0 && (
+                    <div className="py-20 text-center text-slate-400 italic bg-white dark:bg-slate-800">
+                        No transactions found for the selected criteria.
+                    </div>
+                )}
             </div>
         </Card>
     );
@@ -687,6 +830,61 @@ const AddEditProductModal: React.FC<{
     );
 };
 
+const ProductImportModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
+    onDownloadTemplate: () => void;
+}> = ({ isOpen, onClose, onImport, onDownloadTemplate }) => {
+    if (!isOpen) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Import Products">
+            <div className="space-y-6">
+                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                    <h4 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-2">Instructions</h4>
+                    <ul className="text-xs text-indigo-700 dark:text-indigo-400 space-y-1 list-disc pl-4">
+                        <li>Download the CSV template below.</li>
+                        <li>Fill in your product details in the specified format.</li>
+                        <li>Upload the saved file to import products.</li>
+                    </ul>
+                </div>
+                
+                <div className="flex flex-col gap-4">
+                    <button 
+                        onClick={onDownloadTemplate}
+                        className="flex items-center justify-center gap-2 w-full py-3 bg-white dark:bg-slate-700 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
+                    >
+                        <DownloadIcon className="h-5 w-5 text-indigo-500" />
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">Download CSV Template</span>
+                    </button>
+
+                    <div className="relative">
+                        <input 
+                            type="file" 
+                            accept=".csv" 
+                            onChange={onImport}
+                            className="hidden" 
+                            id="csv-import-input"
+                        />
+                        <label 
+                            htmlFor="csv-import-input"
+                            className="flex items-center justify-center gap-2 w-full py-3 bg-indigo-600 text-white rounded-xl font-bold cursor-pointer hover:bg-indigo-700 shadow-lg"
+                        >
+                            <UploadIcon className="h-5 w-5" />
+                            Select CSV File to Upload
+                        </label>
+                    </div>
+                </div>
+                
+                <div className="flex justify-end pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Close</button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 type InventoryTab = 'productMaster' | 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearExpiry';
 
 const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
@@ -773,7 +971,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 {activeTab === 'all' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'batch' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
-                {activeTab === 'company' && <CompanyWiseStockView products={products} t={t} />}
+                {activeTab === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} t={t} />}
                 {activeTab === 'expired' && <ExpiredStockView products={products} t={t} />}
                 {activeTab === 'nearExpiry' && <NearExpiryView products={products} t={t} />}
             </div>
