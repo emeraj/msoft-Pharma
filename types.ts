@@ -5,7 +5,8 @@ export interface Batch {
   expiryDate: string; // YYYY-MM format
   stock: number; // Total stock in smallest unit (e.g., tablets)
   openingStock?: number; // Initial stock quantity
-  mrp: number; // MRP per strip/box
+  mrp: number; // Printed MRP per strip/box
+  saleRate?: number; // Actual Selling Price (if different from MRP)
   purchasePrice: number;
 }
 
@@ -76,6 +77,7 @@ export interface PurchaseLineItem {
   expiryDate: string; // YYYY-MM
   quantity: number; // in strips/boxes
   mrp: number; // MRP per strip/box
+  saleRate?: number;
   purchasePrice: number; // per strip/box
   discount?: number; // Discount percentage
 }

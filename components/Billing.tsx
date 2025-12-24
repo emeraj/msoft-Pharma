@@ -128,7 +128,7 @@ const MatchResolutionModal: React.FC<{
                                     <p className="font-bold text-slate-800 dark:text-white group-hover:text-indigo-600">{c.product.name}</p>
                                     <p className="text-xs text-slate-500">{c.product.company}</p>
                                 </div>
-                                <span className="text-xs font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">₹{c.batch.mrp.toFixed(2)}</span>
+                                <span className="text-xs font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">₹{(c.batch.saleRate || c.batch.mrp).toFixed(2)}</span>
                             </div>
                             <div className="mt-2 text-[10px] text-slate-400 flex justify-between">
                                 <span>Batch: {c.batch.batchNumber}</span>
@@ -333,12 +333,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     } 
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id); 
     const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; 
+    
+    // Determine selling price: Use saleRate if available, else MRP
+    const sellingPrice = batch.saleRate || batch.mrp;
+    
     if (existingItem) { 
         if (unitsPerStrip <= 1) { updateCartItem(existingItem.batchId, 0, existingItem.looseQty + 1); } 
         else { const newTotalUnits = existingItem.quantity + 1; const newStripQty = Math.floor(newTotalUnits / unitsPerStrip); const newLooseQty = newTotalUnits % unitsPerStrip; updateCartItem(existingItem.batchId, newStripQty, newLooseQty); } 
     } else { 
-        const unitPrice = batch.mrp / unitsPerStrip; 
-        const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, stripQty: 0, looseQty: 1, quantity: 1, mrp: batch.mrp, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
+        const unitPrice = sellingPrice / unitsPerStrip; 
+        const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
         lastAddedBatchIdRef.current = newItem.batchId; 
         setCart(currentCart => [...currentCart, newItem]); 
     } 
@@ -419,7 +423,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     return products.filter(p => {
         const nameMatch = p.name.toLowerCase().includes(mainTerm) || (!isPharmaMode && p.barcode && p.barcode.includes(mainTerm));
         if (!nameMatch) return false;
-        if (maybeMRP !== null) return p.batches.some(b => b.stock > 0 && Math.abs(b.mrp - maybeMRP) < 2);
+        if (maybeMRP !== null) return p.batches.some(b => b.stock > 0 && Math.abs((b.saleRate || b.mrp) - maybeMRP) < 2);
         return p.batches.some(b => b.stock > 0);
     }).slice(0, 10); 
   }, [searchTerm, products, isPharmaMode]);
@@ -429,7 +433,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
       return searchResults.map(p => {
           let batches = p.batches.filter(b => b.stock > 0);
-          if (maybeMRP !== null) batches.sort((a, b) => Math.abs(a.mrp - maybeMRP) - Math.abs(b.mrp - maybeMRP));
+          if (maybeMRP !== null) batches.sort((a, b) => Math.abs((a.saleRate || a.mrp) - maybeMRP) - Math.abs((b.saleRate || b.mrp) - maybeMRP));
           else batches.sort((a, b) => isPharmaMode ? (getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()) : 0);
           return batches;
       }); 
@@ -496,7 +500,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                     <input ref={searchInputRef} type="text" placeholder={isPharmaMode ? "Search Name or Part No (e.g. Paracet 40)" : "Search Name or Barcode"} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={handleKeyDown} className={`${inputStyle} w-full px-4 py-3 text-lg font-medium`} />
                     {searchResults.length > 0 && searchTerm && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                        <ul>{searchResults.map((product, productIndex) => (navigableBatchesByProduct[productIndex]?.length > 0 && <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0"><div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center"><span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span></div><ul className="pl-4 pb-2">{navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; return (<li key={batch.id} ref={isActive ? activeItemRef : null} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}><div>{isPharmaMode && (<><span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span><span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span></>)}</div><div className="flex items-center gap-4"><span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span><span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span></div></li>); })}</ul></li>))}</ul></div>)}
+                        <ul>{searchResults.map((product, productIndex) => (navigableBatchesByProduct[productIndex]?.length > 0 && <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0"><div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center"><span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span></div><ul className="pl-4 pb-2">{navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; return (<li key={batch.id} ref={isActive ? activeItemRef : null} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}><div>{isPharmaMode && (<><span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span><span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span></>)}</div><div className="flex items-center gap-4"><span className="text-slate-800 dark:text-slate-200">Rate: <span className="font-medium">₹{(batch.saleRate || batch.mrp).toFixed(2)}</span></span><span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span></div></li>); })}</ul></li>))}</ul></div>)}
                 </div>
                 <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-all flex flex-col items-center justify-center min-w-[80px] border-2 border-indigo-200" title="Scan Part No from Pack">
                     <CameraIcon className="h-6 w-6" />
@@ -516,7 +520,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         <Card title="Bill Summary" className="sticky top-20">
             <div className="space-y-4">
                 <div className={`pb-4 border-b dark:border-slate-700 ${systemConfig.maintainCustomerLedger && systemConfig.enableSalesman ? 'grid grid-cols-2 gap-4' : ''}`}>
-                    {systemConfig.maintainCustomerLedger && (<div><label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Payment Mode</label><div className="flex gap-2 flex-wrap"><label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="paymentMode" value="Cash" checked={paymentMode === 'Cash'} onChange={() => setPaymentMode('Cash')} className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full" /> <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span></label><label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="paymentMode" value="Credit" checked={paymentMode === 'Credit'} onChange={() => setPaymentMode('Credit')} className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full" /> <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span></label></div></div>)}
+                    {systemConfig.maintainCustomerLedger && (<div><label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Payment Mode</label><div className="flex gap-2 flex-wrap"><label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="paymentMode" value="Cash" checked={paymentMode === 'Cash'} onChange={() => setPaymentMode('Cash'} className="h-4 w-4 text-green-600 focus:ring-green-500 border-slate-300 rounded-full" /> <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Cash</span></label><label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="paymentMode" value="Credit" checked={paymentMode === 'Credit'} onChange={() => setPaymentMode('Credit'} className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded-full" /> <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Credit</span></label></div></div>)}
                     {systemConfig.enableSalesman && (<div><label className="block text-sm font-semibold text-slate-800 dark:text-slate-200 mb-2">Salesman</label><div className="flex gap-1"><select value={selectedSalesmanId} onChange={(e) => setSelectedSalesmanId(e.target.value)} className="w-full p-2 bg-slate-100 dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md text-sm"><option value="">Select</option>{salesmen?.map(s => (<option key={s.id} value={s.id}>{s.name}</option>))}</select><button onClick={() => setAddSalesmanModalOpen(true)} className="p-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors" title="Add Salesman"><PlusIcon className="h-4 w-4" /></button></div></div>)}
                 </div>
                 <div className="relative"><label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label><div className="flex gap-2"><div className="relative flex-grow"><input type="text" id="customerName" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); }} onFocus={() => setShowCustomerSuggestions(true)} onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} autoComplete="off" />{showCustomerSuggestions && customerSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">{customerSuggestions.map(customer => (<li key={customer.id} onClick={() => handleSelectCustomer(customer)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200">{customer.name} <span className="text-xs text-slate-500">({customer.phone || 'No Phone'})</span></li>))}</ul>)}</div><button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors" title="Add New Customer"><PlusIcon className="h-5 w-5" /></button></div>{selectedCustomer && (<div className="mt-1 text-xs text-green-600 dark:text-green-400 font-medium flex items-center gap-1"><UserCircleIcon className="h-3 w-3" /> Selected: {selectedCustomer.name}</div>)}</div>
@@ -560,7 +564,7 @@ const EditBillItemModal: React.FC<{ isOpen: boolean; onClose: () => void; item: 
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">MRP</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Selling Price / MRP</label>
                         <input type="number" value={formState.mrp} onChange={e => setFormState({...formState, mrp: parseFloat(e.target.value) || 0})} className={`${modalInputStyle} ${!isMrpEditable ? 'opacity-70' : ''}`} readOnly={!isMrpEditable} />
                     </div>
                     {isPharmaMode && unitsPerStrip > 1 ? (
