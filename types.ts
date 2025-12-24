@@ -190,6 +190,13 @@ export interface ChequeLayout {
   acPayee: ChequeLayoutField;
 }
 
+export interface SubscriptionInfo {
+  isPremium: boolean;
+  planType: 'Free' | 'Basic' | 'Premium' | 'Enterprise';
+  expiryDate?: string; // ISO String
+  startDate?: string; // ISO String
+}
+
 export interface SystemConfig {
   softwareMode: 'Retail' | 'Pharma';
   invoicePrintingFormat: 'A4' | 'A5' | 'Thermal'; // Kept for backward compatibility or fallback
@@ -205,7 +212,8 @@ export interface SystemConfig {
   chequeLayout?: ChequeLayout;
   aiInvoiceUsageCount?: number;
   aiInvoiceQuota?: number; // Configurable limit for AI usage
-  isPremium?: boolean;
+  isPremium?: boolean; // Legacy
+  subscription?: SubscriptionInfo;
 }
 
 // User Management Types

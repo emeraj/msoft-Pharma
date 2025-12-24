@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -116,6 +116,7 @@ const ReportsDropdown: React.FC<{
 
 const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettings, user, onLogout, systemConfig, userPermissions, isOperator }) => {
   const t = getTranslation(systemConfig.language);
+  const isPremium = systemConfig.subscription?.isPremium || false;
 
   // Helper to check permission. If admin (not operator), always true.
   const hasPermission = (perm: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[perm]);
@@ -127,7 +128,10 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                <CloudIcon className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
-               <span>Cloud-TAG</span>
+               <span className="flex items-center gap-2">
+                Cloud-TAG 
+                {isPremium && <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm font-extrabold uppercase tracking-tighter">PRO</span>}
+               </span>
             </h1>
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
