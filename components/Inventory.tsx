@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
 
 interface InventoryProps {
@@ -1235,6 +1235,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     const [searchTerm, setSearchTerm] = useState('');
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
@@ -1271,6 +1272,96 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
         await onAddProduct(productData);
     };
 
+    const handleImportCsv = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target?.result as string;
+            if (!text) return;
+
+            const rows = text.split('\n').filter(row => row.trim().length > 0);
+            if (rows.length < 2) {
+                alert("CSV file seems empty or missing header.");
+                return;
+            }
+
+            // Simple CSV parser
+            const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
+            
+            // Expected Fields: barcode/partno, name, mrp, purchase_rate, sale_rate, company
+            const barcodeIdx = headers.findIndex(h => h.includes('barcode') || h.includes('part'));
+            const nameIdx = headers.findIndex(h => h.includes('name'));
+            const mrpIdx = headers.findIndex(h => h.includes('mrp') || h.includes('sale'));
+            const purchaseIdx = headers.findIndex(h => h.includes('purchase'));
+            const companyIdx = headers.findIndex(h => h.includes('company'));
+
+            if (nameIdx === -1) {
+                alert("CSV must contain an 'Item Name' column.");
+                return;
+            }
+
+            let importedCount = 0;
+            let skippedCount = 0;
+
+            for (let i = 1; i < rows.length; i++) {
+                const cols = rows[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+                if (!cols[nameIdx]) continue;
+
+                const barcode = barcodeIdx !== -1 ? cols[barcodeIdx] : '';
+                const name = cols[nameIdx];
+                const mrp = mrpIdx !== -1 ? parseFloat(cols[mrpIdx]) || 0 : 0;
+                const purchasePrice = purchaseIdx !== -1 ? parseFloat(cols[purchaseIdx]) || 0 : 0;
+                const company = companyIdx !== -1 ? cols[companyIdx] : 'General';
+
+                // Check for duplicates in current list
+                if (barcode && products.some(p => p.barcode === barcode)) {
+                    skippedCount++;
+                    continue;
+                }
+
+                // Default initial batch for imported item
+                const initialBatch: Batch = {
+                    id: `batch_import_${Date.now()}_${i}`,
+                    batchNumber: isPharmaMode ? 'IMPORT' : 'DEFAULT',
+                    expiryDate: '2099-12',
+                    stock: 0, // Opening stock is zero on import usually
+                    mrp: mrp,
+                    purchasePrice: purchasePrice,
+                    openingStock: 0
+                };
+
+                const productData: Omit<Product, 'id'> = {
+                    name,
+                    company,
+                    hsnCode: '',
+                    gst: 0,
+                    barcode,
+                    batches: [initialBatch]
+                };
+
+                await handleAddProductWrapper(productData);
+                importedCount++;
+            }
+
+            alert(`Import Complete!\nSuccessfully added: ${importedCount}\nSkipped (Duplicates): ${skippedCount}`);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+        reader.readAsText(file);
+    };
+
+    const downloadImportTemplate = () => {
+        const headers = ["Part No or Barcode", "Item Name", "MRP", "Purchase Rate", "Company"];
+        const example = ["1001", "Paracetamol 500mg", "15.50", "10.00", "Generic Pharma"];
+        const csvContent = headers.join(',') + '\n' + example.join(',');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "product_import_template.csv";
+        link.click();
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <div className="flex flex-wrap gap-2 mb-4">
@@ -1284,78 +1375,101 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
             </div>
 
             {view === 'products' && (
-                <Card title={
-                    <div className="flex justify-between items-center">
-                        <span>Product Master</span>
-                        <button onClick={() => setAddProductOpen(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
-                            <PlusIcon className="h-4 w-4"/> {t.inventory.addProduct}
-                        </button>
-                    </div>
-                }>
-                    <div className="mb-4">
-                        <input type="text" placeholder={t.inventory.searchPlaceholder} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} />
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                            <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
-                                <tr>
-                                    <th className="px-4 py-2">Name</th>
-                                    <th className="px-4 py-2">Barcode</th>
-                                    <th className="px-4 py-2">Company</th>
-                                    <th className="px-4 py-2">GST</th>
-                                    <th className="px-4 py-2 text-right">MRP</th>
-                                    <th className="px-4 py-2 text-right">Rate</th>
-                                    <th className="px-4 py-2 text-center">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredProducts.map(p => {
-                                    // Logic for display MRP/Rate
-                                    const batches = p.batches || [];
-                                    const activeBatches = batches.filter(b => b.stock > 0);
-                                    const targetBatches = activeBatches.length > 0 ? activeBatches : batches;
-                                    // Heuristic: Max MRP as representative
-                                    const displayBatch = targetBatches.length > 0 
-                                        ? targetBatches.reduce((prev, current) => (prev.mrp > current.mrp) ? prev : current)
-                                        : null;
-
-                                    const mrpDisplay = displayBatch ? `₹${displayBatch.mrp.toFixed(2)}` : '-';
-                                    const rateDisplay = displayBatch ? `₹${displayBatch.purchasePrice.toFixed(2)}` : '-';
-
-                                    return (
-                                    <tr key={p.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                                        <td className="px-4 py-2 font-medium">
-                                            {p.name}
-                                            {isPharmaMode && p.composition && <div className="text-xs text-slate-500 dark:text-slate-400">{p.composition}</div>}
-                                        </td>
-                                        <td className="px-4 py-2 font-mono text-xs">{p.barcode || '-'}</td>
-                                        <td className="px-4 py-2">{p.company}</td>
-                                        <td className="px-4 py-2">{p.gst}%</td>
-                                        <td className="px-4 py-2 text-right">{mrpDisplay}</td>
-                                        <td className="px-4 py-2 text-right">{rateDisplay}</td>
-                                        <td className="px-4 py-2 text-center">
-                                            <div className="flex items-center justify-center gap-2">
-                                                <button 
-                                                    onClick={() => setPrintingProduct(p)} 
-                                                    className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
-                                                    title="Print Barcode Label"
-                                                >
-                                                    <BarcodeIcon className="h-4 w-4" />
-                                                </button>
-                                                <button onClick={() => setEditingProduct(p)} className="text-blue-600 hover:text-blue-800"><PencilIcon className="h-4 w-4" /></button>
-                                                <button onClick={() => onDeleteProduct(p.id)} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button>
-                                            </div>
-                                        </td>
+                <div className="space-y-4">
+                    <Card title={
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <span>Product Master</span>
+                            <div className="flex flex-wrap gap-2">
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 transition-colors"
+                                >
+                                    <UploadIcon className="h-4 w-4"/> Import Product List
+                                </button>
+                                <button 
+                                    onClick={() => setAddProductOpen(true)} 
+                                    className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 hover:bg-indigo-700 transition-colors"
+                                >
+                                    <PlusIcon className="h-4 w-4"/> {t.inventory.addProduct}
+                                </button>
+                            </div>
+                        </div>
+                    }>
+                        <div className="mb-4 flex flex-col sm:flex-row gap-4 items-center">
+                            <div className="relative flex-grow w-full">
+                                <input type="text" placeholder={t.inventory.searchPlaceholder} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} />
+                            </div>
+                            <button 
+                                onClick={downloadImportTemplate}
+                                className="text-xs text-indigo-600 hover:underline flex items-center gap-1 whitespace-nowrap"
+                            >
+                                <InformationCircleIcon className="h-3 w-3"/> Download CSV Template
+                            </button>
+                        </div>
+                        <input type="file" ref={fileInputRef} onChange={handleImportCsv} accept=".csv" className="hidden" />
+                        
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
+                                <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
+                                    <tr>
+                                        <th className="px-4 py-2">Name</th>
+                                        <th className="px-4 py-2">Barcode/Part No</th>
+                                        <th className="px-4 py-2">Company</th>
+                                        <th className="px-4 py-2">GST</th>
+                                        <th className="px-4 py-2 text-right">MRP</th>
+                                        <th className="px-4 py-2 text-right">Rate</th>
+                                        <th className="px-4 py-2 text-center">Actions</th>
                                     </tr>
-                                    );
-                                })}
-                                {filteredProducts.length === 0 && (
-                                    <tr><td colSpan={7} className="text-center py-8 text-slate-500">No products found.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
+                                </thead>
+                                <tbody>
+                                    {filteredProducts.map(p => {
+                                        // Logic for display MRP/Rate
+                                        const batches = p.batches || [];
+                                        const activeBatches = batches.filter(b => b.stock > 0);
+                                        const targetBatches = activeBatches.length > 0 ? activeBatches : batches;
+                                        // Heuristic: Max MRP as representative
+                                        const displayBatch = targetBatches.length > 0 
+                                            ? targetBatches.reduce((prev, current) => (prev.mrp > current.mrp) ? prev : current)
+                                            : null;
+
+                                        const mrpDisplay = displayBatch ? `₹${displayBatch.mrp.toFixed(2)}` : '-';
+                                        const rateDisplay = displayBatch ? `₹${displayBatch.purchasePrice.toFixed(2)}` : '-';
+
+                                        return (
+                                        <tr key={p.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
+                                            <td className="px-4 py-2 font-medium">
+                                                {p.name}
+                                                {isPharmaMode && p.composition && <div className="text-xs text-slate-500 dark:text-slate-400">{p.composition}</div>}
+                                            </td>
+                                            <td className="px-4 py-2 font-mono text-xs">{p.barcode || '-'}</td>
+                                            <td className="px-4 py-2">{p.company}</td>
+                                            <td className="px-4 py-2">{p.gst}%</td>
+                                            <td className="px-4 py-2 text-right">{mrpDisplay}</td>
+                                            <td className="px-4 py-2 text-right">{rateDisplay}</td>
+                                            <td className="px-4 py-2 text-center">
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <button 
+                                                        onClick={() => setPrintingProduct(p)} 
+                                                        className="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                                                        title="Print Barcode Label"
+                                                    >
+                                                        <BarcodeIcon className="h-4 w-4" />
+                                                    </button>
+                                                    <button onClick={() => setEditingProduct(p)} className="text-blue-600 hover:text-blue-800"><PencilIcon className="h-4 w-4" /></button>
+                                                    <button onClick={() => onDeleteProduct(p.id)} className="text-red-600 hover:text-red-800"><TrashIcon className="h-4 w-4" /></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        );
+                                    })}
+                                    {filteredProducts.length === 0 && (
+                                        <tr><td colSpan={7} className="text-center py-8 text-slate-500">No products found.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
             )}
 
             {view === 'allStock' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
