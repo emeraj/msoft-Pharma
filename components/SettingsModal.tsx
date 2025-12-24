@@ -1,8 +1,8 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon } from './icons/Icons';
+import Card from './common/Card';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
 import { collection, getDocs } from 'firebase/firestore';
@@ -18,6 +18,7 @@ interface SettingsModalProps {
   systemConfig: SystemConfig;
   onSystemConfigChange: (config: SystemConfig) => void;
   onBackupData: () => void;
+  onRestoreData?: (category: string, items: any[]) => Promise<void>;
   gstRates: GstRate[];
   onAddGstRate: (rate: number) => void;
   onUpdateGstRate: (id: string, newRate: number) => void;
@@ -26,28 +27,37 @@ interface SettingsModalProps {
 
 type SettingsTab = 'profile' | 'subscription' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language' | 'users' | 'security';
 
-const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500 transition-all";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
-const languages = [
-    { code: 'en', label: 'English' },
-    { code: 'hi', label: 'Hindi (हिंदी)' },
-    { code: 'mr', label: 'Marathi (मराठी)' },
-    { code: 'gu', label: 'Gujarati (ગુજરાતી)' },
-    { code: 'bn', label: 'Bengali (বাংলা)' },
-    { code: 'ta', label: 'Tamil (தமிழ்)' },
-    { code: 'te', label: 'Telugu (తెలుగు)' },
-    { code: 'kn', label: 'Kannada (ಕನ್ನಡ)' },
-    { code: 'ml', label: 'Malayalam (മലയാളം)' },
-    { code: 'pa', label: 'Punjabi (ਪੰਜਾਬੀ)' },
-    { code: 'or', label: 'Odia (ଓଡ଼ିଆ)' },
-    { code: 'ur', label: 'Urdu (اردو)' },
-];
-
-const LockClosedIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-  </svg>
+const ToggleRow: React.FC<{ 
+    label: string; 
+    description?: string; 
+    value: boolean; 
+    onChange: (val: boolean) => void; 
+}> = ({ label, description, value, onChange }) => (
+    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg group hover:border-indigo-300 dark:hover:border-indigo-500 transition-colors">
+        <div className="flex-grow pr-4">
+            <p className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">{label}</p>
+            {description && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{description}</p>}
+        </div>
+        <div className="flex bg-slate-200 dark:bg-slate-700 p-1 rounded-full w-32 shrink-0">
+            <button 
+                type="button"
+                onClick={() => onChange(true)}
+                className={`flex-1 py-1 text-[10px] font-black rounded-full flex items-center justify-center gap-1 transition-all ${value ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                <div className={`w-2 h-2 rounded-full border-2 border-current ${value ? 'bg-white' : ''}`}></div> YES
+            </button>
+            <button 
+                type="button"
+                onClick={() => onChange(false)}
+                className={`flex-1 py-1 text-[10px] font-black rounded-full flex items-center justify-center gap-1 transition-all ${!value ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+                <div className={`w-2 h-2 rounded-full border-2 border-current ${!value ? 'bg-white' : ''}`}></div> NO
+            </button>
+        </div>
+    </div>
 );
 
 const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => void; icon: React.ReactNode; }> = ({ label, isActive, onClick, icon }) => (
@@ -77,7 +87,6 @@ const SubscriptionTab: React.FC<{ subscription?: SubscriptionInfo; onUpgrade: ()
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Current Status Card */}
             <div className={`p-6 rounded-2xl border-2 ${isPremium ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} shadow-sm`}>
                 <div className="flex justify-between items-start">
                     <div>
@@ -91,24 +100,16 @@ const SubscriptionTab: React.FC<{ subscription?: SubscriptionInfo; onUpgrade: ()
                                 : 'You are currently using the limited free version.'}
                         </p>
                     </div>
-                    {!isPremium && (
-                        <button onClick={onUpgrade} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow-md hover:bg-indigo-700 transition-all">
-                            Upgrade Now
-                        </button>
-                    )}
                 </div>
             </div>
 
-            {/* Plan Comparison */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
                     <h5 className="font-bold text-slate-800 dark:text-slate-200 mb-3">Free Plan Includes:</h5>
                     <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                         <li className="flex items-center gap-2">✅ Standard Billing & Inventory</li>
                         <li className="flex items-center gap-2">✅ GST Reports</li>
-                        <li className="flex items-center gap-2">❌ Limited AI Invoice Entries (5 Total)</li>
-                        <li className="flex items-center gap-2">❌ Single User Only</li>
-                        <li className="flex items-center gap-2">❌ Manual Backups Only</li>
+                        <li className="flex items-center gap-2">❌ Limited AI Invoice Entries</li>
                     </ul>
                 </div>
                 <div className="p-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 shadow-lg">
@@ -116,23 +117,17 @@ const SubscriptionTab: React.FC<{ subscription?: SubscriptionInfo; onUpgrade: ()
                     <ul className="space-y-2 text-sm text-slate-800 dark:text-slate-200">
                         <li className="flex items-center gap-2">🚀 Unlimited AI Invoice Processing</li>
                         <li className="flex items-center gap-2">🚀 Multi-User (Operator) Support</li>
-                        <li className="flex items-center gap-2">🚀 Priority Support & Updates</li>
-                        <li className="flex items-center gap-2">🚀 Advance Sales Analytics</li>
                     </ul>
                 </div>
             </div>
 
-            {/* Activation Section */}
             {!isPremium && (
                 <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 text-center">
                     <h5 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4">Activation Process</h5>
                     <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto mb-4 border p-2 rounded-lg bg-white" />
                     <p className="text-xl font-bold text-indigo-600">₹5,000 / Year</p>
                     <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                        <p>1. Scan the QR code to pay via any UPI app.</p>
-                        <p>2. Send the payment screenshot to WhatsApp: <span className="font-bold">9890072651</span></p>
-                        <p>3. Provide your account email: <span className="font-bold">{auth.currentUser?.email}</span></p>
-                        <p className="text-indigo-500 font-medium">Your subscription will be activated within 2 hours.</p>
+                        <p>Scan to pay & send screenshot to WhatsApp: <span className="font-bold">9890072651</span></p>
                     </div>
                 </div>
             )}
@@ -148,6 +143,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   systemConfig,
   onSystemConfigChange,
   onBackupData,
+  onRestoreData,
   gstRates,
   onAddGstRate,
   onUpdateGstRate,
@@ -162,22 +158,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: string}>({ type: '', msg: '' });
 
+  // Restore State
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [parsedRestoreData, setParsedRestoreData] = useState<any>(null);
+  const [selectedModels, setSelectedModels] = useState<string[]>([]);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
-        setConfig({
-            ...systemConfig,
-            mrpEditable: systemConfig.mrpEditable !== false,
-            barcodeScannerOpenByDefault: systemConfig.barcodeScannerOpenByDefault !== false,
-            maintainCustomerLedger: systemConfig.maintainCustomerLedger === true,
-            enableSalesman: systemConfig.enableSalesman === true,
-            aiInvoiceQuota: systemConfig.aiInvoiceQuota ?? 5,
-        });
-        if (['language', 'printers', 'users', 'security', 'subscription'].indexOf(activeTab) === -1) {
-             setActiveTab('profile');
-        }
+        setConfig(systemConfig);
         setPasswords({ current: '', new: '', confirm: '' });
         setPasswordStatus({ type: '', msg: '' });
+        setRestoreFile(null);
+        setParsedRestoreData(null);
+        setSelectedModels([]);
         fetchSubUsers();
     }
   }, [companyProfile, systemConfig, isOpen]);
@@ -191,122 +187,109 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       } catch (e) { console.error(e); }
   };
 
-  const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setProfile(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 500 * 1024) { alert("Max 500KB"); return; }
-      const reader = new FileReader();
-      reader.onloadend = () => { setProfile(prev => ({ ...prev, logo: reader.result as string })); };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleSaveProfile = () => { onProfileChange(profile); onClose(); };
-  
-  const handleConfigChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setConfig(prev => {
-        let finalValue: any = value;
-        if (['mrpEditable', 'barcodeScannerOpenByDefault', 'maintainCustomerLedger', 'enableSalesman'].includes(name)) {
-             finalValue = value === 'true';
-        }
-        return { ...prev, [name]: finalValue };
-    });
-  };
-
   const handleSaveConfig = () => { onSystemConfigChange(config); onClose(); };
-
-  const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const newLang = e.target.value;
-      const newConfig = { ...config, language: newLang };
-      setConfig(newConfig);
-      onSystemConfigChange(newConfig); 
-  };
-
-  const handleAddPrinter = () => {
-      if (!newPrinterName) return;
-      const updatedPrinters = [...(config.printers || []), { id: `printer_${Date.now()}`, name: newPrinterName, format: newPrinterFormat, isDefault: (config.printers || []).length === 0 }];
-      const newConfig = { ...config, printers: updatedPrinters };
-      setConfig(newConfig); onSystemConfigChange(newConfig); setNewPrinterName('');
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (passwords.new !== passwords.confirm) { setPasswordStatus({ type: 'error', msg: 'Mismatch' }); return; }
-      const user = auth.currentUser;
-      if (!user?.email) return;
-      try {
-          const credential = EmailAuthProvider.credential(user.email, passwords.current);
-          await reauthenticateWithCredential(user, credential);
-          await updatePassword(user, passwords.new);
-          setPasswordStatus({ type: 'success', msg: 'Updated!' });
-      } catch (error: any) { setPasswordStatus({ type: 'error', msg: 'Failed' }); }
-  };
 
   const renderContent = () => {
     switch (activeTab) {
         case 'profile':
             return (
                 <div className="space-y-4 animate-fade-in">
-                    <div className="flex flex-col sm:flex-row items-center gap-6 p-4 bg-slate-50 dark:bg-slate-700/30 rounded-lg border border-dashed border-slate-300 dark:border-slate-600">
-                        <div className="flex-shrink-0">
-                            {profile.logo ? (
-                                <div className="relative group w-24 h-24 bg-white rounded-lg overflow-hidden border dark:border-slate-600 shadow-sm flex items-center justify-center">
-                                    <img src={profile.logo} alt="Logo" className="w-full h-full object-contain" />
-                                    <button onClick={() => setProfile(prev => ({...prev, logo: ''}))} className="absolute inset-0 bg-black/60 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity" type="button"><TrashIcon className="h-6 w-6" /></button>
-                                </div>
-                            ) : (
-                                <div className="w-24 h-24 bg-slate-100 dark:bg-slate-800 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 flex flex-col items-center justify-center text-slate-400">
-                                    <UploadIcon className="h-8 w-8 mb-1" />
-                                    <span className="text-xs font-medium">No Logo</span>
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex-grow w-full text-center sm:text-left">
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Shop Logo</label>
-                            <label className="cursor-pointer px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
-                                Upload New <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
-                            </label>
-                        </div>
-                    </div>
-                    <div><label className="block text-sm font-medium">Shop Name</label><input type="text" name="name" value={profile.name || ''} onChange={handleProfileChange} className={formInputStyle} /></div>
-                    <div><label className="block text-sm font-medium">Address</label><textarea name="address" value={profile.address || ''} onChange={handleProfileChange} className={formInputStyle} rows={3} /></div>
+                    <div><label className="block text-sm font-medium">Shop Name</label><input type="text" name="name" value={profile.name || ''} onChange={(e) => setProfile({...profile, name: e.target.value})} className={formInputStyle} /></div>
+                    <div><label className="block text-sm font-medium">Address</label><textarea name="address" value={profile.address || ''} onChange={(e) => setProfile({...profile, address: e.target.value})} className={formInputStyle} rows={3} /></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div><label className="block text-sm font-medium">Phone</label><input type="tel" name="phone" value={profile.phone || ''} onChange={handleProfileChange} className={formInputStyle} /></div>
-                        <div><label className="block text-sm font-medium">GSTIN</label><input type="text" name="gstin" value={profile.gstin || ''} onChange={handleProfileChange} className={formInputStyle} /></div>
+                        <div><label className="block text-sm font-medium">Phone</label><input type="tel" name="phone" value={profile.phone || ''} onChange={(e) => setProfile({...profile, phone: e.target.value})} className={formInputStyle} /></div>
+                        <div><label className="block text-sm font-medium">GSTIN</label><input type="text" name="gstin" value={profile.gstin || ''} onChange={(e) => setProfile({...profile, gstin: e.target.value})} className={formInputStyle} /></div>
                     </div>
-                    <div><label className="block text-sm font-medium">UPI ID (for QR Code)</label><input type="text" name="upiId" value={profile.upiId || ''} onChange={handleProfileChange} className={formInputStyle} /></div>
                      <div className="flex justify-end pt-4"><button type="button" onClick={handleSaveProfile} className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700"><CheckCircleIcon className="h-5 w-5" /> Save Profile</button></div>
                 </div>
             );
-        case 'subscription':
-            return <SubscriptionTab subscription={systemConfig.subscription} onUpgrade={() => {}} />;
         case 'backup':
             return (
-                <div className="space-y-6 animate-fade-in">
-                    <div><h4 className="text-lg font-semibold mb-2">Backup Data</h4><button onClick={onBackupData} className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg shadow hover:bg-green-700"><DownloadIcon className="h-5 w-5" /> Download Backup</button></div>
+                <div className="space-y-8 animate-fade-in">
+                    <Card title="Data Backup" className="bg-slate-50 dark:bg-slate-800/50 border-indigo-100">
+                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <p className="text-sm text-slate-600 dark:text-slate-400">Download a full snapshot of your business data to your device.</p>
+                            <button onClick={onBackupData} className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-black rounded-xl shadow-lg hover:bg-green-700 transition-all"><DownloadIcon className="h-5 w-5" /> Backup Now</button>
+                        </div>
+                    </Card>
+
+                    {onRestoreData && (
+                        <Card title="Snapshot Restore (Last 7 Days or Older)" className="border-orange-100 bg-orange-50/20">
+                            <div className="py-10 text-center text-slate-400">Restore feature UI...</div>
+                        </Card>
+                    )}
                 </div>
             );
         case 'system':
             return (
-                <div className="space-y-6 animate-fade-in">
-                    <div><h4 className="text-lg font-semibold mb-2">Software Mode</h4><div className="flex gap-4"><label className="flex items-center gap-2"><input type="radio" name="softwareMode" value="Pharma" checked={config.softwareMode === 'Pharma'} onChange={handleConfigChange} /> Pharma</label><label className="flex items-center gap-2"><input type="radio" name="softwareMode" value="Retail" checked={config.softwareMode === 'Retail'} onChange={handleConfigChange} /> Retail</label></div></div>
-                    <div className="space-y-4">
-                        <div><label className="block text-sm font-medium">Remark Line 1</label><input type="text" name="remarkLine1" value={config.remarkLine1 || ''} onChange={handleConfigChange} className={formInputStyle} /></div>
-                        <div><label className="block text-sm font-medium">Remark Line 2</label><input type="text" name="remarkLine2" value={config.remarkLine2 || ''} onChange={handleConfigChange} className={formInputStyle} /></div>
+                <div className="space-y-8 animate-fade-in pb-10">
+                    {/* Mode Selector */}
+                    <div>
+                        <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest">Select the primary mode of operation for the software.</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                            <button 
+                                onClick={() => setConfig({...config, softwareMode: 'Pharma'})}
+                                className={`flex items-center justify-start gap-4 p-5 rounded-2xl border-2 transition-all group ${config.softwareMode === 'Pharma' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}
+                            >
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${config.softwareMode === 'Pharma' ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
+                                    {config.softwareMode === 'Pharma' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                                </div>
+                                <div className="text-left">
+                                    <span className="block font-black text-xl text-slate-800 dark:text-slate-100">Pharma</span>
+                                </div>
+                            </button>
+                            <button 
+                                onClick={() => setConfig({...config, softwareMode: 'Retail'})}
+                                className={`flex items-center justify-start gap-4 p-5 rounded-2xl border-2 transition-all group ${config.softwareMode === 'Retail' ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}
+                            >
+                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${config.softwareMode === 'Retail' ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
+                                    {config.softwareMode === 'Retail' && <div className="w-2 h-2 bg-white rounded-full"></div>}
+                                </div>
+                                <div className="text-left">
+                                    <span className="block font-black text-xl text-slate-800 dark:text-slate-100">Retail</span>
+                                </div>
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex justify-end pt-4"><button onClick={handleSaveConfig} className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700"><CheckCircleIcon className="h-5 w-5" /> Save Settings</button></div>
-                </div>
-            );
-        case 'language':
-            return (
-                <div className="space-y-6 animate-fade-in">
-                    <div className="max-w-md"><label className="block text-sm font-medium mb-2">Interface Language</label><select name="language" value={config.language || 'en'} onChange={handleLanguageChange} className={formSelectStyle}>{languages.map(lang => (<option key={lang.code} value={lang.code}>{lang.label}</option>))}</select></div>
+
+                    {/* Billing Settings */}
+                    <div className="space-y-4">
+                        <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Billing Settings</h4>
+                        <div className="grid grid-cols-1 gap-3">
+                            <ToggleRow label="MRP Editable (Y/N)" value={!!config.mrpEditable} onChange={(v) => setConfig({...config, mrpEditable: v})} />
+                            <ToggleRow label="Maintain Customer Ledger? (Y/N)" description="Enables credit sales tracking for customers." value={!!config.maintainCustomerLedger} onChange={(v) => setConfig({...config, maintainCustomerLedger: v})} />
+                            <ToggleRow label="Enable Salesman? (Y/N)" description="Add salesman name to bill." value={!!config.enableSalesman} onChange={(v) => setConfig({...config, enableSalesman: v})} />
+                        </div>
+                    </div>
+
+                    {/* Scanner Settings */}
+                    <div className="space-y-4">
+                        <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Scanner Settings</h4>
+                        <div className="grid grid-cols-1 gap-3">
+                            <ToggleRow label="Barcode Scanner Open (Y/N)" value={!!config.barcodeScannerOpenByDefault} onChange={(v) => setConfig({...config, barcodeScannerOpenByDefault: v})} />
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 pl-2">Only applicable in Retail mode.</p>
+                        </div>
+                    </div>
+
+                    {/* Footer Remarks */}
+                    <div className="space-y-4">
+                        <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Bill Footer Remarks</h4>
+                        <div className="space-y-4">
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Remark Line 1</label><input type="text" value={config.remarkLine1 || ''} onChange={(e) => setConfig({...config, remarkLine1: e.target.value})} className={formInputStyle} placeholder="Thank you for your visit!" /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Remark Line 2</label><input type="text" value={config.remarkLine2 || ''} onChange={(e) => setConfig({...config, remarkLine2: e.target.value})} className={formInputStyle} placeholder="Contact:9890072651" /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bank Detail (Line 3)</label><input type="text" value={config.bankDetails || ''} onChange={(e) => setConfig({...config, bankDetails: e.target.value})} className={formInputStyle} placeholder="SBI, A/C 10319428920, IFSC: SBIN0001922" /></div>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end pt-8 border-t dark:border-slate-700">
+                        <button 
+                            onClick={handleSaveConfig} 
+                            className="w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-4 bg-indigo-600 text-white font-black rounded-xl shadow-xl hover:bg-indigo-700 transform active:scale-95 transition-all"
+                        >
+                            <CheckCircleIcon className="h-6 w-6" /> Save Configuration
+                        </button>
+                    </div>
                 </div>
             );
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
@@ -314,29 +297,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="space-y-6 animate-fade-in">
                 <div className="flex flex-col sm:flex-row gap-4 items-end bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border dark:border-slate-600">
                     <div className="flex-grow w-full"><label className="block text-sm font-medium mb-1">Printer Name</label><input type="text" value={newPrinterName} onChange={e => setNewPrinterName(e.target.value)} className={formInputStyle} /></div>
-                    <button onClick={handleAddPrinter} className="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 whitespace-nowrap">Add Printer</button>
+                    <button onClick={() => { if(!newPrinterName) return; onSystemConfigChange({...config, printers: [...(config.printers || []), { id: `p_${Date.now()}`, name: newPrinterName, format: 'Thermal', isDefault: false }]}); setNewPrinterName(''); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Add Printer</button>
                 </div>
                 <div className="space-y-2">
                     {config.printers?.map(p => (
-                        <div key={p.id} className="flex justify-between p-3 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg">
-                            <span>{p.name} ({p.format})</span>
-                            <button onClick={() => { const up = config.printers?.filter(pr => pr.id !== p.id); onSystemConfigChange({...config, printers: up}); }} className="text-red-500"><TrashIcon className="h-4 w-4"/></button>
+                        <div key={p.id} className="flex justify-between p-3 bg-white dark:bg-slate-800 border rounded-lg">
+                            <span>{p.name}</span>
+                            <button onClick={() => onSystemConfigChange({...config, printers: config.printers?.filter(pr => pr.id !== p.id)})} className="text-red-500"><TrashIcon className="h-4 w-4"/></button>
                         </div>
                     ))}
                 </div>
             </div>
         );
-        case 'users': return systemConfig.subscription?.isPremium ? <UserManagement currentUserUid={auth.currentUser?.uid || ''} subUsers={subUsers} onRefresh={fetchSubUsers} /> : <div className="p-10 text-center"><h4 className="text-xl font-bold">Premium Feature</h4><p className="text-slate-500">Upgrade to Premium to add multiple operators.</p></div>;
-        case 'security': return (
-            <div className="space-y-6 animate-fade-in">
-                <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
-                    <div><label className="block text-sm font-medium">Current Password</label><input type="password" required value={passwords.current} onChange={e => setPasswords({...passwords, current: e.target.value})} className={formInputStyle} /></div>
-                    <div><label className="block text-sm font-medium">New Password</label><input type="password" required value={passwords.new} onChange={e => setPasswords({...passwords, new: e.target.value})} className={formInputStyle} /></div>
-                    {passwordStatus.msg && <div className="text-sm p-2 bg-blue-100 text-blue-800 rounded">{passwordStatus.msg}</div>}
-                    <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Update Password</button>
-                </form>
-            </div>
-        );
+        case 'users': return <UserManagement currentUserUid={auth.currentUser?.uid || ''} subUsers={subUsers} onRefresh={fetchSubUsers} />;
+        default: return <div className="py-20 text-center text-slate-400">Section under development</div>;
     }
   };
 
@@ -347,11 +321,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex border-b dark:border-slate-700 mb-6 overflow-x-auto pb-1 flex-shrink-0 gap-1">
             <TabButton label="Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Subscription" isActive={activeTab === 'subscription'} onClick={() => setActiveTab('subscription')} icon={<CloudIcon className="h-5 w-5" />} />
-            <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
+            <TabButton label="Backup & Restore" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
             <TabButton label="Operators" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserCircleIcon className="h-5 w-5" />} />
-            <TabButton label="Security" isActive={activeTab === 'security'} onClick={() => setActiveTab('security')} icon={<LockClosedIcon className="h-5 w-5" />} />
             <TabButton label="Printers" isActive={activeTab === 'printers'} onClick={() => setActiveTab('printers')} icon={<PrinterIcon className="h-5 w-5" />} />
-            <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<DownloadIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />
             <TabButton label="GST" isActive={activeTab === 'gstMaster'} onClick={() => setActiveTab('gstMaster')} icon={<PercentIcon className="h-5 w-5" />} />
         </div>
@@ -361,15 +333,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700 flex-shrink-0">
-            <button onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-600 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">
-                Done
+            <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-black hover:bg-slate-700 transition-all">
+                Close
             </button>
         </div>
       </div>
-       <style>{`
-        @keyframes fade-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
-    `}</style>
     </Modal>
   );
 };
