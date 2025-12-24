@@ -14,7 +14,7 @@ import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getTranslation } from '../utils/translationHelper';
 
-// OCR Scanner Component using Tesseract.js
+// OCR Scanner Component - Focused on Part Number Auto-Detection
 const TextScannerModal: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
@@ -24,6 +24,7 @@ const TextScannerModal: React.FC<{
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
+    const scanIntervalRef = useRef<number | null>(null);
 
     useEffect(() => {
         if (isOpen) {
@@ -31,12 +32,16 @@ const TextScannerModal: React.FC<{
                 .then(setStream)
                 .catch(err => {
                     console.error("Camera error:", err);
-                    alert("Camera access failed. Check permissions.");
+                    alert("Unable to access camera. Check permissions.");
                 });
         } else {
             if (stream) {
                 stream.getTracks().forEach(t => t.stop());
                 setStream(null);
+            }
+            if (scanIntervalRef.current) {
+                clearInterval(scanIntervalRef.current);
+                scanIntervalRef.current = null;
             }
         }
     }, [isOpen]);
@@ -47,7 +52,8 @@ const TextScannerModal: React.FC<{
         }
     }, [stream]);
 
-    const capture = () => {
+    const autoCapture = useCallback(() => {
+        if (isProcessing) return;
         if (videoRef.current && canvasRef.current) {
             const context = canvasRef.current.getContext('2d');
             if (context) {
@@ -56,44 +62,56 @@ const TextScannerModal: React.FC<{
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/png', 0.9);
+                const dataUrl = canvas.toDataURL('image/png', 0.8);
                 onScan(dataUrl);
             }
         }
-    };
+    }, [isProcessing, onScan]);
+
+    useEffect(() => {
+        if (isOpen && stream) {
+            // Scan every 1.5 seconds for better CPU performance
+            scanIntervalRef.current = window.setInterval(autoCapture, 1500);
+        }
+        return () => {
+            if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
+        };
+    }, [isOpen, stream, autoCapture]);
 
     if (!isOpen) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Smart AI Text Scanner" maxWidth="max-w-xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="AI Part Number Scanner" maxWidth="max-w-xl">
             <div className="space-y-4">
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border-4 border-indigo-600 shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-3/4 h-1/3 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center">
-                            <div className="text-[10px] text-white bg-red-500 px-2 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest">
-                                Target Part No / MRP
+                        <div className="w-2/3 h-1/4 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
+                            <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
+                                {isProcessing ? 'IDENTIFYING...' : 'AIM AT PART NO'}
                             </div>
-                            <div className="w-full h-0.5 bg-red-500/50 animate-pulse"></div>
+                            <div className={`w-full h-0.5 bg-red-500/50 ${isProcessing ? 'hidden' : 'animate-pulse'}`}></div>
                         </div>
                     </div>
                     {isProcessing && (
-                        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white z-20">
-                            <div className="animate-spin h-16 w-16 border-4 border-indigo-400 border-t-transparent rounded-full mb-4"></div>
-                            <p className="font-bold text-indigo-300">AI ANALYZING...</p>
+                        <div className="absolute inset-0 bg-black/30 flex flex-col items-center justify-center text-white z-20">
+                            <div className="animate-spin h-10 w-10 border-4 border-indigo-400 border-t-transparent rounded-full mb-3 shadow-lg"></div>
+                            <p className="font-bold text-xs bg-indigo-600 px-3 py-1 rounded-full border border-indigo-400">ANALYZING PART NO...</p>
                         </div>
                     )}
                 </div>
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="flex flex-col gap-3">
-                    <button onClick={capture} disabled={isProcessing} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
-                        <CameraIcon className="h-7 w-7" /> CAPTURE & IDENTIFY
-                    </button>
-                    <div className="bg-slate-100 dark:bg-slate-700/50 p-3 rounded-lg flex items-start gap-2">
-                        <InformationCircleIcon className="h-5 w-5 text-indigo-500 mt-0.5" />
-                        <p className="text-xs text-slate-600 dark:text-slate-400">
-                            Aim at the **Part Number** or **MRP label**. The AI filters out common words like "Cold drink" to find the exact product.
-                        </p>
+                    <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-xl flex items-start gap-3 border border-indigo-100 dark:border-indigo-800">
+                        <div className="p-2 bg-indigo-600 rounded-lg text-white">
+                            <CameraIcon className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">Auto-Detect Enabled</p>
+                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                Point camera at the label. The AI will automatically identify the item using the **Part Number** and add it to your cart.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -105,32 +123,27 @@ const MatchResolutionModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     candidates: Array<{ product: Product; batch: Batch; score: number }>;
-    scannedText: string;
     onSelect: (product: Product, batch: Batch) => void;
-}> = ({ isOpen, onClose, candidates, scannedText, onSelect }) => {
+}> = ({ isOpen, onClose, candidates, onSelect }) => {
     if (!isOpen) return null;
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Select Correct Item" maxWidth="max-w-md">
+        <Modal isOpen={isOpen} onClose={onClose} title="Multiple Items Found" maxWidth="max-w-md">
             <div className="space-y-4">
-                <p className="text-sm text-slate-600 dark:text-slate-400">Matches found in inventory:</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Matches found based on Part No:</p>
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                     {candidates.map((c, i) => (
-                        <button key={i} onClick={() => onSelect(c.product, c.batch)} className="w-full p-4 border dark:border-slate-700 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-left transition-all group">
+                        <button key={i} onClick={() => onSelect(c.product, c.batch)} className="w-full p-4 border dark:border-slate-700 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-left transition-all active:scale-95">
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <p className="font-bold text-slate-800 dark:text-white group-hover:text-indigo-600">{c.product.name}</p>
+                                    <p className="font-bold text-slate-800 dark:text-white">{c.product.name}</p>
                                     <p className="text-xs text-slate-500">{c.product.company}</p>
                                 </div>
                                 <span className="text-xs font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">₹{c.batch.mrp.toFixed(2)}</span>
                             </div>
-                            <div className="mt-2 text-[10px] text-slate-400 flex justify-between">
-                                <span>Batch: {c.batch.batchNumber}</span>
-                                <span>Exp: {c.batch.expiryDate}</span>
-                            </div>
                         </button>
                     ))}
                 </div>
-                <button onClick={onClose} className="w-full py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300">Cancel</button>
+                <button onClick={onClose} className="w-full py-3 bg-slate-200 dark:bg-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300">Close</button>
             </div>
         </Modal>
     );
@@ -286,7 +299,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   const [showTextScanner, setShowTextScanner] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
-  const [resolutionData, setResolutionData] = useState<{ isOpen: boolean; candidates: any[]; text: string }>({ isOpen: false, candidates: [], text: '' });
+  const [resolutionData, setResolutionData] = useState<{ isOpen: boolean; candidates: any[] }>({ isOpen: false, candidates: [] });
 
   useEffect(() => {
     if (isPharmaMode) { setShowScanner(false); } else { setShowScanner(systemConfig.barcodeScannerOpenByDefault !== false); }
@@ -344,52 +357,56 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     setIsOcrProcessing(true);
     try {
         const { data: { text } } = await Tesseract.recognize(imageData, 'eng');
-        const cleanLines = text.split('\n').map((l: string) => l.trim().toUpperCase()).filter((l: string) => l.length > 1);
         
-        const mrpRegex = /(?:MRP|PRICE|RS|RUPEES|₹)?\s*[:\-\s]*(\d+\.?\d*)/i;
-        let scannedMRP: number | null = null;
-        for (const line of cleanLines) {
-            const m = line.match(mrpRegex);
-            if (m && parseFloat(m[1]) > 0) {
-                scannedMRP = parseFloat(m[1]);
-                break;
-            }
-        }
-        
+        // NOISE FILTERING & PART NO FOCUS:
+        // Filter for alphanumeric codes that look like Part Numbers (length 4-15)
         const blacklist = ["COLD", "DRINK", "BOTTLE", "INGREDIENTS", "NUTRITION", "VALUE", "PRODUCT", "STORE", "KEEP", "PLACE", "MANUFACTURED", "BATCH", "EXP", "DATE", "PACK"];
-        const validWords = text.split(/\s+/).map((w: string) => w.toUpperCase())
-            .filter((w: string) => w.length >= 3 && !blacklist.some(b => w.includes(b)));
+        const words = text.split(/\s+/).map((w: string) => w.toUpperCase().replace(/[^A-Z0-9-]/g, ''))
+            .filter((w: string) => w.length >= 4 && !blacklist.some(b => w.includes(b)));
         
         const candidateMatches: Array<{ product: Product; batch: Batch; score: number }> = [];
+        
         products.forEach(p => {
             let score = 0;
-            const name = p.name.toUpperCase();
             const barcode = (p.barcode || '').toUpperCase();
-            validWords.forEach((word: string) => {
-                if (barcode === word) score += 50;
-                else if (name.includes(word)) score += 10;
+            const name = p.name.toUpperCase();
+
+            words.forEach((word: string) => {
+                if (barcode === word) score += 100; // Perfect Part No match
+                else if (barcode.includes(word) && word.length >= 5) score += 60;
+                else if (name.includes(word)) score += 20; // Partial name match
             });
+
             if (score > 0) {
                 p.batches.forEach(b => {
                     if (b.stock <= 0) return;
-                    let batchScore = score;
-                    if (scannedMRP && Math.abs(b.mrp - scannedMRP) < 0.5) batchScore += 40;
-                    candidateMatches.push({ product: p, batch: b, score: batchScore });
+                    candidateMatches.push({ product: p, batch: b, score });
                 });
             }
         });
+
         candidateMatches.sort((a, b) => b.score - a.score);
-        if (candidateMatches.length === 0) alert("No match. Aim strictly at Part No or Price label.");
-        else if (candidateMatches[0].score >= 60 || candidateMatches.length === 1) {
-            handleAddToCart(candidateMatches[0].product, candidateMatches[0].batch);
-            setShowTextScanner(false);
-        } else {
-            setResolutionData({ isOpen: true, candidates: candidateMatches.slice(0, 5), text: text });
-            setShowTextScanner(false);
+
+        // AUTO-SELECT LOGIC:
+        if (candidateMatches.length > 0) {
+            const topMatch = candidateMatches[0];
+            // If we have an exact Part No match or very high confidence
+            if (topMatch.score >= 100 || (candidateMatches.length === 1 && topMatch.score >= 60)) {
+                handleAddToCart(topMatch.product, topMatch.batch);
+                setShowTextScanner(false);
+                setIsOcrProcessing(false);
+                return;
+            }
+            
+            // If multiple candidates exist with similar scores, we don't auto-select to avoid errors
+            // We only show the resolution modal if we have consistent results (simplified: just show it)
+            if (topMatch.score >= 60) {
+                setResolutionData({ isOpen: true, candidates: candidateMatches.slice(0, 5) });
+                setShowTextScanner(false);
+            }
         }
     } catch (e) {
-        console.error(e);
-        alert("Scan failed. Try again with better focus.");
+        console.error("AI Scan error:", e);
     } finally { setIsOcrProcessing(false); }
   };
 
@@ -491,22 +508,25 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
           <div className="flex flex-col gap-2 mb-4">
             <div className="flex gap-2">
                 <div className="relative flex-grow">
-                    <input ref={searchInputRef} type="text" placeholder={isPharmaMode ? "Search Name or Part No MRP (e.g. Paracet 40)" : "Search Name or Barcode"} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={handleKeyDown} className={`${inputStyle} w-full px-4 py-3 text-lg font-medium`} />
+                    <input ref={searchInputRef} type="text" placeholder={isPharmaMode ? "Search Name or Part No (e.g. Paracet 40)" : "Search Name or Barcode"} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={handleKeyDown} className={`${inputStyle} w-full px-4 py-3 text-lg font-medium`} />
                     {searchResults.length > 0 && searchTerm && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
                         <ul>{searchResults.map((product, productIndex) => (navigableBatchesByProduct[productIndex]?.length > 0 && <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0"><div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center"><span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span></div><ul className="pl-4 pb-2">{navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; return (<li key={batch.id} ref={isActive ? activeItemRef : null} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}><div>{isPharmaMode && (<><span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span><span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span></>)}</div><div className="flex items-center gap-4"><span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span><span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span></div></li>); })}</ul></li>))}</ul></div>)}
                 </div>
-                <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-all flex flex-col items-center justify-center min-w-[80px] border-2 border-indigo-200" title="Scan Part No/MRP from Pack">
-                    <CameraIcon className="h-6 w-6" />
-                    <span className="text-[10px] font-extrabold mt-1 uppercase">AI SCAN</span>
+                <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-all flex flex-col items-center justify-center min-w-[80px] border-2 border-indigo-200" title="Scan Part No from Pack">
+                    <div className="relative">
+                        <CameraIcon className="h-6 w-6" />
+                        <div className="absolute -top-1 -right-1 flex h-3 w-3">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span>
+                        </div>
+                    </div>
+                    <span className="text-[10px] font-extrabold mt-1 uppercase">AI AUTO</span>
                 </button>
                 <button onClick={() => setShowScanner(!showScanner)} className={`p-3 rounded-lg transition-colors border-2 ${showScanner ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'} flex flex-col items-center justify-center min-w-[80px]`} title={showScanner ? "Close Barcode" : "Scan Barcode"}>
                     <BarcodeIcon className="h-6 w-6" />
                     <span className="text-[10px] font-bold mt-1 uppercase">BARCODE</span>
                 </button>
-            </div>
-            <div className="text-[10px] text-slate-500 italic flex items-center gap-1">
-                <InformationCircleIcon className="h-3 w-3" /> Tip: Type name then space then MRP for faster search (e.g. "Dolo 30")
             </div>
           </div>
           <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => openEditItemModal(item)} className="text-blue-500 hover:text-blue-700" title="Edit Item"><PencilIcon className="h-4 w-4" /></button><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700" title="Remove Item"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
@@ -531,7 +551,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
-      <MatchResolutionModal isOpen={resolutionData.isOpen} onClose={() => setResolutionData(prev => ({...prev, isOpen: false}))} candidates={resolutionData.candidates} scannedText={resolutionData.text} onSelect={(p, b) => { handleAddToCart(p, b); setResolutionData(prev => ({...prev, isOpen: false})); }} />
+      <MatchResolutionModal isOpen={resolutionData.isOpen} onClose={() => setResolutionData(prev => ({...prev, isOpen: false}))} candidates={resolutionData.candidates} onSelect={(p, b) => { handleAddToCart(p, b); setResolutionData(prev => ({...prev, isOpen: false})); }} />
       {itemToEdit && (<EditBillItemModal isOpen={!!itemToEdit} onClose={() => setItemToEdit(null)} item={itemToEdit.item} maxStock={itemToEdit.maxStock} onUpdate={updateCartItemDetails} systemConfig={systemConfig} />)}
       <OrderSuccessModal isOpen={showOrderSuccessModal} onClose={() => setShowOrderSuccessModal(false)} bill={lastSavedBill} timeTaken={orderSeconds} companyProfile={companyProfile} onPrint={() => { if (lastSavedBill) { const defaultPrinter = systemConfig.printers?.find(p => p.isDefault); if (defaultPrinter) executePrint(lastSavedBill, defaultPrinter, true); else { setBillToPrint(lastSavedBill); setPrinterModalOpen(true); } } }} onCreateNew={() => { resetBillingForm(); setShowOrderSuccessModal(false); }} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); if (shouldResetAfterPrint) { if(onCancelEdit) onCancelEdit(); setShouldResetAfterPrint(false); } setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={() => {}} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
