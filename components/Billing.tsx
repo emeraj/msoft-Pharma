@@ -9,6 +9,7 @@ import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; 
 import PrinterSelectionModal from './PrinterSelectionModal';
+import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getTranslation } from '../utils/translationHelper';
@@ -30,7 +31,7 @@ const TextScannerModal: React.FC<{
                 .then(setStream)
                 .catch(err => {
                     console.error("Camera error:", err);
-                    alert("Unable to access camera. Please check permissions.");
+                    alert("Camera access failed. Check permissions.");
                 });
         } else {
             if (stream) {
@@ -50,13 +51,10 @@ const TextScannerModal: React.FC<{
         if (videoRef.current && canvasRef.current) {
             const context = canvasRef.current.getContext('2d');
             if (context) {
-                // We capture a slightly zoomed/cropped area for better OCR focus
                 const video = videoRef.current;
                 const canvas = canvasRef.current;
-                
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
-                
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const dataUrl = canvas.toDataURL('image/png', 0.9);
                 onScan(dataUrl);
@@ -67,47 +65,34 @@ const TextScannerModal: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Smart AI Scanner" maxWidth="max-w-xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="Smart AI Text Scanner" maxWidth="max-w-xl">
             <div className="space-y-4">
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border-4 border-indigo-600 shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                    
-                    {/* Visual Focus Area */}
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-3/4 h-1/3 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-2 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest">
-                                Aim at Part No or MRP
+                                Target Part No / MRP
                             </div>
                             <div className="w-full h-0.5 bg-red-500/50 animate-pulse"></div>
                         </div>
                     </div>
-
                     {isProcessing && (
                         <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white z-20">
-                            <div className="relative">
-                                <div className="animate-spin h-16 w-16 border-4 border-indigo-400 border-t-transparent rounded-full"></div>
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="h-2 w-2 bg-white rounded-full animate-ping"></div>
-                                </div>
-                            </div>
-                            <p className="font-bold mt-4 text-indigo-300">AI ANALYZING TEXT...</p>
-                            <p className="text-xs text-slate-400">Comparing with inventory</p>
+                            <div className="animate-spin h-16 w-16 border-4 border-indigo-400 border-t-transparent rounded-full mb-4"></div>
+                            <p className="font-bold text-indigo-300">AI ANALYZING...</p>
                         </div>
                     )}
                 </div>
                 <canvas ref={canvasRef} className="hidden" />
                 <div className="flex flex-col gap-3">
-                    <button 
-                        onClick={capture} 
-                        disabled={isProcessing}
-                        className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-                    >
-                        <CameraIcon className="h-7 w-7" /> CAPTURE TEXT
+                    <button onClick={capture} disabled={isProcessing} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+                        <CameraIcon className="h-7 w-7" /> CAPTURE & IDENTIFY
                     </button>
                     <div className="bg-slate-100 dark:bg-slate-700/50 p-3 rounded-lg flex items-start gap-2">
                         <InformationCircleIcon className="h-5 w-5 text-indigo-500 mt-0.5" />
                         <p className="text-xs text-slate-600 dark:text-slate-400">
-                            Place the **Part Number** or **MRP label** inside the red box for best results. The AI will look for matches automatically.
+                            Aim at the **Part Number** or **MRP label**. The AI filters out common words like "Cold drink" to find the exact product.
                         </p>
                     </div>
                 </div>
@@ -116,7 +101,6 @@ const TextScannerModal: React.FC<{
     );
 };
 
-// Candidate Selection Modal for uncertain matches
 const MatchResolutionModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
@@ -126,24 +110,18 @@ const MatchResolutionModal: React.FC<{
 }> = ({ isOpen, onClose, candidates, scannedText, onSelect }) => {
     if (!isOpen) return null;
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Multiple Matches Found" maxWidth="max-w-md">
+        <Modal isOpen={isOpen} onClose={onClose} title="Select Correct Item" maxWidth="max-w-md">
             <div className="space-y-4">
-                <p className="text-sm text-slate-600 dark:text-slate-400">The AI found multiple items matching the text: <span className="font-bold text-slate-900 dark:text-white">"{scannedText.substring(0, 30)}..."</span></p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Matches found in inventory:</p>
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                     {candidates.map((c, i) => (
-                        <button 
-                            key={i}
-                            onClick={() => onSelect(c.product, c.batch)}
-                            className="w-full p-4 border dark:border-slate-700 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-left transition-all group"
-                        >
+                        <button key={i} onClick={() => onSelect(c.product, c.batch)} className="w-full p-4 border dark:border-slate-700 rounded-xl hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-left transition-all group">
                             <div className="flex justify-between items-start">
                                 <div>
                                     <p className="font-bold text-slate-800 dark:text-white group-hover:text-indigo-600">{c.product.name}</p>
                                     <p className="text-xs text-slate-500">{c.product.company}</p>
                                 </div>
-                                <span className="text-xs font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
-                                    ₹{c.batch.mrp.toFixed(2)}
-                                </span>
+                                <span className="text-xs font-bold text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">₹{c.batch.mrp.toFixed(2)}</span>
                             </div>
                             <div className="mt-2 text-[10px] text-slate-400 flex justify-between">
                                 <span>Batch: {c.batch.batchNumber}</span>
@@ -152,9 +130,7 @@ const MatchResolutionModal: React.FC<{
                         </button>
                     ))}
                 </div>
-                <button onClick={onClose} className="w-full py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300">
-                    None of these / Cancel
-                </button>
+                <button onClick={onClose} className="w-full py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-medium text-slate-700 dark:text-slate-300">Cancel</button>
             </div>
         </Modal>
     );
@@ -290,9 +266,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const [selectedSalesmanId, setSelectedSalesmanId] = useState<string>('');
   const [isAddSalesmanModalOpen, setAddSalesmanModalOpen] = useState(false);
   const [doctorName, setDoctorName] = useState('');
-  const [isSubstituteModalOpen, setSubstituteModalOpen] = useState(false);
-  const [substituteOptions, setSubstituteOptions] = useState<Product[]>([]);
-  const [sourceProductForSub, setSourceProductForSub] = useState<Product | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastAddedBatchIdRef = useRef<string | null>(null);
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
@@ -311,7 +284,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const [orderSeconds, setOrderSeconds] = useState(0);
   const startTimeRef = useRef<number | null>(null);
 
-  // New states for Text/OCR scanning
   const [showTextScanner, setShowTextScanner] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [resolutionData, setResolutionData] = useState<{ isOpen: boolean; candidates: any[]; text: string }>({ isOpen: false, candidates: [], text: '' });
@@ -349,7 +321,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const handleAddToCart = (product: Product, batch: Batch) => { 
     if (isPharmaMode) { 
         const expiry = getExpiryDate(batch.expiryDate); 
-        if (expiry < today) { alert(`Cannot add expired batch.\nProduct: ${product.name}\nBatch: ${batch.batchNumber}\nExpired on: ${expiry.toLocaleDateString()}`); return; } 
+        const todayNoTime = new Date(); todayNoTime.setHours(0,0,0,0);
+        if (expiry < todayNoTime) { alert(`Expired: ${product.name} (B: ${batch.batchNumber})`); return; } 
     } 
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id); 
     const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; 
@@ -367,75 +340,66 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   const handleTextScan = async (imageData: string) => {
     const { Tesseract } = window as any;
-    if (!Tesseract) { alert("OCR Library not loaded yet."); return; }
-    
+    if (!Tesseract) return;
     setIsOcrProcessing(true);
     try {
         const { data: { text } } = await Tesseract.recognize(imageData, 'eng');
-        const cleanText = text.replace(/\n/g, ' ').toUpperCase();
+        const cleanLines = text.split('\n').map((l: string) => l.trim().toUpperCase()).filter((l: string) => l.length > 1);
         
-        // Strategy: 
-        // 1. Look for MRP (Patterns: MRP 120, PRICE 45, RS 200, or just a currency-like number)
-        const mrpRegex = /(?:MRP|PRICE|RS|RUPEES|₹)[:\s]*(\d+\.?\d*)/i;
-        const mrpMatch = cleanText.match(mrpRegex);
-        const scannedMRP = mrpMatch ? parseFloat(mrpMatch[1]) : null;
+        const mrpRegex = /(?:MRP|PRICE|RS|RUPEES|₹)?\s*[:\-\s]*(\d+\.?\d*)/i;
+        let scannedMRP: number | null = null;
+        for (const line of cleanLines) {
+            const m = line.match(mrpRegex);
+            if (m && parseFloat(m[1]) > 0) {
+                scannedMRP = parseFloat(m[1]);
+                break;
+            }
+        }
         
-        // 2. Extract potential Part Numbers / Alphanumeric codes (3+ chars)
-        const words = cleanText.split(/\s+/).filter((w: string) => w.length >= 3);
+        const blacklist = ["COLD", "DRINK", "BOTTLE", "INGREDIENTS", "NUTRITION", "VALUE", "PRODUCT", "STORE", "KEEP", "PLACE", "MANUFACTURED", "BATCH", "EXP", "DATE", "PACK"];
+        const validWords = text.split(/\s+/).map((w: string) => w.toUpperCase())
+            .filter((w: string) => w.length >= 3 && !blacklist.some(b => w.includes(b)));
         
         const candidateMatches: Array<{ product: Product; batch: Batch; score: number }> = [];
-
         products.forEach(p => {
             let score = 0;
             const name = p.name.toUpperCase();
             const barcode = (p.barcode || '').toUpperCase();
-            
-            // Check if any extracted word matches product name or barcode (Primary match)
-            words.forEach((word: string) => {
-                if (name.includes(word)) score += 10;
-                if (barcode === word) score += 50; // Heavy weight for barcode/exact part no
+            validWords.forEach((word: string) => {
+                if (barcode === word) score += 50;
+                else if (name.includes(word)) score += 10;
             });
-
             if (score > 0) {
-                // Find batches for this product
                 p.batches.forEach(b => {
                     if (b.stock <= 0) return;
-                    
                     let batchScore = score;
-                    // Boost if MRP matches scanned MRP
-                    if (scannedMRP && Math.abs(b.mrp - scannedMRP) < 1.0) {
-                        batchScore += 30;
-                    }
-
+                    if (scannedMRP && Math.abs(b.mrp - scannedMRP) < 0.5) batchScore += 40;
                     candidateMatches.push({ product: p, batch: b, score: batchScore });
                 });
             }
         });
-
-        // Sort by score descending
         candidateMatches.sort((a, b) => b.score - a.score);
-
-        if (candidateMatches.length === 0) {
-            alert("No matching product found. Try focusing on the Part No or MRP.");
-        } else if (candidateMatches[0].score >= 60 || candidateMatches.length === 1) {
-            // High confidence or single result
+        if (candidateMatches.length === 0) alert("No match. Aim strictly at Part No or Price label.");
+        else if (candidateMatches[0].score >= 60 || candidateMatches.length === 1) {
             handleAddToCart(candidateMatches[0].product, candidateMatches[0].batch);
             setShowTextScanner(false);
         } else {
-            // Uncertain - let user choose from top 5
-            setResolutionData({
-                isOpen: true,
-                candidates: candidateMatches.slice(0, 5),
-                text: cleanText
-            });
+            setResolutionData({ isOpen: true, candidates: candidateMatches.slice(0, 5), text: text });
             setShowTextScanner(false);
         }
     } catch (e) {
-        console.error("OCR Error", e);
-        alert("Scanning failed. Ensure good lighting and focus.");
-    } finally {
-        setIsOcrProcessing(false);
-    }
+        console.error(e);
+        alert("Scan failed. Try again with better focus.");
+    } finally { setIsOcrProcessing(false); }
+  };
+
+  const handleBarcodeScan = (code: string) => {
+    const product = products.find(p => p.barcode === code);
+    if (product) {
+        const batch = product.batches.find(b => b.stock > 0);
+        if (batch) handleAddToCart(product, batch);
+        else alert("Out of stock.");
+    } else alert(`Product with barcode ${code} not found.`);
   };
 
   const customerSuggestions = useMemo(() => { if (!customerName) return []; return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5); }, [customerName, customers]);
@@ -443,66 +407,49 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const handleAddNewCustomer = async (custData: Omit<Customer, 'id' | 'balance'>) => { const newCust = await onAddCustomer(custData); if (newCust) { setCustomerName(newCust.name); setSelectedCustomer(newCust); } return newCust; };
   const handleAddNewSalesman = async (data: Omit<Salesman, 'id'>) => { if (onAddSalesman) { const newSalesman = await onAddSalesman(data); if (newSalesman) { setSelectedSalesmanId(newSalesman.id); } return newSalesman; } return null; };
   const doctorList = useMemo(() => { const doctors = new Set<string>(); bills.forEach(bill => { if (bill.doctorName) { doctors.add(bill.doctorName); } }); return Array.from(doctors).sort(); }, [bills]);
-  const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
-
-  // Enhanced search to handle PartNo + MRP syntax (e.g., "Paracet 40")
+  
   const searchResults = useMemo(() => { 
     if (!searchTerm) return []; 
     const lowerSearchTerm = searchTerm.toLowerCase(); 
     const parts = lowerSearchTerm.split(/\s+/);
     const mainTerm = parts[0];
     const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
-
     return products.filter(p => {
         const nameMatch = p.name.toLowerCase().includes(mainTerm) || (!isPharmaMode && p.barcode && p.barcode.includes(mainTerm));
         if (!nameMatch) return false;
-
-        // If user typed an MRP, prioritize products that have a batch with that MRP
-        if (maybeMRP !== null) {
-            return p.batches.some(b => b.stock > 0 && Math.abs(b.mrp - maybeMRP) < 2);
-        }
-        return p.batches.some(b => b.stock > 0 && (isPharmaMode ? getExpiryDate(b.expiryDate) >= today : true));
+        if (maybeMRP !== null) return p.batches.some(b => b.stock > 0 && Math.abs(b.mrp - maybeMRP) < 2);
+        return p.batches.some(b => b.stock > 0);
     }).slice(0, 10); 
-  }, [searchTerm, products, today, isPharmaMode]);
+  }, [searchTerm, products, isPharmaMode]);
 
   const navigableBatchesByProduct = useMemo(() => { 
       const parts = searchTerm.toLowerCase().split(/\s+/);
       const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
-
       return searchResults.map(p => {
-          let batches = p.batches.filter(b => b.stock > 0 && (isPharmaMode ? getExpiryDate(b.expiryDate) >= today : true));
-          
-          // If MRP provided, sort those batches to the top
-          if (maybeMRP !== null) {
-              batches.sort((a, b) => {
-                  const aDiff = Math.abs(a.mrp - maybeMRP);
-                  const bDiff = Math.abs(b.mrp - maybeMRP);
-                  return aDiff - bDiff;
-              });
-          } else {
-              batches.sort((a, b) => isPharmaMode ? (getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()) : 0);
-          }
+          let batches = p.batches.filter(b => b.stock > 0);
+          if (maybeMRP !== null) batches.sort((a, b) => Math.abs(a.mrp - maybeMRP) - Math.abs(b.mrp - maybeMRP));
+          else batches.sort((a, b) => isPharmaMode ? (getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()) : 0);
           return batches;
       }); 
-  }, [searchResults, today, isPharmaMode, searchTerm]);
+  }, [searchResults, isPharmaMode, searchTerm]);
 
   useEffect(() => { if (searchTerm && searchResults.length > 0) { const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); if (firstProductIndex !== -1) { setActiveIndices({ product: firstProductIndex, batch: 0 }); } else { setActiveIndices({ product: -1, batch: -1 }); } } else { setActiveIndices({ product: -1, batch: -1 }); } }, [searchTerm, searchResults, navigableBatchesByProduct]);
   
-  const updateCartItem = (batchId: string, stripQty: number, looseQty: number) => { setCart(currentCart => currentCart.map(item => { if (item.batchId === batchId) { const product = products.find(p => p.id === item.productId); const batch = product?.batches.find(b => b.id === batchId); if (!product || !batch) return item; const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; let sQty = isPharmaMode && unitsPerStrip > 1 ? Math.max(0, stripQty) : 0; let lQty = Math.max(0, looseQty); if (isPharmaMode && unitsPerStrip > 1 && lQty >= unitsPerStrip) { sQty += Math.floor(lQty / unitsPerStrip); lQty = lQty % unitsPerStrip; } const totalUnits = (sQty * unitsPerStrip) + lQty; if (totalUnits > 0 && totalUnits <= batch.stock) { const unitPrice = item.mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); const newTotal = totalUnits * unitPrice; return { ...item, stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: newTotal }; } else if (totalUnits === 0) { return { ...item, stripQty: 0, looseQty: 0, quantity: 0, total: 0 }; } } return item; })); };
-  const updateCartItemDetails = (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => { setCart(currentCart => currentCart.map(item => { if (item.batchId === batchId) { const { mrp, stripQty, looseQty } = updates; const unitsPerStrip = item.unitsPerStrip || 1; const totalUnits = (stripQty * unitsPerStrip) + looseQty; const unitPrice = mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); const total = totalUnits * unitPrice; return { ...item, mrp, stripQty, looseQty, quantity: totalUnits, total }; } return item; })); };
-  const openEditItemModal = (item: CartItem) => { const product = products.find(p => p.id === item.productId); const batch = product?.batches.find(b => b.id === item.batchId); if (product && batch) { setItemToEdit({ item, maxStock: batch.stock }); } else { setItemToEdit({ item, maxStock: item.quantity + 100 }); } };
+  const updateCartItem = (batchId: string, stripQty: number, looseQty: number) => { setCart(currentCart => currentCart.map(item => { if (item.batchId === batchId) { const product = products.find(p => p.id === item.productId); const batch = product?.batches.find(b => b.id === batchId); if (!product || !batch) return item; const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; let sQty = isPharmaMode && unitsPerStrip > 1 ? Math.max(0, stripQty) : 0; let lQty = Math.max(0, looseQty); if (isPharmaMode && unitsPerStrip > 1 && lQty >= unitsPerStrip) { sQty += Math.floor(lQty / unitsPerStrip); lQty = lQty % unitsPerStrip; } const totalUnits = (sQty * unitsPerStrip) + lQty; if (totalUnits > 0 && totalUnits <= batch.stock) { const unitPrice = item.mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); return { ...item, stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice }; } else if (totalUnits === 0) return { ...item, stripQty: 0, looseQty: 0, quantity: 0, total: 0 }; } return item; })); };
+  const updateCartItemDetails = (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => { setCart(currentCart => currentCart.map(item => { if (item.batchId === batchId) { const { mrp, stripQty, looseQty } = updates; const unitsPerStrip = item.unitsPerStrip || 1; const totalUnits = (stripQty * unitsPerStrip) + looseQty; const unitPrice = mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); return { ...item, mrp, stripQty, looseQty, quantity: totalUnits, total: totalUnits * unitPrice }; } return item; })); };
+  const openEditItemModal = (item: CartItem) => { const product = products.find(p => p.id === item.productId); const batch = product?.batches.find(b => b.id === item.batchId); if (product && batch) setItemToEdit({ item, maxStock: batch.stock }); else setItemToEdit({ item, maxStock: item.quantity + 100 }); };
   
-  const { subTotal, totalGst, grandTotal, roundOff } = useMemo(() => { let subTotal = 0; let totalGst = 0; cart.forEach(item => { const basePrice = item.total / (1 + item.gst / 100); subTotal += basePrice; totalGst += item.total - basePrice; }); const totalAmount = subTotal + totalGst; const grandTotal = Math.round(totalAmount); const roundOff = grandTotal - totalAmount; return { subTotal, totalGst, grandTotal, roundOff }; }, [cart]);
+  const { subTotal, totalGst, grandTotal, roundOff } = useMemo(() => { let subTotal = 0; let totalGst = 0; cart.forEach(item => { const basePrice = item.total / (1 + item.gst / 100); subTotal += basePrice; totalGst += item.total - basePrice; }); const totalAmount = subTotal + totalGst; const grandTotal = Math.round(totalAmount); return { subTotal, totalGst, grandTotal, roundOff: grandTotal - totalAmount }; }, [cart]);
 
   const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
-    const doReset = () => { if (isEditing) { if (onCancelEdit) onCancelEdit(); } else { resetBillingForm(); } setShouldResetAfterPrint(false); };
+    const doReset = () => { if (isEditing) { if (onCancelEdit) onCancelEdit(); } else resetBillingForm(); setShouldResetAfterPrint(false); };
     const shouldReset = forceReset || shouldResetAfterPrint;
     if (printer.connectionType === 'rawbt') {
         const data = generateEscPosBill(bill, companyProfile, systemConfig);
         const base64 = btoa(data.reduce((acc, byte) => acc + String.fromCharCode(byte), ''));
         const isAndroid = /Android/i.test(navigator.userAgent);
         if (isAndroid) { const intentUrl = `intent:base64,${base64}#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;`; const a = document.createElement('a'); a.href = intentUrl; a.style.display = 'none'; document.body.appendChild(a); a.click(); document.body.removeChild(a); } else { window.location.href = `rawbt:base64,${base64}`; }
-        if (shouldReset) { setTimeout(doReset, 1000); }
+        if (shouldReset) setTimeout(doReset, 1000);
         return;
     }
     const printWindow = window.open('', '_blank');
@@ -510,8 +457,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const style = printWindow.document.createElement('style'); style.innerHTML = `@page { size: auto; margin: 0mm; } body { margin: 0; }`; printWindow.document.head.appendChild(style);
         const rootEl = document.createElement('div'); printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
-        if (printer.format === 'Thermal') { root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); } else if (printer.format === 'A5') { root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); } else { root.render(<PrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); }
-        setTimeout(() => { printWindow.document.title = ' '; printWindow.print(); printWindow.close(); if (shouldReset) doReset(); }, 500);
+        if (printer.format === 'Thermal') root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); else if (printer.format === 'A5') root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); else root.render(<PrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        setTimeout(() => { printWindow.print(); printWindow.close(); if (shouldReset) doReset(); }, 500);
     }
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
@@ -521,10 +468,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const isUpdate = isEditing && editingBill;
     const salesmanName = salesmen?.find(s => s.id === selectedSalesmanId)?.name;
     const billData: any = { date: isUpdate ? editingBill.date : new Date().toISOString(), customerName: customerName || t.billing.walkInCustomer, customerId: selectedCustomer ? selectedCustomer.id : null, doctorName: doctorName.trim(), items: cart, subTotal, totalGst, grandTotal, roundOff, paymentMode, salesmanId: selectedSalesmanId || null, salesmanName: salesmanName || null, };
-    if (isUpdate && onUpdateBill) { savedBill = await onUpdateBill(editingBill.id, { ...billData, billNumber: editingBill.billNumber }, editingBill); } else if (!isUpdate && onGenerateBill) { savedBill = await onGenerateBill(billData); }
+    if (isUpdate && onUpdateBill) savedBill = await onUpdateBill(editingBill.id, { ...billData, billNumber: editingBill.billNumber }, editingBill); else if (!isUpdate && onGenerateBill) savedBill = await onGenerateBill(billData);
     if (savedBill) {
-        if (shouldPrint) { const defaultPrinter = systemConfig.printers?.find(p => p.isDefault); if (defaultPrinter) { executePrint(savedBill, defaultPrinter, true); } else { setBillToPrint(savedBill); setShouldResetAfterPrint(true); setPrinterModalOpen(true); } } 
-        else { if (isUpdate) { if(onCancelEdit) onCancelEdit(); return; } if (startTimeRef.current) { const seconds = Math.floor((Date.now() - startTimeRef.current) / 1000); setOrderSeconds(seconds); } else { setOrderSeconds(0); } setLastSavedBill(savedBill); setShowOrderSuccessModal(true); }
+        if (shouldPrint) { const defaultPrinter = systemConfig.printers?.find(p => p.isDefault); if (defaultPrinter) executePrint(savedBill, defaultPrinter, true); else { setBillToPrint(savedBill); setShouldResetAfterPrint(true); setPrinterModalOpen(true); } } 
+        else { if (isUpdate) { if(onCancelEdit) onCancelEdit(); return; } if (startTimeRef.current) setOrderSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000)); setLastSavedBill(savedBill); setShowOrderSuccessModal(true); }
     }
   }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, roundOff, onGenerateBill, systemConfig, executePrint, t, paymentMode, selectedSalesmanId, salesmen]);
   
@@ -532,9 +479,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   
   const handleKeyDown = (e: React.KeyboardEvent) => { 
     if (searchResults.length === 0 || navigableBatchesByProduct.every(b => b.length === 0)) return; 
-    const findNext = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) { const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); return firstProductIndex !== -1 ? { product: firstProductIndex, batch: 0 } : current; } const currentProductBatches = navigableBatchesByProduct[product]; if (batch < currentProductBatches.length - 1) { return { product, batch: batch + 1 }; } let nextProductIndex = product + 1; while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) { nextProductIndex++; } if (nextProductIndex < navigableBatchesByProduct.length) { return { product: nextProductIndex, batch: 0 }; } const firstValidIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); return firstValidIndex !== -1 ? { product: firstValidIndex, batch: 0 } : current; }; 
-    const findPrev = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) { let lastProductIndex = navigableBatchesByProduct.length - 1; while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) { lastProductIndex--; } return lastProductIndex !== -1 ? { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 } : current; } if (batch > 0) { return { product, batch: batch - 1 }; } let prevProductIndex = product - 1; while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) { prevProductIndex--; } if (prevProductIndex >= 0) { const prevProductBatches = navigableBatchesByProduct[prevProductIndex]; return { product: prevProductIndex, batch: prevProductBatches.length - 1 }; } let lastValidIndex = navigableBatchesByProduct.length - 1; while (lastValidIndex >= 0 && navigableBatchesByProduct[lastValidIndex].length === 0) { lastValidIndex--; } return lastValidIndex !== -1 ? { product: lastValidIndex, batch: navigableBatchesByProduct[lastValidIndex].length - 1 } : current; }; 
-    switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) { handleAddToCart(product, batch); } } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
+    const findNext = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) { const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); return firstProductIndex !== -1 ? { product: firstProductIndex, batch: 0 } : current; } const currentProductBatches = navigableBatchesByProduct[product]; if (batch < currentProductBatches.length - 1) return { product, batch: batch + 1 }; let nextProductIndex = product + 1; while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) nextProductIndex++; if (nextProductIndex < navigableBatchesByProduct.length) return { product: nextProductIndex, batch: 0 }; const firstValidIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); return firstValidIndex !== -1 ? { product: firstValidIndex, batch: 0 } : current; }; 
+    const findPrev = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) { let lastProductIndex = navigableBatchesByProduct.length - 1; while (lastProductIndex >= 0 && navigableBatchesByProduct[lastProductIndex].length === 0) lastProductIndex--; return lastProductIndex !== -1 ? { product: lastProductIndex, batch: navigableBatchesByProduct[lastProductIndex].length - 1 } : current; } if (batch > 0) return { product, batch: batch - 1 }; let prevProductIndex = product - 1; while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) prevProductIndex--; if (prevProductIndex >= 0) return { product: prevProductIndex, batch: navigableBatchesByProduct[prevProductIndex].length - 1 }; let lastValidIndex = navigableBatchesByProduct.length - 1; while (lastValidIndex >= 0 && navigableBatchesByProduct[lastValidIndex].length === 0) lastValidIndex--; return lastValidIndex !== -1 ? { product: lastValidIndex, batch: navigableBatchesByProduct[lastValidIndex].length - 1 } : current; }; 
+    switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) handleAddToCart(product, batch); } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
   };
 
   return (
@@ -544,28 +491,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
           <div className="flex flex-col gap-2 mb-4">
             <div className="flex gap-2">
                 <div className="relative flex-grow">
-                    <input 
-                        ref={searchInputRef} 
-                        type="text" 
-                        placeholder={isPharmaMode ? "Search Name or Name MRP (e.g. Paracet 40)" : "Search Name or Barcode"} 
-                        value={searchTerm} 
-                        onChange={e => setSearchTerm(e.target.value)} 
-                        onKeyDown={handleKeyDown} 
-                        className={`${inputStyle} w-full px-4 py-3 text-lg font-medium`} 
-                    />
+                    <input ref={searchInputRef} type="text" placeholder={isPharmaMode ? "Search Name or Part No MRP (e.g. Paracet 40)" : "Search Name or Barcode"} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} onKeyDown={handleKeyDown} className={`${inputStyle} w-full px-4 py-3 text-lg font-medium`} />
                     {searchResults.length > 0 && searchTerm && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                        <ul>{searchResults.map((product, productIndex) => (navigableBatchesByProduct[productIndex]?.length > 0 && <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0"><div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center"><span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span></div><ul className="pl-4 pb-2">{navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; const unitsPerStrip = product.unitsPerStrip || 1; return (<li key={batch.id} ref={isActive ? activeItemRef : null} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}><div>{isPharmaMode && (<><span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span><span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span></>)}</div><div className="flex items-center gap-4"><span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span><span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span></div></li>); })}</ul></li>))}</ul></div>)}
+                        <ul>{searchResults.map((product, productIndex) => (navigableBatchesByProduct[productIndex]?.length > 0 && <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0"><div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center"><span>{product.name} {!isPharmaMode && product.barcode && <span className="text-xs font-mono text-slate-500">({product.barcode})</span>}</span></div><ul className="pl-4 pb-2">{navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; return (<li key={batch.id} ref={isActive ? activeItemRef : null} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}><div>{isPharmaMode && (<><span className="text-slate-800 dark:text-slate-200">Batch: <span className="font-medium">{batch.batchNumber}</span></span><span className="text-sm ml-3 text-slate-600 dark:text-slate-400">Exp: {batch.expiryDate}</span></>)}</div><div className="flex items-center gap-4"><span className="text-slate-800 dark:text-slate-200">MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span><span className="text-sm text-green-600 dark:text-green-400 font-semibold ml-3">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock} U`}</span></div></li>); })}</ul></li>))}</ul></div>)}
                 </div>
-                <button 
-                    onClick={() => setShowTextScanner(true)} 
-                    className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-all flex flex-col items-center justify-center min-w-[80px] border-2 border-indigo-200"
-                    title="Scan Part No/MRP from Pack"
-                >
+                <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-all flex flex-col items-center justify-center min-w-[80px] border-2 border-indigo-200" title="Scan Part No/MRP from Pack">
                     <CameraIcon className="h-6 w-6" />
-                    <span className="text-[10px] font-extrabold mt-1">AI SCAN</span>
+                    <span className="text-[10px] font-extrabold mt-1 uppercase">AI SCAN</span>
                 </button>
-                {!isPharmaMode && (<button onClick={() => setShowScanner(!showScanner)} className={`p-3 rounded-lg transition-colors ${showScanner ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300'}`} title={showScanner ? "Close Barcode" : "Scan Barcode"}><BarcodeIcon className="h-6 w-6" /></button>)}
+                <button onClick={() => setShowScanner(!showScanner)} className={`p-3 rounded-lg transition-colors border-2 ${showScanner ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'} flex flex-col items-center justify-center min-w-[80px]`} title={showScanner ? "Close Barcode" : "Scan Barcode"}>
+                    <BarcodeIcon className="h-6 w-6" />
+                    <span className="text-[10px] font-bold mt-1 uppercase">BARCODE</span>
+                </button>
             </div>
             <div className="text-[10px] text-slate-500 italic flex items-center gap-1">
                 <InformationCircleIcon className="h-3 w-3" /> Tip: Type name then space then MRP for faster search (e.g. "Dolo 30")
@@ -592,73 +530,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       </div>
       
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
-      <MatchResolutionModal 
-        isOpen={resolutionData.isOpen} 
-        onClose={() => setResolutionData(prev => ({...prev, isOpen: false}))} 
-        candidates={resolutionData.candidates}
-        scannedText={resolutionData.text}
-        onSelect={(p, b) => {
-            handleAddToCart(p, b);
-            setResolutionData(prev => ({...prev, isOpen: false}));
-        }}
-      />
-
+      <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
+      <MatchResolutionModal isOpen={resolutionData.isOpen} onClose={() => setResolutionData(prev => ({...prev, isOpen: false}))} candidates={resolutionData.candidates} scannedText={resolutionData.text} onSelect={(p, b) => { handleAddToCart(p, b); setResolutionData(prev => ({...prev, isOpen: false})); }} />
       {itemToEdit && (<EditBillItemModal isOpen={!!itemToEdit} onClose={() => setItemToEdit(null)} item={itemToEdit.item} maxStock={itemToEdit.maxStock} onUpdate={updateCartItemDetails} systemConfig={systemConfig} />)}
-      <OrderSuccessModal isOpen={showOrderSuccessModal} onClose={() => setShowOrderSuccessModal(false)} bill={lastSavedBill} timeTaken={orderSeconds} companyProfile={companyProfile} onPrint={() => { if (lastSavedBill) { const defaultPrinter = systemConfig.printers?.find(p => p.isDefault); if (defaultPrinter) { executePrint(lastSavedBill, defaultPrinter, true); } else { setBillToPrint(lastSavedBill); setPrinterModalOpen(true); } } }} onCreateNew={() => { resetBillingForm(); setShowOrderSuccessModal(false); }} onEditOrder={() => { setShowOrderSuccessModal(false); }} />
+      <OrderSuccessModal isOpen={showOrderSuccessModal} onClose={() => setShowOrderSuccessModal(false)} bill={lastSavedBill} timeTaken={orderSeconds} companyProfile={companyProfile} onPrint={() => { if (lastSavedBill) { const defaultPrinter = systemConfig.printers?.find(p => p.isDefault); if (defaultPrinter) executePrint(lastSavedBill, defaultPrinter, true); else { setBillToPrint(lastSavedBill); setPrinterModalOpen(true); } } }} onCreateNew={() => { resetBillingForm(); setShowOrderSuccessModal(false); }} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); if (shouldResetAfterPrint) { if(onCancelEdit) onCancelEdit(); setShouldResetAfterPrint(false); } setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={() => {}} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
       <AddCustomerModal isOpen={isAddCustomerModalOpen} onClose={() => setAddCustomerModalOpen(false)} onAddCustomer={handleAddNewCustomer} initialName={customerName} />
       <AddSalesmanModal isOpen={isAddSalesmanModalOpen} onClose={() => setAddSalesmanModalOpen(false)} onAddSalesman={handleAddNewSalesman} />
     </div>
   );
-};
-
-// ... Rest of the helper components remain the same ...
-const SubstituteModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    sourceProduct: Product | null;
-    substitutes: Product[];
-    onAddToCart: (product: Product, batch: Batch) => void;
-}> = ({ isOpen, onClose, sourceProduct, substitutes, onAddToCart }) => {
-    if (!sourceProduct) return null;
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title={`Substitutes for ${sourceProduct.name}`}>
-            <div className="space-y-4">
-                <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                    <p className="font-semibold text-slate-800 dark:text-slate-200">Original Product</p>
-                    <p className="text-sm text-slate-600 dark:text-slate-400">{sourceProduct.name} by {sourceProduct.company}</p>
-                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{sourceProduct.composition}</p>
-                </div>
-                <div className="max-h-96 overflow-y-auto space-y-3">
-                    {substitutes.length > 0 ? (
-                        substitutes.map(product => (
-                            <div key={product.id} className="p-3 border dark:border-slate-600 rounded-lg">
-                                <p className="font-semibold text-slate-800 dark:text-slate-200">{product.name}</p>
-                                <p className="text-sm text-slate-600 dark:text-slate-400">{product.company}</p>
-                                <ul className="mt-2 space-y-1">
-                                    {product.batches.filter(b => b.stock > 0).map(batch => (
-                                        <li key={batch.id} className="flex justify-between items-center text-sm p-2 bg-slate-50 dark:bg-slate-700/50 rounded">
-                                            <div>
-                                                <span>Batch: <span className="font-medium">{batch.batchNumber}</span></span>
-                                                <span className="ml-3">Exp: {batch.expiryDate}</span>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <span>MRP: <span className="font-medium">₹{batch.mrp.toFixed(2)}</span></span>
-                                                <span className="text-green-600 dark:text-green-400">Stock: {batch.stock}</span>
-                                                <button onClick={() => { onAddToCart(product, batch); onClose(); }} className="px-3 py-1 bg-indigo-600 text-white text-xs font-semibold rounded hover:bg-indigo-700">Add</button>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))
-                    ) : (
-                        <p className="text-center text-slate-600 dark:text-slate-400 py-6">No substitutes with the same composition found in stock.</p>
-                    )}
-                </div>
-            </div>
-        </Modal>
-    );
 };
 
 const EditBillItemModal: React.FC<{ isOpen: boolean; onClose: () => void; item: CartItem; maxStock: number; onUpdate: (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => void; systemConfig: SystemConfig; }> = ({ isOpen, onClose, item, maxStock, onUpdate, systemConfig }) => {
@@ -669,8 +549,6 @@ const EditBillItemModal: React.FC<{ isOpen: boolean; onClose: () => void; item: 
     useEffect(() => { setFormState({ mrp: item.mrp, stripQty: item.stripQty, looseQty: item.looseQty }); }, [item, isOpen]);
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const totalRequested = (formState.stripQty * unitsPerStrip) + formState.looseQty;
-        if (totalRequested <= 0) return;
         onUpdate(item.batchId, { mrp: formState.mrp, stripQty: isPharmaMode && unitsPerStrip > 1 ? formState.stripQty : 0, looseQty: formState.looseQty });
         onClose();
     };
