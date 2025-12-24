@@ -1,8 +1,9 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon, SearchIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
 
 interface InventoryProps {
@@ -60,132 +61,128 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return result || '0 U';
 };
 
+/* Fix: Added missing ProductImportModal component */
 const ProductImportModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
     onDownloadTemplate: () => void;
 }> = ({ isOpen, onClose, onImport, onDownloadTemplate }) => {
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    
-    if (!isOpen) return null;
-
-    const requiredFields = [
-        { name: 'Name', desc: 'Product/Item Name*' },
-        { name: 'Barcode/Part No', desc: 'Unique ID or Barcode' },
-        { name: 'Company', desc: 'Brand/Manufacturer' },
-        { name: 'GST', desc: 'Tax % (e.g. 12)' },
-        { name: 'MRP', desc: 'Max Retail Price' },
-        { name: 'Purchase Rate', desc: 'Your Cost Price' },
-        { name: 'Sale Rate', desc: 'Your Selling Price' }
-    ];
-
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Import Products" maxWidth="max-w-2xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="Import Products">
             <div className="space-y-6">
-                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-xl border border-teal-100 dark:border-teal-800">
-                    <h4 className="font-bold text-teal-800 dark:text-teal-300 flex items-center gap-2 mb-3">
-                        <InformationCircleIcon className="h-5 w-5" />
-                        Required CSV Format
-                    </h4>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                        Your CSV file must include these columns in any order. The 'Name' field is mandatory.
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {requiredFields.map((field, idx) => (
-                            <div key={idx} className="flex flex-col p-2 bg-white dark:bg-slate-800 rounded border dark:border-slate-700 shadow-sm">
-                                <span className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-tight">{field.name}</span>
-                                <span className="text-[9px] text-slate-400 italic line-clamp-1">{field.desc}</span>
-                            </div>
-                        ))}
+                <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                    <h4 className="text-indigo-900 dark:text-indigo-200 font-bold mb-2">Instructions</h4>
+                    <ul className="text-sm text-indigo-700 dark:text-indigo-300 list-disc pl-5 space-y-1">
+                        <li>Download the CSV template below.</li>
+                        <li>Fill in your product details.</li>
+                        <li>Save and upload the file to bulk import items.</li>
+                    </ul>
+                </div>
+                <div className="flex flex-col gap-4">
+                    <button onClick={onDownloadTemplate} className="w-full py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                        <DownloadIcon className="h-5 w-5" /> Download Template
+                    </button>
+                    <div className="relative">
+                        <input 
+                            type="file" 
+                            accept=".csv" 
+                            onChange={onImport} 
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                        />
+                        <div className="w-full py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2">
+                            <UploadIcon className="h-5 w-5" /> Import CSV File
+                        </div>
                     </div>
                 </div>
-
-                <div className="flex flex-col sm:flex-row gap-4 items-center justify-between p-6 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600">
-                    <div className="text-center sm:text-left">
-                        <p className="font-bold text-slate-800 dark:text-slate-200 text-lg">Ready to upload?</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Select your .csv file below</p>
-                    </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                        <button 
-                            onClick={onDownloadTemplate}
-                            className="flex-1 sm:flex-none px-4 py-2 bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-700 rounded-lg text-sm font-bold hover:bg-teal-50 transition-colors flex items-center justify-center gap-2"
-                        >
-                            <DownloadIcon className="h-4 w-4" /> Template
-                        </button>
-                        <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="flex-1 sm:flex-none px-6 py-2 bg-teal-600 text-white rounded-lg text-sm font-bold hover:bg-teal-700 shadow-md transition-colors flex items-center justify-center gap-2"
-                        >
-                            <UploadIcon className="h-4 w-4" /> Select File
-                        </button>
-                        <input type="file" ref={fileInputRef} onChange={onImport} accept=".csv" className="hidden" />
-                    </div>
-                </div>
-
                 <div className="flex justify-end pt-4 border-t dark:border-slate-700">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-300">Close</button>
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-300 transition-colors">Close</button>
                 </div>
             </div>
         </Modal>
     );
 };
 
-const EditBatchModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    product: Product;
-    batch: Batch;
-    onSave: (pid: string, updatedBatch: Batch) => void;
-}> = ({ isOpen, onClose, product, batch, onSave }) => {
-    const [formData, setFormData] = useState<Batch>({ ...batch });
-    useEffect(() => { setFormData({ ...batch }); }, [batch]);
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value, type } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseFloat(value) || 0 : value }));
-    };
-    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(product.id, formData); onClose(); };
-    if (!isOpen) return null;
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Edit Batch">
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product</label><input value={product.name} disabled className={`${inputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} /></div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Batch No</label><input name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputStyle} required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Expiry (YYYY-MM)</label><input name="expiryDate" value={formData.expiryDate} onChange={handleChange} className={inputStyle} placeholder="YYYY-MM" required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={handleChange} className={inputStyle} required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={handleChange} className={inputStyle} /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={handleChange} className={inputStyle} required /></div>
-                    <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Stock (Total Units)</label><input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required /></div>
-                </div>
-                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg">Save</button></div>
-            </form>
-        </Modal>
-    );
-};
+const CompanyWiseStockView: React.FC<{ products: Product[], t: any }> = ({ products, t }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    const companyData = useMemo(() => {
+        const map = new Map<string, { company: string, totalValue: number, itemCount: number }>();
+        
+        products.forEach(p => {
+            const totalValue = p.batches.reduce((sum, b) => {
+                const units = p.unitsPerStrip || 1;
+                return sum + (b.stock * (b.purchasePrice / units));
+            }, 0);
 
-const PrintBarcodeModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product }> = ({ isOpen, onClose, product }) => {
-    const [quantity, setQuantity] = useState(1);
-    const mrp = useMemo(() => {
-        if (!product.batches || product.batches.length === 0) return 0;
-        return Math.max(...product.batches.map(b => b.saleRate || b.mrp));
-    }, [product]);
-    const handlePrint = () => {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) { alert("Please allow popups."); return; }
-        const barcodeValue = product.barcode || product.id.substring(0, 8);
-        const html = `<!DOCTYPE html><html><head><title>Print Labels</title><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script><style>@media print{@page{size:50mm 25mm;margin:0}body{margin:0}}body{margin:0;padding:0;font-family:sans-serif}.label{width:50mm;height:25mm;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly;text-align:center;overflow:hidden;page-break-inside:avoid;page-break-after:always;padding:1mm 0;box-sizing:border-box}.name{font-size:9px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:48mm;text-transform:uppercase;line-height:1}.price{font-size:9px;font-weight:bold;line-height:1}svg{width:95%;height:auto;max-height:15mm;display:block}</style></head><body>${Array.from({ length: quantity }).map(() => `<div class="label"><div class="name">${product.name}</div><svg class="barcode" jsbarcode-format="auto" jsbarcode-value="${barcodeValue}" jsbarcode-textmargin="0" jsbarcode-fontoptions="bold" jsbarcode-height="45" jsbarcode-width="2" jsbarcode-displayValue="true" jsbarcode-fontSize="14" jsbarcode-marginTop="0" jsbarcode-marginBottom="0"></svg><div class="price">RATE: ₹${mrp.toFixed(2)}</div></div>`).join('')}<script>JsBarcode(".barcode").init();window.onload=function(){setTimeout(function(){window.print();window.close();},500)}</script></body></html>`;
-        printWindow.document.write(html); printWindow.document.close(); onClose();
+            const current = map.get(p.company) || { company: p.company, totalValue: 0, itemCount: 0 };
+            current.totalValue += totalValue;
+            current.itemCount += 1;
+            map.set(p.company, current);
+        });
+
+        return Array.from(map.values())
+            .filter(i => i.company.toLowerCase().includes(searchTerm.toLowerCase()))
+            .sort((a, b) => a.company.localeCompare(b.company));
+    }, [products, searchTerm]);
+
+    const totalValuation = useMemo(() => companyData.reduce((sum, item) => sum + item.totalValue, 0), [companyData]);
+
+    const handleExport = () => {
+        exportToCsv('company_wise_stock', companyData.map(item => ({
+            'Company': item.company,
+            'Total Items': item.itemCount,
+            'Valuation (Purchase)': item.totalValue.toFixed(2)
+        })));
     };
-    if (!isOpen) return null;
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Print Labels">
-            <div className="space-y-4">
-                <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg"><p className="text-lg font-bold">{product.name}</p><p className="text-sm text-slate-500">{product.company}</p></div>
-                <div><label className="block text-sm font-medium mb-1">Number of Labels</label><input type="number" min="1" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} className={inputStyle} autoFocus /></div>
-                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700"><button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button><button onClick={handlePrint} className="px-4 py-2 bg-teal-600 text-white rounded-lg flex items-center gap-2"><PrinterIcon className="h-4 w-4" /> Print</button></div>
+        <Card title={t.inventory.companyStock}>
+            <div className="flex flex-col sm:flex-row gap-4 mb-4 justify-between items-end">
+                <div className="relative flex-grow max-w-md">
+                    <input 
+                        type="text" 
+                        placeholder="Search company..." 
+                        value={searchTerm} 
+                        onChange={e => setSearchTerm(e.target.value)} 
+                        className={`${inputStyle} pl-10`} 
+                    />
+                    <SearchIcon className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="bg-indigo-50 dark:bg-indigo-900/30 px-4 py-2 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                        <span className="text-sm font-semibold text-indigo-800 dark:text-indigo-300">Total Value:</span>
+                        <span className="ml-2 text-lg font-bold text-indigo-900 dark:text-indigo-100">₹{totalValuation.toFixed(2)}</span>
+                    </div>
+                    <button onClick={handleExport} className="bg-green-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-green-700">
+                        <DownloadIcon className="h-5 w-5" /> Export
+                    </button>
+                </div>
             </div>
-        </Modal>
+            <div className="overflow-x-auto border dark:border-slate-700 rounded-lg">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs font-bold">
+                        <tr>
+                            <th className="px-4 py-3">Company Name</th>
+                            <th className="px-4 py-3 text-center">No. of Items</th>
+                            <th className="px-4 py-3 text-right">Total Stock Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {companyData.map((item, idx) => (
+                            <tr key={idx} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
+                                <td className="px-4 py-3 font-medium text-slate-900 dark:text-white uppercase">{item.company}</td>
+                                <td className="px-4 py-3 text-center font-bold text-slate-500">{item.itemCount}</td>
+                                <td className="px-4 py-3 text-right font-black text-indigo-600 dark:text-indigo-400">₹{item.totalValue.toFixed(2)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {companyData.length === 0 && (
+                    <div className="py-10 text-center text-slate-500">No company stock records found.</div>
+                )}
+            </div>
+        </Card>
     );
 };
 
@@ -259,6 +256,39 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
     );
 };
 
+const EditBatchModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    product: Product;
+    batch: Batch;
+    onSave: (pid: string, updatedBatch: Batch) => void;
+}> = ({ isOpen, onClose, product, batch, onSave }) => {
+    const [formData, setFormData] = useState<Batch>({ ...batch });
+    useEffect(() => { setFormData({ ...batch }); }, [batch, isOpen]);
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value, type } = e.target;
+        setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseFloat(value) || 0 : value }));
+    };
+    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(product.id, formData); onClose(); };
+    if (!isOpen) return null;
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Batch">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product</label><input value={product.name} disabled className={`${inputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Batch No</label><input name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputStyle} required /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Expiry (YYYY-MM)</label><input name="expiryDate" value={formData.expiryDate} onChange={handleChange} className={inputStyle} placeholder="YYYY-MM" required /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={handleChange} className={inputStyle} required /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={handleChange} className={inputStyle} /></div>
+                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={handleChange} className={inputStyle} required /></div>
+                    <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Stock (Total Units)</label><input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required /></div>
+                </div>
+                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg">Save</button></div>
+            </form>
+        </Modal>
+    );
+};
+
 const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingBatchData, setEditingBatchData] = useState<{ product: Product, batch: Batch } | null>(null);
@@ -315,10 +345,9 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
 
 const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
     const t = getTranslation(systemConfig.language);
-    const [activeTab, setActiveTab] = useState<'all' | 'selected' | 'batch'>('all');
+    const [activeTab, setActiveTab] = useState<'all' | 'selected' | 'batch' | 'company'>('all');
     const [isImportModalOpen, setImportModalOpen] = useState(false);
     
-    // Fix: Handle batch deletion logic within the component using onUpdateProduct
     const handleDeleteBatch = (pid: string, bid: string) => {
         if (!window.confirm("Delete this batch?")) return;
         const product = products.find(p => p.id === pid);
@@ -333,7 +362,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async (e) => {
-            const text = e.target?.result as string;
             alert("CSV Import Triggered (Logic pending backend mapping)");
             setImportModalOpen(false);
         };
@@ -367,12 +395,14 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 <button onClick={() => setActiveTab('all')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'all' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-slate-500'}`}>{t.inventory.allStock}</button>
                 <button onClick={() => setActiveTab('selected')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'selected' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-slate-500'}`}>{t.inventory.selectedStock}</button>
                 <button onClick={() => setActiveTab('batch')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'batch' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-slate-500'}`}>{t.inventory.batchStock}</button>
+                <button onClick={() => setActiveTab('company')} className={`pb-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === 'company' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-slate-500'}`}>{t.inventory.companyStock}</button>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-4 transition-all duration-300">
                 {activeTab === 'all' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'batch' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'company' && <CompanyWiseStockView products={products} t={t} />}
             </div>
 
             <ProductImportModal 

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Bill, CompanyProfile, SystemConfig, PrinterProfile } from '../types';
@@ -74,7 +75,8 @@ const DayBook: React.FC<DayBookProps> = ({ bills, companyProfile, systemConfig, 
   }, [billsForSelectedDate]);
 
   const handleExport = () => {
-    const exportData = billsForSelectedDate.map(bill => ({
+    /* Fix: Explicitly cast exportData to any[] to allow empty strings in TOTAL row */
+    const exportData: any[] = billsForSelectedDate.map(bill => ({
         'Bill No.': bill.billNumber,
         'Time': new Date(bill.date).toLocaleTimeString(),
         'Customer': bill.customerName,
