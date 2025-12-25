@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -20,6 +19,7 @@ import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 import ChequePrint from './components/ChequePrint';
 import SalesDashboard from './components/SalesDashboard';
 import SubscriptionAdmin from './components/SubscriptionAdmin';
+import { InformationCircleIcon, XIcon, CloudIcon, CheckCircleIcon } from './components/icons/Icons';
 import type { 
   AppView, Product, Bill, Purchase, Supplier, Customer, CustomerPayment, 
   Payment, CompanyProfile, SystemConfig, GstRate, Company, UserPermissions, 
@@ -53,6 +53,7 @@ function App() {
   const [dataOwnerId, setDataOwnerId] = useState<string | null>(null);
   const [userPermissions, setUserPermissions] = useState<UserPermissions | undefined>(undefined);
   const [isOperator, setIsOperator] = useState(false);
+  const [showRenewOverlay, setShowRenewOverlay] = useState(false);
 
   // Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -76,6 +77,27 @@ function App() {
   const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
   const [currentLedgerSupplierId, setCurrentLedgerSupplierId] = useState<string | null>(null);
 
+  // Subscription Warning Logic
+  const subscriptionStatus = useMemo(() => {
+    if (!systemConfig.subscription?.isPremium || !systemConfig.subscription?.expiryDate) {
+        return { isExpiring: false, isExpired: false, daysLeft: 0 };
+    }
+    const expiry = new Date(systemConfig.subscription.expiryDate);
+    const today = new Date();
+    const diffTime = expiry.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return {
+        isExpiring: diffDays <= 15 && diffDays > 0,
+        isExpired: diffDays <= 0,
+        daysLeft: diffDays
+    };
+  }, [systemConfig.subscription]);
+
+  const upiId = "9890072651@upi"; // M. Soft India
+  const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=5000&cu=INR`;
+  const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
+
   // Auth & User Mapping Logic
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -93,7 +115,6 @@ function App() {
 
         if (mappingSnap.exists()) {
           const mapping = mappingSnap.data() as UserMapping;
-          // Update mapping if email or name is missing (for older accounts)
           if (!mapping.email || !mapping.name) {
               updateDoc(mappingRef, { email: currentUser.email, name: currentUser.displayName || mapping.name || '' });
           }
@@ -178,13 +199,6 @@ function App() {
     const unsubConfig = onSnapshot(doc(db, `${basePath}/systemConfig`, 'config'), (snap) => {
       if (snap.exists()) {
           const cfg = snap.data() as SystemConfig;
-          if (cfg.subscription?.isPremium && cfg.subscription.expiryDate) {
-              const expiry = new Date(cfg.subscription.expiryDate);
-              if (expiry < new Date()) {
-                  cfg.subscription.isPremium = false;
-                  cfg.subscription.planType = 'Free';
-              }
-          }
           setSystemConfig(cfg);
       }
     });
@@ -360,6 +374,57 @@ function App() {
         isOperator={isOperator}
       />
 
+      {/* Subscription Warning Banner */}
+      {(subscriptionStatus.isExpiring || subscriptionStatus.isExpired) && !isOperator && (
+          <div className={`sticky top-16 z-30 flex flex-col sm:flex-row items-center justify-between px-6 py-3 shadow-md animate-pulse-subtle ${subscriptionStatus.isExpired ? 'bg-rose-600 text-white' : 'bg-amber-500 text-slate-900'}`}>
+              <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                  <InformationCircleIcon className="h-6 w-6" />
+                  <p className="text-sm font-black uppercase tracking-tight">
+                      {subscriptionStatus.isExpired 
+                        ? 'CRITICAL: Subscription Expired! Renew immediately to avoid service interruption.' 
+                        : `Attention: Your Premium Subscription expires in ${subscriptionStatus.daysLeft} days.`}
+                  </p>
+              </div>
+              <button 
+                onClick={() => setShowRenewOverlay(true)}
+                className={`px-6 py-1.5 rounded-full font-black text-xs uppercase tracking-widest transition-all transform active:scale-95 shadow-lg ${subscriptionStatus.isExpired ? 'bg-white text-rose-600 hover:bg-slate-100' : 'bg-slate-900 text-white hover:bg-black'}`}
+              >
+                  Renew Now
+              </button>
+          </div>
+      )}
+
+      {/* Renewal QR Overlay */}
+      {showRenewOverlay && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border-4 border-indigo-600 relative animate-fade-in-up">
+                  <button onClick={() => setShowRenewOverlay(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"><XIcon className="h-6 w-6" /></button>
+                  <div className="p-6 text-center">
+                      <div className="flex justify-center mb-4">
+                          <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full">
+                              <CloudIcon className="h-10 w-10 text-indigo-600" />
+                          </div>
+                      </div>
+                      <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Renew Premium</h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Tag Your Business to the Cloud</p>
+                      
+                      <div className="mt-6 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-700">
+                          <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto border-4 border-white rounded-lg shadow-md" />
+                          <p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs text-slate-400 font-normal">/ Year</span></p>
+                      </div>
+
+                      <div className="mt-6 space-y-3">
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400">Scan using any UPI App (GPay, PhonePe, Paytm)</p>
+                          <div className="bg-indigo-50 dark:bg-indigo-900/20 py-2 px-4 rounded-lg flex items-center justify-center gap-2">
+                              <CheckCircleIcon className="h-4 w-4 text-indigo-500" />
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp Screenshot: 9890072651</span>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <main className="max-w-7xl mx-auto py-6">
         {activeView === 'billing' && (
           <Billing
@@ -490,6 +555,23 @@ function App() {
         onUpdateGstRate={(id, r) => updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), { rate: r })}
         onDeleteGstRate={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))}
       />
+
+      <style>{`
+        @keyframes pulse-subtle {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.92; }
+        }
+        .animate-pulse-subtle {
+          animation: pulse-subtle 3s infinite ease-in-out;
+        }
+        @keyframes fade-in-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+          animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
     </div>
   );
 }
