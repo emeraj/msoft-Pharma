@@ -26,7 +26,8 @@ interface PurchasesProps {
     isSubscriptionExpired?: boolean;
 }
 
-const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
+const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500 transition-all";
+const tableInputStyle = "w-full bg-slate-700/30 border border-transparent focus:border-indigo-500 focus:bg-slate-700 rounded px-1.5 py-1 text-slate-200 focus:outline-none transition-all";
 const formSelectStyle = `${formInputStyle} appearance-none`;
 
 const UpgradeQuotaModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
@@ -155,7 +156,7 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Verify Scanned Invoice" maxWidth="max-w-7xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="Verify & Edit Scanned Data" maxWidth="max-w-full">
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="md:col-span-1">
@@ -185,20 +186,23 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
                 </div>
 
                 <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner bg-slate-800/50">
-                    <div className="overflow-x-auto max-h-[45vh]">
+                    <div className="overflow-x-auto max-h-[50vh]">
                         <table className="w-full text-[12px] text-left border-collapse">
-                            <thead className="bg-[#1e293b] text-slate-300 uppercase text-[9px] font-black tracking-widest sticky top-0 z-10">
+                            <thead className="bg-[#1e293b] text-slate-300 uppercase text-[9px] font-black tracking-widest sticky top-0 z-10 shadow-md">
                                 <tr>
                                     <th className="px-4 py-4 w-10 text-center">
                                         <input type="checkbox" checked={items.length > 0 && items.every(i => i.selected)} onChange={e => setItems(prev => prev.map(i => ({...i, selected: e.target.checked})))} />
                                     </th>
-                                    <th className="px-4 py-4 min-w-[200px]">PRODUCT / DESC</th>
-                                    <th className="px-4 py-4 text-center">HSN</th>
-                                    <th className="px-4 py-4 text-center">QTY</th>
-                                    <th className="px-4 py-4 text-right">RATE</th>
-                                    <th className="px-4 py-4 text-center">DISC%</th>
-                                    <th className="px-4 py-4 text-center">TAX%</th>
-                                    <th className="px-4 py-4 text-right">AMOUNT</th>
+                                    <th className="px-4 py-4 min-w-[180px]">PRODUCT / DESC</th>
+                                    <th className="px-4 py-4 text-center min-w-[100px]">CODE / PART #</th>
+                                    <th className="px-4 py-4 text-center min-w-[80px]">HSN</th>
+                                    {isPharmaMode && <th className="px-4 py-4 text-center min-w-[100px]">BATCH</th>}
+                                    {isPharmaMode && <th className="px-4 py-4 text-center min-w-[100px]">EXPIRY</th>}
+                                    <th className="px-4 py-4 text-center min-w-[60px]">QTY</th>
+                                    <th className="px-4 py-4 text-right min-w-[80px]">RATE</th>
+                                    <th className="px-4 py-4 text-center min-w-[60px]">DISC%</th>
+                                    <th className="px-4 py-4 text-center min-w-[60px]">TAX%</th>
+                                    <th className="px-4 py-4 text-right min-w-[90px]">AMOUNT</th>
                                     <th className="px-4 py-4 w-10"></th>
                                 </tr>
                             </thead>
@@ -211,29 +215,41 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
                                                 <input type="checkbox" checked={item.selected} onChange={() => setItems(prev => prev.map((it, i) => i === index ? { ...it, selected: !it.selected } : it))} />
                                             </td>
                                             <td className="px-4 py-3">
-                                                <input value={item.productName} onChange={e => handleItemChange(index, 'productName', e.target.value)} className="w-full bg-transparent font-bold text-slate-200 focus:outline-none" />
-                                                {item.barcode && <div className="text-[10px] text-slate-500">Extracted Code: {item.barcode}</div>}
+                                                <input value={item.productName} onChange={e => handleItemChange(index, 'productName', e.target.value)} className={`${tableInputStyle} font-bold`} placeholder="Product Name" />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <input value={item.hsnCode} onChange={e => handleItemChange(index, 'hsnCode', e.target.value)} className="w-full bg-transparent text-center focus:outline-none" />
+                                                <input value={item.barcode || ''} onChange={e => handleItemChange(index, 'barcode', e.target.value)} className={`${tableInputStyle} text-center font-mono text-[10px]`} placeholder="Technical Code" />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)} className="w-16 bg-transparent text-center focus:outline-none" />
+                                                <input value={item.hsnCode} onChange={e => handleItemChange(index, 'hsnCode', e.target.value)} className={`${tableInputStyle} text-center`} placeholder="HSN" />
+                                            </td>
+                                            {isPharmaMode && (
+                                                <td className="px-4 py-3 text-center">
+                                                    <input value={item.batchNumber} onChange={e => handleItemChange(index, 'batchNumber', e.target.value)} className={`${tableInputStyle} text-center font-mono`} placeholder="Batch" />
+                                                </td>
+                                            )}
+                                            {isPharmaMode && (
+                                                <td className="px-4 py-3 text-center">
+                                                    <input type="month" value={item.expiryDate} onChange={e => handleItemChange(index, 'expiryDate', e.target.value)} className={`${tableInputStyle} text-center text-[10px]`} />
+                                                </td>
+                                            )}
+                                            <td className="px-4 py-3 text-center">
+                                                <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', parseFloat(e.target.value) || 0)} className={`${tableInputStyle} text-center`} />
                                             </td>
                                             <td className="px-4 py-3 text-right">
-                                                <input type="number" value={item.purchasePrice} onChange={e => handleItemChange(index, 'purchasePrice', parseFloat(e.target.value) || 0)} className="w-20 bg-transparent text-right focus:outline-none" />
+                                                <input type="number" value={item.purchasePrice} onChange={e => handleItemChange(index, 'purchasePrice', parseFloat(e.target.value) || 0)} className={`${tableInputStyle} text-right`} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <input type="number" value={item.discount} onChange={e => handleItemChange(index, 'discount', parseFloat(e.target.value) || 0)} className="w-12 bg-transparent text-center focus:outline-none" />
+                                                <input type="number" value={item.discount} onChange={e => handleItemChange(index, 'discount', parseFloat(e.target.value) || 0)} className={`${tableInputStyle} text-center`} />
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <input type="number" value={item.gst} onChange={e => handleItemChange(index, 'gst', parseFloat(e.target.value) || 0)} className="w-12 bg-transparent text-center focus:outline-none" />
+                                                <input type="number" value={item.gst} onChange={e => handleItemChange(index, 'gst', parseFloat(e.target.value) || 0)} className={`${tableInputStyle} text-center`} />
                                             </td>
-                                            <td className="px-4 py-3 text-right font-black text-slate-300">
+                                            <td className="px-4 py-3 text-right font-black text-indigo-400">
                                                 {amount.toFixed(2)}
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <button onClick={() => setItems(prev => prev.filter((_, i) => i !== index))} className="text-rose-500 hover:text-rose-400">
+                                                <button onClick={() => setItems(prev => prev.filter((_, i) => i !== index))} className="text-rose-500 hover:text-rose-400 p-1">
                                                     <TrashIcon className="h-4 w-4"/>
                                                 </button>
                                             </td>
@@ -246,20 +262,20 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
                 </div>
 
                 <div className="flex justify-between items-center px-2">
-                    <button onClick={addMissingItem} className="text-indigo-400 font-bold hover:underline flex items-center gap-2 text-sm">
-                        <PlusIcon className="h-4 w-4" /> Add Missing Item
+                    <button onClick={addMissingItem} className="text-indigo-400 font-bold hover:underline flex items-center gap-2 text-sm bg-indigo-900/20 px-4 py-2 rounded-lg border border-indigo-500/30">
+                        <PlusIcon className="h-4 w-4" /> Add Missing Row
                     </button>
-                    <div className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
-                        Total Items: <span className="text-slate-200">{items.filter(i => i.selected).length}</span>
+                    <div className="text-[11px] font-black text-slate-500 uppercase tracking-widest bg-slate-900/50 px-4 py-2 rounded-lg border border-slate-700">
+                        Items Ready: <span className="text-emerald-400 text-sm ml-1">{items.filter(i => i.selected).length}</span>
                     </div>
                 </div>
 
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-700 text-slate-200 font-bold rounded-lg hover:bg-slate-600 transition-colors">
+                    <button onClick={onClose} className="px-8 py-2.5 bg-slate-700 text-slate-200 font-bold rounded-xl hover:bg-slate-600 transition-colors">
                         Cancel
                     </button>
-                    <button onClick={handleImport} className="px-8 py-2.5 bg-emerald-600 text-white font-black rounded-lg shadow-lg hover:bg-emerald-700 flex items-center gap-2 transform active:scale-95 transition-all">
-                        <CheckCircleIcon className="h-5 w-5" /> Import Selected Data
+                    <button onClick={handleImport} className="px-10 py-3 bg-emerald-600 text-white font-black rounded-xl shadow-xl hover:bg-emerald-700 flex items-center gap-2 transform active:scale-95 transition-all">
+                        <CheckCircleIcon className="h-6 w-6" /> IMPORT TO LEDGER
                     </button>
                 </div>
             </div>
@@ -320,7 +336,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                     <input name="quantity" value={formState.quantity} onChange={e => setFormState({...formState, quantity: e.target.value})} type="number" placeholder="Qty*" className={formInputStyle} required />
                     <input name="purchasePrice" value={formState.purchasePrice} onChange={e => setFormState({...formState, purchasePrice: e.target.value})} type="number" placeholder="Price*" className={formInputStyle} required step="0.01" />
                     <input name="mrp" value={formState.mrp} onChange={e => setFormState({...formState, mrp: e.target.value})} type="number" placeholder="MRP*" className={formInputStyle} required step="0.01" />
-                    <button type="submit" className="bg-indigo-600 text-white rounded-lg px-4 py-2 font-bold shadow hover:bg-indigo-700 transition-colors">Add to List</button>
+                    <button type="submit" className="bg-indigo-600 text-white rounded-lg px-4 py-2 font-bold shadow hover:bg-indigo-700 transition-colors">{itemToEdit ? 'Update Item' : 'Add to List'}</button>
                 </div>
             )}
         </form>
@@ -339,6 +355,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     const [isOcrPreviewOpen, setIsOcrPreviewOpen] = useState(false);
     const [ocrData, setOcrData] = useState<{ supplierName: string; invoiceNumber: string; invoiceDate: string; supplierGstin?: string; supplierAddress?: string; items: PurchaseLineItem[]; }>({ supplierName: '', invoiceNumber: '', invoiceDate: '', items: [] });
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const [editingLineItem, setEditingLineItem] = useState<PurchaseLineItem | null>(null);
 
     const isAiDisabledByPlan = useMemo(() => {
         return (systemConfig.subscription?.planType || 'Free') === 'Free';
@@ -523,6 +540,15 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
         }));
     };
 
+    const handleEditLineItem = (item: PurchaseLineItem, index: number) => {
+        setEditingLineItem(item);
+        setFormState(prev => ({
+            ...prev,
+            currentItems: prev.currentItems.filter((_, i) => i !== index)
+        }));
+        window.scrollTo({ top: 150, behavior: 'smooth' });
+    };
+
     return (
         <div className="p-4 sm:p-6 space-y-6 relative">
             {isProcessingOCR && (
@@ -583,7 +609,17 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                             <div><label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Date</label><input value={formState.invoiceDate} onChange={e => setFormState({...formState, invoiceDate: e.target.value})} type="date" className={formInputStyle} required /></div>
                         </div>
 
-                        <AddItemForm products={products} onAddItem={item => setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}))} companies={[]} systemConfig={systemConfig} gstRates={gstRates} />
+                        <AddItemForm 
+                            products={products} 
+                            onAddItem={item => { 
+                                setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}));
+                                setEditingLineItem(null);
+                            }} 
+                            itemToEdit={editingLineItem}
+                            companies={[]} 
+                            systemConfig={systemConfig} 
+                            gstRates={gstRates} 
+                        />
                         
                         {formState.currentItems.length > 0 && (
                             <div className="mt-8 space-y-6">
@@ -623,7 +659,18 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                                                         <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">₹{lineTotal.toFixed(2)}</td>
                                                         <td className="px-4 py-3 text-center">
                                                             <div className="flex justify-center gap-3">
-                                                                <button onClick={() => setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== idx)}))} className="text-rose-500 hover:text-rose-700 transition-colors">
+                                                                <button 
+                                                                    onClick={() => handleEditLineItem(item, idx)} 
+                                                                    className="text-blue-500 hover:text-blue-700 transition-colors"
+                                                                    title="Edit Item"
+                                                                >
+                                                                    <PencilIcon className="h-4 w-4" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== idx)}))} 
+                                                                    className="text-rose-500 hover:text-rose-700 transition-colors"
+                                                                    title="Remove Item"
+                                                                >
                                                                     <TrashIcon className="h-4 w-4" />
                                                                 </button>
                                                             </div>
