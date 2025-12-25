@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon, AdjustmentsIcon, XIcon, CloudIcon } from './icons/Icons';
+import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon, AdjustmentsIcon, XIcon, CloudIcon, InformationCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -25,6 +25,38 @@ interface PurchasesProps {
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const formSelectStyle = `${formInputStyle} appearance-none`;
+
+const UpgradeQuotaModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => {
+    const upiId = "9890072651@upi"; // M. Soft India
+    const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=5000&cu=INR`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
+
+    if (!isOpen) return null;
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Premium Feature" maxWidth="max-w-md">
+            <div className="text-center p-2">
+                <div className="bg-indigo-100 dark:bg-indigo-900/30 p-4 rounded-xl mb-6 flex flex-col items-center gap-2">
+                    <CloudIcon className="h-10 w-10 text-indigo-600" />
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">AI Inward is a Pro Feature</p>
+                </div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Upgrade to Premium</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-6">Enjoy unlimited AI Purchase Inward, multiple operator support, and specialized reports.</p>
+                
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-indigo-300 mb-6">
+                    <img src={qrCodeUrl} alt="Payment QR" className="w-40 h-40 mx-auto border-4 border-white rounded-lg shadow-sm" />
+                    <p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs text-slate-400 font-normal">/ Year</span></p>
+                </div>
+
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-4">
+                    <CheckCircleIcon className="h-4 w-4 text-indigo-500" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp Screenshot: 9890072651</span>
+                </div>
+                
+                <button onClick={onClose} className="w-full py-2 text-slate-500 hover:text-slate-700 font-bold text-sm">Maybe Later</button>
+            </div>
+        </Modal>
+    );
+};
 
 const AddSupplierModal: React.FC<{
     isOpen: boolean;
@@ -302,6 +334,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isOcrPreviewOpen, setIsOcrPreviewOpen] = useState(false);
     const [ocrData, setOcrData] = useState<{ supplierName: string; invoiceNumber: string; invoiceDate: string; supplierGstin?: string; supplierAddress?: string; items: PurchaseLineItem[]; }>({ supplierName: '', invoiceNumber: '', invoiceDate: '', items: [] });
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+    const isAiDisabledByPlan = useMemo(() => {
+        return (systemConfig.subscription?.planType || 'Free') === 'Free';
+    }, [systemConfig]);
 
     useEffect(() => { if (editingPurchase) setLocalEditingPurchase(editingPurchase); }, [editingPurchase]);
     useEffect(() => {
@@ -326,6 +363,14 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     const autoRoundOff = () => {
         const rounded = Math.round(itemsTotal);
         setFormState(prev => ({ ...prev, roundOff: rounded - itemsTotal }));
+    };
+
+    const handleAiScanClick = () => {
+        if (isAiDisabledByPlan) {
+            setShowUpgradeModal(true);
+            return;
+        }
+        fileInputRef.current?.click();
     };
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -393,7 +438,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
             }
         });
         
-        setIsProcessingOCR(false); // Stop "working" state after AI response
+        setIsProcessingOCR(false); 
 
         if (response.text) {
             const res = JSON.parse(response.text);
@@ -432,31 +477,25 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     };
 
     const onImportData = (data: any) => {
-        // Import data into the main form
         const newItems = [...formState.currentItems, ...data.items];
-        
-        // Calculate the temporary items total to perform auto round-off immediately
         const tempTotal = newItems.reduce((sum, item) => {
             const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0) / 100);
             const tax = itemTotal * (item.gst / 100);
             return sum + itemTotal + tax;
         }, 0);
-        
         const autoRound = Math.round(tempTotal) - tempTotal;
-
         setFormState(prev => ({
             ...prev,
             supplierName: data.supplierName || prev.supplierName,
             invoiceNumber: data.invoiceNumber || prev.invoiceNumber,
             invoiceDate: data.invoiceDate || prev.invoiceDate,
             currentItems: newItems,
-            roundOff: autoRound // Apply auto round-off on import
+            roundOff: autoRound 
         }));
     };
 
     return (
         <div className="p-4 sm:p-6 space-y-6 relative">
-            {/* Working Overlay for AI Scan */}
             {isProcessingOCR && (
                 <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center animate-fade-in">
                     <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-6 max-w-sm w-full mx-4 text-center border-4 border-indigo-500">
@@ -477,8 +516,13 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                 {!isSubscriptionExpired && (
                     <div className="flex gap-2">
                         <input type="file" accept="image/*,application/pdf" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                        <button onClick={() => fileInputRef.current?.click()} disabled={isProcessingOCR} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md">
-                            {isProcessingOCR ? <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> : <UploadIcon className="h-5 w-5" />} AI Auto-Fill (Scan)
+                        <button 
+                            onClick={handleAiScanClick} 
+                            disabled={isProcessingOCR} 
+                            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-md font-bold text-sm ${isAiDisabledByPlan ? 'bg-slate-100 text-slate-400 border border-slate-300 grayscale' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                        >
+                            {isProcessingOCR ? <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> : <UploadIcon className="h-5 w-5" />} 
+                            AI Auto-Fill (Scan)
                         </button>
                     </div>
                 )}
@@ -562,7 +606,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                                     </table>
                                 </div>
 
-                                {/* Summary Section */}
                                 <div className="flex flex-col items-end gap-3 pr-4">
                                     <div className="flex items-center gap-8 text-sm font-bold text-slate-500">
                                         <span>Items Total:</span>
@@ -615,6 +658,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
             </Card>
             <OcrPreviewModal isOpen={isOcrPreviewOpen} onClose={() => setIsOcrPreviewOpen(false)} data={ocrData} suppliers={suppliers} onImport={onImportData} isPharmaMode={isPharmaMode} />
             <AddSupplierModal isOpen={isSupplierModalOpen} onClose={() => setSupplierModalOpen(false)} onAddSupplier={onAddSupplier} initialName={formState.supplierName} />
+            <UpgradeQuotaModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} />
         </div>
     );
 };

@@ -17,6 +17,38 @@ import { GoogleGenAI, Type } from "@google/genai";
 // Helper for matching technical codes (removes dashes, dots, spaces)
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
 
+const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureName: string }> = ({ isOpen, onClose, featureName }) => {
+    const upiId = "9890072651@upi"; // M. Soft India
+    const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=5000&cu=INR`;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
+
+    if (!isOpen) return null;
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Premium Feature" maxWidth="max-w-md">
+            <div className="text-center p-2">
+                <div className="bg-indigo-100 dark:bg-indigo-900/30 p-4 rounded-xl mb-6 flex flex-col items-center gap-2">
+                    <CloudIcon className="h-10 w-10 text-indigo-600" />
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{featureName} is for Premium Users</p>
+                </div>
+                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Upgrade to Cloud-TAG Pro</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-6">Unlock AI Smart Scanning, Multi-Operator support, and Unlimited Cloud Sync.</p>
+                
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-indigo-300 mb-6">
+                    <img src={qrCodeUrl} alt="Payment QR" className="w-40 h-40 mx-auto border-4 border-white rounded-lg shadow-sm" />
+                    <p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs text-slate-400 font-normal">/ Year</span></p>
+                </div>
+
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-4">
+                    <CheckCircleIcon className="h-4 w-4 text-indigo-500" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp Screenshot: 9890072651</span>
+                </div>
+                
+                <button onClick={onClose} className="w-full py-2 text-slate-500 hover:text-slate-700 font-bold text-sm">Maybe Later</button>
+            </div>
+        </Modal>
+    );
+};
+
 // OCR Scanner Component
 const TextScannerModal: React.FC<{ 
     isOpen: boolean; 
@@ -129,6 +161,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; 
   const t = getTranslation(systemConfig.language);
+  const isFreePlan = (systemConfig.subscription?.planType || 'Free') === 'Free';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -159,6 +192,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [substituteTarget, setSubstituteTarget] = useState<Product | null>(null);
   const [scanResultFeedback, setScanResultFeedback] = useState<{name: string, batch?: string} | null>(null);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const getExpiryDate = (expiryString: string): Date => {
       if (!expiryString) return new Date('9999-12-31');
@@ -243,8 +277,18 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     } else alert(`Product with barcode ${code} not found.`);
   };
 
+  const handleAiScanClick = () => {
+      if (isFreePlan) {
+          setShowUpgradeModal(true);
+          return;
+      }
+      setShowTextScanner(true);
+  };
+
   const handleTextScan = async (imageData: string) => {
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
+    if (isFreePlan) { setShowUpgradeModal(true); return; }
+    
     setIsOcrProcessing(true);
     try {
         const base64Data = imageData.split(',')[1];
@@ -417,7 +461,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                         <BarcodeIcon className="h-6 w-6" />
                         <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">BARCODE</span>
                     </button>
-                    <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 flex flex-col items-center justify-center min-w-[80px]" title="AI Scan">
+                    <button onClick={handleAiScanClick} className={`p-3 rounded-lg flex flex-col items-center justify-center min-w-[80px] transition-colors ${isFreePlan ? 'bg-slate-100 text-slate-400 grayscale' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`} title="AI Scan">
                         <CameraIcon className="h-6 w-6" />
                         <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">AI SCAN</span>
                     </button>
@@ -459,6 +503,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={() => {}} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
+      <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="Smart AI Bill Entry" />
     </div>
   );
 };
