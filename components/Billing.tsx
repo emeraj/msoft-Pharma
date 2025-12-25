@@ -252,8 +252,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       return result || '0 U';
   };
 
+  // Only auto-open scanner if not in pharma mode and config allows.
+  // Manual opening via button will always work regardless of this effect.
   useEffect(() => {
-    if (isPharmaMode) { setShowScanner(false); } else { setShowScanner(systemConfig.barcodeScannerOpenByDefault !== false); }
+    if (!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false) {
+      setShowScanner(true);
+    }
   }, [systemConfig.barcodeScannerOpenByDefault, isPharmaMode]);
 
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
@@ -430,10 +434,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                             );
                         })}</ul></div>)}
                 </div>
-                <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 flex flex-col items-center justify-center min-w-[80px]" title="AI Scan">
-                    <CameraIcon className="h-6 w-6" />
-                    <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">AI SCAN</span>
-                </button>
+                <div className="flex gap-1">
+                    <button onClick={() => setShowScanner(true)} className="p-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex flex-col items-center justify-center min-w-[80px]" title="Barcode Scan">
+                        <BarcodeIcon className="h-6 w-6" />
+                        <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">BARCODE</span>
+                    </button>
+                    <button onClick={() => setShowTextScanner(true)} className="p-3 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 flex flex-col items-center justify-center min-w-[80px]" title="AI Scan">
+                        <CameraIcon className="h-6 w-6" />
+                        <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">AI SCAN</span>
+                    </button>
+                </div>
             </div>
           </div>
           <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700" title="Remove Item"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>

@@ -235,12 +235,41 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const defaultGst = useMemo(() => sortedGstRates.find(r => r.rate === 12)?.rate.toString() || sortedGstRates[0]?.rate.toString() || '0', [sortedGstRates]);
     const getInitialFormState = () => ({ isNewProduct: false, productSearch: '', selectedProduct: null as Product | null, productName: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No', batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '', barcode: '', discount: '', tax: defaultGst });
     const [formState, setFormState] = useState(getInitialFormState());
+    const [activeProductIndex, setActiveProductIndex] = useState(-1);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     
+    const filteredProducts = useMemo(() => {
+        if (!formState.productSearch || formState.selectedProduct) return [];
+        return products.filter(p => p.name.toLowerCase().includes(formState.productSearch.toLowerCase())).slice(0, 5);
+    }, [formState.productSearch, formState.selectedProduct, products]);
+
+    useEffect(() => {
+        setActiveProductIndex(-1);
+    }, [formState.productSearch]);
+
     useEffect(() => { if (itemToEdit) { const existingProduct = itemToEdit.productId ? products.find(p => p.id === itemToEdit.productId) : null; setFormState({ isNewProduct: itemToEdit.isNewProduct, productSearch: itemToEdit.productName, selectedProduct: existingProduct || null, productName: itemToEdit.productName, company: itemToEdit.company, hsnCode: itemToEdit.hsnCode, gst: String(itemToEdit.gst), composition: itemToEdit.composition || '', unitsPerStrip: String(itemToEdit.unitsPerStrip || ''), isScheduleH: itemToEdit.isScheduleH ? 'Yes' : 'No', batchNumber: itemToEdit.batchNumber, expiryDate: itemToEdit.expiryDate, quantity: String(itemToEdit.quantity), mrp: String(itemToEdit.mrp), purchasePrice: String(itemToEdit.purchasePrice), barcode: itemToEdit.barcode || '', discount: itemToEdit.discount ? String(itemToEdit.discount) : '', tax: String(itemToEdit.gst) }); } }, [itemToEdit, products]);
     
-    const handleSelectProduct = (product: Product) => { setFormState(prev => ({ ...prev, selectedProduct: product, productSearch: product.name, productName: product.name, company: product.company, hsnCode: product.hsnCode, gst: String(product.gst), tax: String(product.gst), unitsPerStrip: String(product.unitsPerStrip || ''), isScheduleH: product.isScheduleH ? 'Yes' : 'No', isNewProduct: false, })); };
+    const handleSelectProduct = (product: Product) => { setFormState(prev => ({ ...prev, selectedProduct: product, productSearch: product.name, productName: product.name, company: product.company, hsnCode: product.hsnCode, gst: String(product.gst), tax: String(product.gst), unitsPerStrip: String(product.unitsPerStrip || ''), isScheduleH: product.isScheduleH ? 'Yes' : 'No', isNewProduct: false, })); setActiveProductIndex(-1); };
     
+    const handleProductKeyDown = (e: React.KeyboardEvent) => {
+        if (!filteredProducts.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveProductIndex(prev => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveProductIndex(prev => (prev > 0 ? prev - 1 : 0));
+        } else if (e.key === 'Enter') {
+            if (activeProductIndex >= 0) {
+                e.preventDefault();
+                handleSelectProduct(filteredProducts[activeProductIndex]);
+            }
+        } else if (e.key === 'Escape') {
+            setFormState(prev => ({ ...prev, productSearch: '', selectedProduct: null }));
+            setActiveProductIndex(-1);
+        }
+    };
+
     const handleAddItem = (e: React.FormEvent) => {
         e.preventDefault();
         const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, batchNumber, expiryDate, quantity, mrp, purchasePrice, discount, tax } = formState;
@@ -255,11 +284,11 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="md:col-span-2 relative">
                     <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Search Product</label>
-                    <input type="text" name="productSearch" value={formState.productSearch} onChange={e => setFormState({...formState, productSearch: e.target.value, selectedProduct: null, isNewProduct: false})} placeholder="Type to search..." className={formInputStyle} />
-                    {formState.productSearch && !formState.selectedProduct && products.filter(p => p.name.toLowerCase().includes(formState.productSearch.toLowerCase())).length > 0 && (
+                    <input type="text" name="productSearch" value={formState.productSearch} onChange={e => setFormState({...formState, productSearch: e.target.value, selectedProduct: null, isNewProduct: false})} onKeyDown={handleProductKeyDown} placeholder="Type to search..." className={formInputStyle} autoComplete="off" />
+                    {filteredProducts.length > 0 && (
                         <ul className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-700 border shadow-lg rounded max-h-48 overflow-y-auto">
-                            {products.filter(p => p.name.toLowerCase().includes(formState.productSearch.toLowerCase())).slice(0, 5).map(p => (
-                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer text-slate-800 dark:text-slate-200">{p.name} ({p.company})</li>
+                            {filteredProducts.map((p, idx) => (
+                                <li key={p.id} onClick={() => handleSelectProduct(p)} className={`p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer text-slate-800 dark:text-slate-200 ${activeProductIndex === idx ? 'bg-indigo-100 dark:bg-indigo-900' : ''}`}>{p.name} ({p.company})</li>
                             ))}
                         </ul>
                     )}
@@ -295,12 +324,22 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     const [formState, setFormState] = useState(initialFormState);
     const [localEditingPurchase, setLocalEditingPurchase] = useState<Purchase | null>(null);
     const [showSupplierSuggestions, setShowSupplierSuggestions] = useState(false);
+    const [activeSupplierIndex, setActiveSupplierIndex] = useState(-1);
     const [isSupplierModalOpen, setSupplierModalOpen] = useState(false);
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
     const [isProcessingOCR, setIsProcessingOCR] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isOcrPreviewOpen, setIsOcrPreviewOpen] = useState(false);
     const [ocrData, setOcrData] = useState<{ supplierName: string; invoiceNumber: string; invoiceDate: string; supplierGstin?: string; supplierAddress?: string; items: PurchaseLineItem[]; }>({ supplierName: '', invoiceNumber: '', invoiceDate: '', items: [] });
+
+    const filteredSuppliers = useMemo(() => {
+        if (!formState.supplierName) return [];
+        return suppliers.filter(s => s.name.toLowerCase().includes(formState.supplierName.toLowerCase()));
+    }, [formState.supplierName, suppliers]);
+
+    useEffect(() => {
+        setActiveSupplierIndex(-1);
+    }, [formState.supplierName]);
 
     useEffect(() => { if (editingPurchase) setLocalEditingPurchase(editingPurchase); }, [editingPurchase]);
     useEffect(() => {
@@ -325,6 +364,31 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     const autoRoundOff = () => {
         const rounded = Math.round(itemsTotal);
         setFormState(prev => ({ ...prev, roundOff: rounded - itemsTotal }));
+    };
+
+    const handleSupplierKeyDown = (e: React.KeyboardEvent) => {
+        if (!showSupplierSuggestions) return;
+        const totalItems = filteredSuppliers.length + 1; // +1 for the "Add New" button
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveSupplierIndex(prev => (prev < totalItems - 1 ? prev + 1 : prev));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveSupplierIndex(prev => (prev > 0 ? prev - 1 : 0));
+        } else if (e.key === 'Enter') {
+            if (activeSupplierIndex >= 0 && activeSupplierIndex < filteredSuppliers.length) {
+                e.preventDefault();
+                setFormState({ ...formState, supplierName: filteredSuppliers[activeSupplierIndex].name });
+                setShowSupplierSuggestions(false);
+            } else if (activeSupplierIndex === filteredSuppliers.length) {
+                e.preventDefault();
+                setSupplierModalOpen(true);
+            }
+        } else if (e.key === 'Escape') {
+            setShowSupplierSuggestions(false);
+            setActiveSupplierIndex(-1);
+        }
     };
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -482,11 +546,11 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="relative">
                         <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Supplier</label>
-                        <input value={formState.supplierName} onChange={e => setFormState({...formState, supplierName: e.target.value})} onFocus={() => setShowSupplierSuggestions(true)} onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)} placeholder="Supplier Name*" className={formInputStyle} required />
+                        <input value={formState.supplierName} onChange={e => setFormState({...formState, supplierName: e.target.value})} onFocus={() => setShowSupplierSuggestions(true)} onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)} onKeyDown={handleSupplierKeyDown} placeholder="Supplier Name*" className={formInputStyle} required autoComplete="off" />
                         {showSupplierSuggestions && formState.supplierName && (
                             <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border rounded shadow-lg max-h-48 overflow-y-auto">
-                                {suppliers.filter(s => s.name.toLowerCase().includes(formState.supplierName.toLowerCase())).map(s => <li key={s.id} onClick={() => setFormState({...formState, supplierName: s.name})} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer text-slate-800 dark:text-slate-200">{s.name}</li>)}
-                                <li onClick={() => setSupplierModalOpen(true)} className="p-2 text-indigo-600 font-bold border-t cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600">+ Add New Supplier</li>
+                                {filteredSuppliers.map((s, idx) => <li key={s.id} onClick={() => { setFormState({...formState, supplierName: s.name}); setShowSupplierSuggestions(false); }} className={`p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer text-slate-800 dark:text-slate-200 ${activeSupplierIndex === idx ? 'bg-indigo-100 dark:bg-indigo-900' : ''}`}>{s.name}</li>)}
+                                <li onClick={() => setSupplierModalOpen(true)} className={`p-2 text-indigo-600 font-bold border-t cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 ${activeSupplierIndex === filteredSuppliers.length ? 'bg-slate-100 dark:bg-slate-600' : ''}`}>+ Add New Supplier</li>
                             </ul>
                         )}
                     </div>
