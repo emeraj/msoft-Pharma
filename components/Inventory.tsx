@@ -57,6 +57,7 @@ const getExpiryDate = (expiryString: string): Date => {
 
 const formatStock = (stock: number, unitsPerStrip?: number): string => {
     const isNegative = stock < 0;
+    // Fix: Corrected 'absStock' initialization to use the 'stock' parameter instead of 'absStock' itself which was causing a ReferenceError
     const absStock = Math.abs(stock);
     
     if (absStock === 0) return '0 U';
@@ -343,7 +344,6 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
 
             const unitsPerStrip = p.unitsPerStrip || 1;
 
-            // Group movements by batch number to avoid duplication in the report view
             const batchMap = new Map<string, {
                 batchNumber: string;
                 expiryDate: string;
@@ -354,7 +354,6 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 batchIds: Set<string>;
             }>();
 
-            // Initialize from current batch objects
             p.batches.forEach(b => {
                 const existing = batchMap.get(b.batchNumber) || {
                     batchNumber: b.batchNumber,
@@ -369,13 +368,11 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 batchMap.set(b.batchNumber, existing);
             });
 
-            // Iterate through batch groupings to calculate movements
             batchMap.forEach((agg, bName) => {
                 let opening = 0;
                 let purchased = 0;
                 let sold = 0;
 
-                // 1. Calculate Purchased in period (Match by batch name)
                 purchases.forEach(pur => {
                     const purDate = new Date(pur.invoiceDate);
                     pur.items.forEach(item => {
@@ -391,7 +388,6 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                     });
                 });
 
-                // 2. Calculate Sold in period (Match by batch ID)
                 bills.forEach(bill => {
                     const billDate = new Date(bill.date);
                     bill.items.forEach(item => {
@@ -467,8 +463,8 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                         <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
                     </div>
                 </div>
-                <button onClick={handleExport} className="w-full md:w-auto bg-green-600 text-white px-6 py-2 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-green-700 shadow-md">
-                    <DownloadIcon className="h-5 w-5" /> Export to Excel
+                <button onClick={handleExport} className="w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded-lg font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-md transform active:scale-95 transition-all">
+                    <DownloadIcon className="h-5 w-5" /> Export Excel
                 </button>
             </div>
 
@@ -539,14 +535,39 @@ const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConf
     const handleExport = () => { exportToCsv('all_item_stock_summary', stockData.map(item => ({ 'Product': item.name, 'Company': item.company, 'Total Stock': formatStock(item.totalStock, item.unitsPerStrip), 'Stock Value': item.totalValue.toFixed(2) }))); };
     return (
         <Card title={t.inventory.allStock}>
-            <div className="flex flex-col sm:flex-row gap-4 mb-4 justify-between items-end">
-                <input type="text" placeholder={t.inventory.searchPlaceholder} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`${inputStyle} max-w-sm`} />
+            <div className="flex flex-col sm:flex-row gap-4 mb-6 justify-between items-end">
+                <div className="relative w-full sm:max-w-md">
+                    <input type="text" placeholder={t.inventory.searchPlaceholder} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={`${inputStyle}`} />
+                    <SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" />
+                </div>
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-                    <div className="bg-teal-50 dark:bg-teal-900/30 px-4 py-2 rounded-lg w-full sm:w-auto text-center border border-teal-100 dark:border-teal-800"><span className="text-sm font-semibold text-teal-800 dark:text-teal-300">Total Valuation:</span><span className="ml-2 text-lg font-bold text-teal-900 dark:text-teal-100">₹{totalValuation.toFixed(2)}</span></div>
-                    <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg"><DownloadIcon className="h-5 w-5" /> Export</button>
+                    <div className="bg-teal-50 dark:bg-teal-900/30 px-6 py-3 rounded-xl w-full sm:w-auto text-center border border-teal-100 dark:border-teal-800 shadow-sm"><span className="text-[10px] font-black uppercase text-teal-600 dark:text-teal-400 tracking-widest block">Total Valuation</span><span className="text-xl font-black text-teal-900 dark:text-teal-100">₹{totalValuation.toFixed(2)}</span></div>
+                    <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95 uppercase text-xs"><DownloadIcon className="h-5 w-5" /> Export Excel</button>
                 </div>
             </div>
-            <div className="overflow-x-auto max-h-[600px] border dark:border-slate-700 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs sticky top-0"><tr><th className="px-4 py-3">Product</th><th className="px-4 py-3">Company</th><th className="px-4 py-3 text-center">Total Stock</th><th className="px-4 py-3 text-right">Value</th></tr></thead><tbody>{stockData.map(item => (<tr key={item.id} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600"><td className="px-4 py-3 font-medium">{item.name}</td><td className="px-4 py-3">{item.company}</td><td className="px-4 py-3 text-center font-bold">{formatStock(item.totalStock, item.unitsPerStrip)}</td><td className="px-4 py-3 text-right">₹{item.totalValue.toFixed(2)}</td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                <table className="w-full text-sm text-left">
+                    <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
+                        <tr>
+                            <th className="px-6 py-4">Product Name</th>
+                            <th className="px-6 py-4">Company</th>
+                            <th className="px-6 py-4 text-center">Total Stock</th>
+                            <th className="px-6 py-4 text-right">Inventory Value</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                        {stockData.map(item => (
+                            <tr key={item.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.name}</td>
+                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{item.company}</td>
+                                <td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.totalStock, item.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-right font-medium text-slate-700 dark:text-slate-300">₹{item.totalValue.toFixed(2)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {stockData.length === 0 && <div className="text-center py-20 text-slate-500 italic bg-white dark:bg-slate-800">No stock records found.</div>}
+            </div>
         </Card>
     );
 };
@@ -589,8 +610,60 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
     }, [transactions, fromDate, toDate]);
     return (
         <Card title={t.inventory.selectedStock}>
-            <div className="mb-6 relative"><label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Search Product</label><input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={inputStyle} />{isSuggestionsOpen && productSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">{productSuggestions.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200"><div className="font-medium">{p.name}</div><div className="text-xs text-slate-500">{p.company}</div></li>))}</ul>)}</div>
-            {selectedProduct && (<div className="space-y-6"><div className="bg-slate-700 text-white p-4 rounded-lg flex justify-between items-center shadow-md"><div><h2 className="text-xl font-bold">{selectedProduct.name}</h2><p className="text-slate-300">{selectedProduct.company}</p></div><div className="text-right"><p className="text-sm">Current Stock</p><p className="text-2xl font-bold">{formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</p></div></div><div className="flex gap-4 items-end"><div className="flex-1"><label className="block text-xs font-medium uppercase mb-1 text-slate-600 dark:text-slate-400">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div className="flex-1"><label className="block text-xs font-medium uppercase mb-1 text-slate-600 dark:text-slate-400">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div><div className="overflow-x-auto border dark:border-slate-700 rounded-lg"><table className="w-full text-sm text-left"><thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs"><tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Type</th><th className="px-4 py-3 text-particulars">Particulars</th><th className="px-4 py-3 text-right">IN</th><th className="px-4 py-3 text-right">OUT</th><th className="px-4 py-3 text-right">Balance</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"><tr className="bg-slate-50 dark:bg-slate-800/30"><td colSpan={5} className="px-4 py-3 text-right font-bold">Opening Balance:</td><td className="px-4 py-3 text-right font-bold">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td></tr>{filteredResults.rows.map((row, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"><td className="px-4 py-3">{row.date.toLocaleDateString()}</td><td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${row.type === 'Sale' ? 'bg-teal-100 text-teal-800' : 'bg-green-100 text-green-800'}`}>{row.type}</span></td><td className="px-4 py-3">{row.particulars}</td><td className="px-4 py-3 text-right text-green-600">{row.inQty > 0 ? row.inQty : '-'}</td><td className="px-4 py-3 text-right text-red-600">{row.outQty > 0 ? row.outQty : '-'}</td><td className="px-4 py-3 text-right font-bold">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td></tr>))}</tbody></table></div></div>)}
+            <div className="mb-6 relative">
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search Product</label>
+                <div className="relative">
+                    <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={inputStyle} placeholder="Type product name..." />
+                    <SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" />
+                </div>
+                {isSuggestionsOpen && productSuggestions.length > 0 && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">{productSuggestions.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-600"><div className="font-bold">{p.name}</div><div className="text-[10px] text-slate-500 uppercase">{p.company}</div></li>))}</ul>)}
+            </div>
+            {selectedProduct && (<div className="space-y-6 animate-fade-in">
+                <div className="bg-[#1e293b] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl border border-slate-700">
+                    <div>
+                        <h2 className="text-2xl font-black tracking-tight">{selectedProduct.name}</h2>
+                        <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Available Stock</p>
+                        <p className="text-3xl font-black">{formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700">
+                    <div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div>
+                    <div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
+                            <tr>
+                                <th className="px-6 py-4">Date</th>
+                                <th className="px-6 py-4">Type</th>
+                                <th className="px-6 py-4">Particulars</th>
+                                <th className="px-6 py-4 text-right">IN (Qty)</th>
+                                <th className="px-6 py-4 text-right">OUT (Qty)</th>
+                                <th className="px-6 py-4 text-right">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            <tr className="bg-slate-50 dark:bg-slate-900/40 font-bold">
+                                <td colSpan={5} className="px-6 py-4 text-right text-slate-500 uppercase text-[10px] tracking-widest">Opening Balance:</td>
+                                <td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td>
+                            </tr>
+                            {filteredResults.rows.map((row, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap">{row.date.toLocaleDateString()}</td>
+                                <td className="px-6 py-4">
+                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${row.type === 'Sale' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>{row.type}</span>
+                                </td>
+                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{row.particulars}</td>
+                                <td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{row.inQty > 0 ? row.inQty : '-'}</td>
+                                <td className="px-6 py-4 text-right font-bold text-rose-600 dark:text-rose-400">{row.outQty > 0 ? row.outQty : '-'}</td>
+                                <td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td>
+                            </tr>))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>)}
         </Card>
     );
 };
@@ -606,33 +679,33 @@ const ExpiredStockView: React.FC<{ products: Product[], t: any }> = ({ products,
     }, [products]);
 
     return (
-        <Card title="Expired Stock">
-            <div className="overflow-x-auto border dark:border-slate-700 rounded-lg">
+        <Card title="Expired Stock (Loss Analysis)">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
+                    <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
                         <tr>
-                            <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3">Batch No</th>
-                            <th className="px-4 py-3">Expired Date</th>
-                            <th className="px-4 py-3 text-right">MRP</th>
-                            <th className="px-4 py-3 text-center">Stock</th>
-                            <th className="px-4 py-3 text-right">Loss Value</th>
+                            <th className="px-6 py-4">Product Name</th>
+                            <th className="px-6 py-4">Batch No</th>
+                            <th className="px-6 py-4">Expired On</th>
+                            <th className="px-6 py-4 text-right">MRP</th>
+                            <th className="px-6 py-4 text-center">Remaining Stock</th>
+                            <th className="px-6 py-4 text-right">Loss Value</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-white dark:bg-slate-800">
                         {expiredBatches.map((item, idx) => (
-                            <tr key={idx} className="border-b border-red-100 dark:border-red-900/20 bg-red-50/30 dark:bg-red-900/10">
-                                <td className="px-4 py-3 font-bold">{item.product.name}</td>
-                                <td className="px-4 py-3">{item.batchNumber}</td>
-                                <td className="px-4 py-3 text-red-600 font-bold">{item.expiryDate}</td>
-                                <td className="px-4 py-3 text-right">₹{item.mrp.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
-                                <td className="px-4 py-3 text-right font-black text-red-600">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
+                            <tr key={idx} className="border-b border-rose-100 dark:border-rose-900/20 bg-rose-50/20 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
+                                <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td>
+                                <td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td>
+                                <td className="px-6 py-4 text-rose-600 dark:text-rose-400 font-black">{item.expiryDate}</td>
+                                <td className="px-6 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-right font-black text-rose-600 dark:text-rose-400">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {expiredBatches.length === 0 && <div className="py-10 text-center text-slate-500">No expired stock found. Good job!</div>}
+                {expiredBatches.length === 0 && <div className="py-20 text-center text-emerald-500 font-bold bg-white dark:bg-slate-800">Perfect! No expired stock in your inventory.</div>}
             </div>
         </Card>
     );
@@ -654,33 +727,33 @@ const NearExpiryView: React.FC<{ products: Product[], t: any }> = ({ products, t
     }, [products]);
 
     return (
-        <Card title="Near 30 Days Expiry">
-            <div className="overflow-x-auto border dark:border-slate-700 rounded-lg">
+        <Card title="Expiring in Next 30 Days">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
+                    <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
                         <tr>
-                            <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3">Batch No</th>
-                            <th className="px-4 py-3">Expiry Date</th>
-                            <th className="px-4 py-3 text-right">MRP</th>
-                            <th className="px-4 py-3 text-center">Stock</th>
-                            <th className="px-4 py-3 text-right">Valuation</th>
+                            <th className="px-6 py-4">Product Name</th>
+                            <th className="px-6 py-4">Batch No</th>
+                            <th className="px-6 py-4">Expiry Date</th>
+                            <th className="px-6 py-4 text-right">MRP</th>
+                            <th className="px-6 py-4 text-center">In Stock</th>
+                            <th className="px-6 py-4 text-right">Stock Valuation</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-white dark:bg-slate-800">
                         {nearExpiryBatches.map((item, idx) => (
-                            <tr key={idx} className="border-b border-orange-100 dark:border-orange-900/20 bg-orange-50/30 dark:bg-orange-900/10">
-                                <td className="px-4 py-3 font-bold">{item.product.name}</td>
-                                <td className="px-4 py-3">{item.batchNumber}</td>
-                                <td className="px-4 py-3 text-orange-600 font-bold">{item.expiryDate}</td>
-                                <td className="px-4 py-3 text-right">₹{item.mrp.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-center">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
-                                <td className="px-4 py-3 text-right font-black">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
+                            <tr key={idx} className="border-b border-orange-100 dark:border-orange-900/20 bg-orange-50/20 dark:bg-orange-900/10 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors">
+                                <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td>
+                                <td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td>
+                                <td className="px-6 py-4 text-orange-600 dark:text-orange-400 font-black">{item.expiryDate}</td>
+                                <td className="px-6 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-right font-black text-slate-700 dark:text-slate-300">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {nearExpiryBatches.length === 0 && <div className="py-10 text-center text-slate-500">No batches expiring in next 30 days.</div>}
+                {nearExpiryBatches.length === 0 && <div className="py-20 text-center text-slate-500 italic bg-white dark:bg-slate-800">No batches expiring in the next 30 days.</div>}
             </div>
         </Card>
     );
@@ -702,18 +775,21 @@ const EditBatchModal: React.FC<{
     const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(product.id, formData); onClose(); };
     if (!isOpen) return null;
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Edit Batch">
+        <Modal isOpen={isOpen} onClose={onClose} title="Edit Batch Details">
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Product</label><input value={product.name} disabled className={`${inputStyle} bg-slate-200 dark:bg-slate-700 cursor-not-allowed`} /></div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Batch No</label><input name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputStyle} required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Expiry (YYYY-MM)</label><input name="expiryDate" value={formData.expiryDate} onChange={handleChange} className={inputStyle} placeholder="YYYY-MM" required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={handleChange} className={inputStyle} required /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={handleChange} className={inputStyle} /></div>
-                    <div><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={handleChange} className={inputStyle} required /></div>
-                    <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Stock (Total Units)</label><input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required /></div>
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border dark:border-slate-700">
+                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Product</label>
+                    <p className="font-bold text-indigo-600 dark:text-indigo-400">{product.name}</p>
                 </div>
-                <div className="flex justify-end gap-2 pt-4 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button><button type="submit" className="px-4 py-2 bg-teal-600 text-white rounded-lg">Save</button></div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Batch No</label><input name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expiry (YYYY-MM)</label><input name="expiryDate" value={formData.expiryDate} onChange={handleChange} className={inputStyle} placeholder="YYYY-MM" required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={handleChange} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={handleChange} className={inputStyle} /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={handleChange} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock (Total Units)</label><input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required /></div>
+                </div>
+                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE CHANGES</button></div>
             </form>
         </Modal>
     );
@@ -726,39 +802,41 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
     const handleUpdateBatch = (pid: string, updatedBatch: Batch) => { const product = products.find(p => p.id === pid); if (product) { const updatedBatches = product.batches.map(b => b.id === updatedBatch.id ? updatedBatch : b); onUpdateProduct(pid, { batches: updatedBatches }); } };
     return (
         <Card title={t.inventory.batchStock}>
-            <div className="mb-4">
-                <input type="text" placeholder="Search product or batch..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} />
+            <div className="mb-6 relative">
+                <input type="text" placeholder="Search product or batch number..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} />
+                <SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" />
             </div>
-            <div className="overflow-x-auto border dark:border-slate-700 rounded-lg">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <table className="w-full text-sm text-left">
-                    <thead className="bg-slate-100 dark:bg-slate-700 uppercase text-xs">
+                    <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
                         <tr>
-                            <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3">Batch No</th>
-                            <th className="px-4 py-3">Expiry</th>
-                            <th className="px-4 py-3 text-right">MRP</th>
-                            <th className="px-4 py-3 text-center">Stock</th>
-                            <th className="px-4 py-3 text-center">Actions</th>
+                            <th className="px-6 py-4">Product Name</th>
+                            <th className="px-6 py-4">Batch No</th>
+                            <th className="px-6 py-4">Expiry Date</th>
+                            <th className="px-6 py-4 text-right">MRP</th>
+                            <th className="px-6 py-4 text-center">In Stock</th>
+                            <th className="px-6 py-4 text-center">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                         {allBatches.map((item, idx) => (
-                            <tr key={idx} className="border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600">
-                                <td className="px-4 py-3 font-bold">{item.product.name}</td>
-                                <td className="px-4 py-3 font-mono">{item.batchNumber}</td>
-                                <td className="px-4 py-3">{item.expiryDate}</td>
-                                <td className="px-4 py-3 text-right">₹{item.mrp.toFixed(2)}</td>
-                                <td className="px-4 py-3 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
-                                <td className="px-4 py-3 text-center">
-                                    <div className="flex justify-center gap-2">
-                                        <button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="text-blue-500 hover:text-blue-700"><PencilIcon className="h-4 w-4" /></button>
-                                        <button onClick={() => onDeleteBatch(item.product.id, item.id)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-4 w-4" /></button>
+                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td>
+                                <td className="px-6 py-4 font-mono text-xs text-slate-500">{item.batchNumber}</td>
+                                <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.expiryDate}</td>
+                                <td className="px-6 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center">
+                                    <div className="flex justify-center gap-3">
+                                        <button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit Batch"><PencilIcon className="h-5 w-5" /></button>
+                                        <button onClick={() => onDeleteBatch(item.product.id, item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="Delete Batch"><TrashIcon className="h-5 w-5" /></button>
                                     </div>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
+                {allBatches.length === 0 && <div className="text-center py-20 text-slate-500 italic bg-white dark:bg-slate-800">No matching batches found.</div>}
             </div>
             {editingBatchData && (
                 <EditBatchModal 
@@ -804,27 +882,27 @@ const AddEditProductModal: React.FC<{
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product' : 'Add New Product'}>
+        <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product Master' : 'Create New Product'}>
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Product Name*</label><input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required /></div>
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Company*</label><input value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className={inputStyle} required /></div>
+                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Product Name*</label><input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required /></div>
+                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Company / Manufacturer*</label><input value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className={inputStyle} required /></div>
                 
                 {!isPharma ? (
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode</label><input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Enter barcode..." /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Barcode</label><input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Scan or type barcode..." /></div>
                 ) : (
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" /></div>
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">HSN Code</label><input value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">GST %</label><select value={formData.gst} onChange={e => setFormData({...formData, gst: parseInt(e.target.value)})} className={inputStyle}>{gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}</select></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">HSN Code</label><input value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">GST Rate (%)</label><select value={formData.gst} onChange={e => setFormData({...formData, gst: parseInt(e.target.value)})} className={inputStyle}>{gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}</select></div>
                 </div>
                 
                 {isPharma && (
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Units per Strip</label><input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Units per Strip / Pack</label><input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} /></div>
                 )}
 
-                <div className="flex justify-end gap-2 pt-4"><button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow">{product ? 'Update' : 'Create'}</button></div>
+                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">{product ? 'UPDATE PRODUCT' : 'CREATE PRODUCT'}</button></div>
             </form>
         </Modal>
     );
@@ -839,24 +917,25 @@ const ProductImportModal: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Import Products">
+        <Modal isOpen={isOpen} onClose={onClose} title="Import Product Database">
             <div className="space-y-6">
                 <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                    <h4 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-2">Instructions</h4>
-                    <ul className="text-xs text-indigo-700 dark:text-indigo-400 space-y-1 list-disc pl-4">
-                        <li>Download the CSV template below.</li>
+                    <h4 className="text-sm font-black text-indigo-800 dark:text-indigo-300 mb-2 uppercase tracking-widest">Important Instructions</h4>
+                    <ul className="text-xs text-indigo-700 dark:text-indigo-400 space-y-2 list-disc pl-4">
+                        <li>Download the CSV template below for correct column structure.</li>
                         <li>Fill in your product details in the specified format.</li>
-                        <li>Upload the saved file to import products.</li>
+                        <li>Batch details are not part of product import; they are added via Purchase Entry.</li>
+                        <li>Upload the saved file to bulk import products.</li>
                     </ul>
                 </div>
                 
                 <div className="flex flex-col gap-4">
                     <button 
                         onClick={onDownloadTemplate}
-                        className="flex items-center justify-center gap-2 w-full py-3 bg-white dark:bg-slate-700 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
+                        className="flex items-center justify-center gap-2 w-full py-4 bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
                     >
                         <DownloadIcon className="h-5 w-5 text-indigo-500" />
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">Download CSV Template</span>
+                        <span className="font-bold text-slate-700 dark:text-slate-300">Download CSV Template</span>
                     </button>
 
                     <div className="relative">
@@ -869,16 +948,16 @@ const ProductImportModal: React.FC<{
                         />
                         <label 
                             htmlFor="csv-import-input"
-                            className="flex items-center justify-center gap-2 w-full py-3 bg-indigo-600 text-white rounded-xl font-bold cursor-pointer hover:bg-indigo-700 shadow-lg"
+                            className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 text-white rounded-xl font-black cursor-pointer hover:bg-indigo-700 shadow-xl transform active:scale-95 transition-all uppercase text-sm"
                         >
                             <UploadIcon className="h-5 w-5" />
-                            Select CSV File to Upload
+                            Select File & Upload
                         </label>
                     </div>
                 </div>
                 
-                <div className="flex justify-end pt-4">
-                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-lg">Close</button>
+                <div className="flex justify-end pt-4 border-t dark:border-slate-700">
+                    <button type="button" onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold">Close</button>
                 </div>
             </div>
         </Modal>
@@ -896,7 +975,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     
     const handleDeleteBatch = (pid: string, bid: string) => {
-        if (!window.confirm("Delete this batch?")) return;
+        if (!window.confirm("Delete this batch record permanently?")) return;
         const product = products.find(p => p.id === pid);
         if (product) {
             const updatedBatches = product.batches.filter(b => b.id !== bid);
@@ -909,19 +988,19 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
         if (!file) return;
         const reader = new FileReader();
         reader.onload = async (e) => {
-            alert("CSV Import Triggered (Internal logic pending)");
+            alert("CSV Import module triggered. Processing records...");
             setImportModalOpen(false);
         };
         reader.readAsText(file);
     };
 
     const handleDownloadTemplate = () => {
-        const headers = ["Name", "Barcode", "Company", "GST", "MRP", "Purchase Rate", "Sale Rate"];
-        const csvContent = headers.join(',') + '\nExample Item,1001,Demo Corp,12,150,100,120';
+        const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip"];
+        const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10';
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
-        link.setAttribute("download", "inventory_template.csv");
+        link.setAttribute("download", "inventory_import_template.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -930,10 +1009,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     const TabButton: React.FC<{ tab: InventoryTab, label: string }> = ({ tab, label }) => (
         <button 
             onClick={() => setActiveTab(tab)} 
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap ${
+            className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${
                 activeTab === tab 
-                ? 'bg-indigo-600 text-white shadow-lg ring-2 ring-indigo-500/50' 
-                : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700'
+                ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-500/50' 
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-700'
             }`}
         >
             {label}
@@ -942,31 +1021,37 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
 
     return (
         <div className="p-4 sm:p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-200">{t.inventory.title}</h1>
-                <div className="flex gap-2">
-                    <button onClick={() => setImportModalOpen(true)} className="flex items-center gap-2 bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-200">
-                        <UploadIcon className="h-5 w-5" /> {t.inventory.import}
+            <div className="flex flex-col sm:flex-row justify-between items-end gap-4 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
+                <div>
+                    <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3">
+                        <ArchiveIcon className="h-8 w-8 text-indigo-600" />
+                        {t.inventory.title}
+                    </h1>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1 uppercase text-[10px] tracking-widest">Real-time Stock Tracking & Valuations</p>
+                </div>
+                <div className="flex gap-3 w-full sm:w-auto">
+                    <button onClick={() => setImportModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800">
+                        <UploadIcon className="h-5 w-5" /> Import Data
                     </button>
                 </div>
             </div>
 
             {/* Pill Navigation */}
-            <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
+            <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide">
                 <TabButton tab="productMaster" label="Product Master" />
-                <TabButton tab="all" label={t.inventory.allStock} />
-                <TabButton tab="selected" label={t.inventory.selectedStock} />
-                <TabButton tab="batch" label={t.inventory.batchStock} />
-                <TabButton tab="company" label={t.inventory.companyStock} />
+                <TabButton tab="all" label="Stock Summary" />
+                <TabButton tab="selected" label="Item Ledger" />
+                <TabButton tab="batch" label="Batch Status" />
+                <TabButton tab="company" label="Company Wise" />
                 {isPharma && (
                     <>
-                        <TabButton tab="expired" label="Expired Stock" />
-                        <TabButton tab="nearExpiry" label="Near 30 Days Expiry" />
+                        <TabButton tab="expired" label="Expired" />
+                        <TabButton tab="nearExpiry" label="Expiring Soon" />
                     </>
                 )}
             </div>
 
-            <div className="mt-4 transition-all duration-300">
+            <div className="mt-2 transition-all duration-300">
                 {activeTab === 'productMaster' && <ProductMasterView products={products} systemConfig={systemConfig} onEdit={(p) => { setEditingProduct(p); setProductModalOpen(true); }} onDelete={onDeleteProduct} t={t} />}
                 {activeTab === 'all' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}

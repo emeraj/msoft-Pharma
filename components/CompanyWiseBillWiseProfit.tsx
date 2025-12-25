@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import type { Bill, Product } from '../types';
 import Card from './common/Card';
@@ -17,7 +16,6 @@ const exportToCsv = (filename: string, data: any[]) => {
     ...data.map(row => 
       headers.map(header => {
         let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
-        // handle commas, quotes, and newlines in data
         if (/[",\n]/.test(cell)) {
           cell = `"${cell.replace(/"/g, '""')}"`;
         }
@@ -182,16 +180,16 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
     );
 
     const footerCells = new Array(headers.length).fill('');
-    footerCells[2] = 'Totals'; // Align 'Totals' with 'Customer Name'
-    footerCells[3] = summary.totalValue.toFixed(2); // 'Sale Value (w/o Tax)'
-    footerCells[4] = summary.totalCogs.toFixed(2); // 'Cost of Goods'
-    footerCells[5] = summary.totalProfit.toFixed(2); // 'Profit'
+    footerCells[2] = 'Totals'; 
+    footerCells[3] = summary.totalValue.toFixed(2); 
+    footerCells[4] = summary.totalCogs.toFixed(2); 
+    footerCells[5] = summary.totalProfit.toFixed(2); 
     const footerRow = footerCells.join(',');
 
     const csvContent = [
         headerRow,
         ...dataRows,
-        '', // Empty row for spacing
+        '', 
         footerRow
     ].join('\n');
 
@@ -214,10 +212,10 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
-      <Card title="Company Wise-Bill Wise Profit Report">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+      <Card title="Profit Analysis Report">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border dark:border-slate-700">
             <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Select Company*</label>
+              <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Select Company</label>
               <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={formSelectStyle} required>
                   <option value="">-- Select a Company --</option>
                   <option value="All">All Companies</option>
@@ -225,73 +223,72 @@ const CompanyWiseBillWiseProfit: React.FC<CompanyWiseBillWiseProfitProps> = ({ b
               </select>
             </div>
             <div>
-              <label htmlFor="fromDate-profit" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From</label>
-              <input type="date" id="fromDate-profit" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
+              <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">From</label>
+              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={formInputStyle} />
             </div>
             <div>
-              <label htmlFor="toDate-profit" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To</label>
-              <input type="date" id="toDate-profit" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
+              <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">To</label>
+              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={formInputStyle} />
             </div>
         </div>
 
         {companyFilter && (
-             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full sm:w-auto">
-                     <div className="bg-blue-50 dark:bg-blue-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-blue-800 dark:text-blue-300 font-semibold">Total Sale Value</p>
-                        <p className="text-2xl font-bold text-blue-900 dark:text-blue-200">₹{summary.totalValue.toFixed(2)}</p>
+                     <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-xl border border-blue-100 dark:border-blue-800 text-center min-w-[160px]">
+                        <p className="text-[10px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-widest">Sale Value</p>
+                        <p className="text-2xl font-black text-blue-900 dark:text-blue-100 mt-1">₹{summary.totalValue.toFixed(2)}</p>
                     </div>
-                    <div className="bg-orange-50 dark:bg-orange-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-orange-800 dark:text-orange-300 font-semibold">Total Cost</p>
-                        <p className="text-2xl font-bold text-orange-900 dark:text-orange-200">₹{summary.totalCogs.toFixed(2)}</p>
+                    <div className="bg-orange-50 dark:bg-orange-900/30 p-4 rounded-xl border border-orange-100 dark:border-orange-800 text-center min-w-[160px]">
+                        <p className="text-[10px] text-orange-600 dark:text-orange-400 font-black uppercase tracking-widest">Net Cost</p>
+                        <p className="text-2xl font-black text-orange-900 dark:text-orange-100 mt-1">₹{summary.totalCogs.toFixed(2)}</p>
                     </div>
-                    <div className="bg-green-50 dark:bg-green-900/50 p-3 rounded-lg text-center">
-                        <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Profit</p>
-                        <p className="text-2xl font-bold text-green-900 dark:text-green-200">₹{summary.totalProfit.toFixed(2)}</p>
+                    <div className="bg-emerald-50 dark:bg-emerald-900/30 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-center min-w-[160px]">
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-widest">Gross Profit</p>
+                        <p className="text-2xl font-black text-emerald-900 dark:text-emerald-100 mt-1">₹{summary.totalProfit.toFixed(2)}</p>
                     </div>
                 </div>
-                <button onClick={handleExport} className="flex-shrink-0 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
-                    <DownloadIcon className="h-5 w-5" />
-                    <span>Export to Excel</span>
+                <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95 uppercase text-sm">
+                    <DownloadIcon className="h-5 w-5" /> Export
                 </button>
             </div>
         )}
 
         {companyFilter ? (
-             <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-                <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
                   <tr>
-                    <th scope="col" className="px-6 py-3">Date</th>
-                    <th scope="col" className="px-6 py-3">Bill No.</th>
-                    <th scope="col" className="px-6 py-3">Customer</th>
-                    <th scope="col" className="px-6 py-3 text-right">Sale Value (w/o Tax)</th>
-                    <th scope="col" className="px-6 py-3 text-right">Cost of Goods</th>
-                    <th scope="col" className="px-6 py-3 text-right">Profit</th>
+                    <th className="px-6 py-4">Date</th>
+                    <th className="px-6 py-4">Bill No.</th>
+                    <th className="px-6 py-4">Customer</th>
+                    <th className="px-6 py-4 text-right">Sale (Basic)</th>
+                    <th className="px-6 py-4 text-right">Cost (COGS)</th>
+                    <th className="px-6 py-4 text-right">Profit</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                   {reportData.map(d => (
-                    <tr key={d.billId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                      <td className="px-6 py-4">{new Date(d.date).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{d.billNumber}</td>
-                      <td className="px-6 py-4">{d.customerName}</td>
-                      <td className="px-6 py-4 text-right">₹{d.billValue.toFixed(2)}</td>
-                      <td className="px-6 py-4 text-right text-red-600 dark:text-red-400">₹{d.cogs.toFixed(2)}</td>
-                      <td className="px-6 py-4 text-right font-semibold text-green-600 dark:text-green-400">₹{d.profit.toFixed(2)}</td>
+                    <tr key={d.billId} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                      <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{new Date(d.date).toLocaleDateString()}</td>
+                      <td className="px-6 py-4 font-bold text-indigo-600 dark:text-indigo-400">{d.billNumber}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{d.customerName}</td>
+                      <td className="px-6 py-4 text-right font-medium">₹{d.billValue.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-medium text-orange-600 dark:text-orange-400">₹{d.cogs.toFixed(2)}</td>
+                      <td className="px-6 py-4 text-right font-black text-emerald-600 dark:text-emerald-400">₹{d.profit.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {reportData.length === 0 && (
-                <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                  <p>No sales records found for the selected criteria with available cost data.</p>
+                <div className="text-center py-20 text-slate-500 italic bg-white dark:bg-slate-800">
+                  No records found with available cost data.
                 </div>
               )}
             </div>
         ) : (
-             <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-              <p className="text-lg">Please select a company (or All) to view the profit report.</p>
+             <div className="text-center py-20 text-slate-400 italic">
+              <p className="text-lg font-bold">Please select a company to generate report.</p>
             </div>
         )}
       </Card>

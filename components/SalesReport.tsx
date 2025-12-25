@@ -16,7 +16,6 @@ const exportToCsv = (filename: string, data: any[]) => {
     ...data.map(row => 
       headers.map(header => {
         let cell = row[header] === null || row[header] === undefined ? '' : String(row[header]);
-        // handle commas, quotes, and newlines in data
         if (/[",\n]/.test(cell)) {
           cell = `"${cell.replace(/"/g, '""')}"`;
         }
@@ -106,19 +105,19 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <Card title="Sales Report">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-700">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-lg border dark:border-slate-700">
             <div className="md:col-span-1">
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Search Bill No. / Customer</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search</label>
                 <input 
                     type="text" 
                     value={searchTerm} 
                     onChange={e => setSearchTerm(e.target.value)}
                     className={formInputStyle}
-                    placeholder="e.g., B0001 or John Doe"
+                    placeholder="Bill No. / Customer"
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">From Date</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">From</label>
                 <input 
                     type="date" 
                     value={fromDate} 
@@ -127,7 +126,7 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
                 />
             </div>
             <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">To Date</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">To</label>
                 <input 
                     type="date" 
                     value={toDate} 
@@ -137,53 +136,55 @@ const SalesReport: React.FC<SalesReportProps> = ({ bills }) => {
             </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-green-50 dark:bg-green-900/50 p-4 rounded-lg text-center">
-                    <p className="text-sm text-green-800 dark:text-green-300 font-semibold">Total Sales</p>
-                    <p className="text-3xl font-bold text-green-900 dark:text-green-200">₹{summary.totalSales.toFixed(2)}</p>
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
+            <div className="grid grid-cols-2 gap-4 w-full sm:w-auto">
+                <div className="bg-emerald-50 dark:bg-emerald-900/30 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 text-center min-w-[160px]">
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-widest">Total Sales</p>
+                    <p className="text-2xl font-black text-emerald-900 dark:text-emerald-100 mt-1">₹{summary.totalSales.toFixed(2)}</p>
                 </div>
-                <div className="bg-indigo-50 dark:bg-indigo-900/50 p-4 rounded-lg text-center">
-                    <p className="text-sm text-indigo-800 dark:text-indigo-300 font-semibold">Total Bills</p>
-                    <p className="text-3xl font-bold text-indigo-900 dark:text-indigo-200">{summary.totalBills}</p>
+                <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800 text-center min-w-[120px]">
+                    <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-widest">Bills Count</p>
+                    <p className="text-2xl font-black text-indigo-900 dark:text-indigo-100 mt-1">{summary.totalBills}</p>
                 </div>
             </div>
-            <button onClick={handleExport} className="flex-shrink-0 flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition-colors duration-200">
-                <DownloadIcon className="h-5 w-5" />
-                <span>Export to Excel</span>
+            <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95 uppercase text-sm">
+                <DownloadIcon className="h-5 w-5" /> Export Excel
             </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-            <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700">
               <tr>
-                <th scope="col" className="px-6 py-3">Bill No.</th>
-                <th scope="col" className="px-6 py-3">Date</th>
-                <th scope="col" className="px-6 py-3">Customer</th>
-                <th scope="col" className="px-6 py-3 text-center">Items</th>
-                <th scope="col" className="px-6 py-3 text-right">Subtotal</th>
-                <th scope="col" className="px-6 py-3 text-right">GST</th>
-                <th scope="col" className="px-6 py-3 text-right">Grand Total</th>
+                <th className="px-6 py-4">Bill No.</th>
+                <th className="px-6 py-4">Date / Time</th>
+                <th className="px-6 py-4">Customer</th>
+                <th className="px-6 py-4 text-center">Items</th>
+                <th className="px-6 py-4 text-right">Subtotal</th>
+                <th className="px-6 py-4 text-right">GST</th>
+                <th className="px-6 py-4 text-right">Grand Total</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
               {filteredBills.map(bill => (
-                <tr key={bill.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                  <td className="px-6 py-4 font-medium text-slate-900 dark:text-white">{bill.billNumber}</td>
-                  <td className="px-6 py-4">{new Date(bill.date).toLocaleDateString()}</td>
-                  <td className="px-6 py-4">{bill.customerName}</td>
-                  <td className="px-6 py-4 text-center">{bill.items.length}</td>
-                  <td className="px-6 py-4 text-right">₹{bill.subTotal.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right">₹{bill.totalGst.toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right font-semibold">₹{bill.grandTotal.toFixed(2)}</td>
+                <tr key={bill.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                  <td className="px-6 py-4 font-bold text-indigo-600 dark:text-indigo-400">{bill.billNumber}</td>
+                  <td className="px-6 py-4 text-slate-500 dark:text-slate-400">
+                      <div className="font-medium text-slate-800 dark:text-slate-200">{new Date(bill.date).toLocaleDateString()}</div>
+                      <div className="text-[10px]">{new Date(bill.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                  </td>
+                  <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{bill.customerName}</td>
+                  <td className="px-6 py-4 text-center font-bold">{bill.items.length}</td>
+                  <td className="px-6 py-4 text-right font-medium">₹{bill.subTotal.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-right font-medium">₹{bill.totalGst.toFixed(2)}</td>
+                  <td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">₹{bill.grandTotal.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {filteredBills.length === 0 && (
-                <div className="text-center py-10 text-slate-600 dark:text-slate-400">
-                    <p>No bills found for the selected criteria.</p>
+                <div className="text-center py-20 text-slate-500 italic bg-white dark:bg-slate-800">
+                    No sales records found for this criteria.
                 </div>
             )}
         </div>
