@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon, SearchIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon, SearchIcon, SwitchHorizontalIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
 
 interface InventoryProps {
@@ -114,6 +114,70 @@ const PrintLabelModal: React.FC<{
     );
 };
 
+const SubstitutesModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    product: Product | null;
+    allProducts: Product[];
+}> = ({ isOpen, onClose, product, allProducts }) => {
+    if (!isOpen || !product) return null;
+
+    const substitutes = allProducts.filter(p => 
+        p.id !== product.id && 
+        p.composition && 
+        product.composition && 
+        p.composition.toLowerCase().trim() === product.composition.toLowerCase().trim()
+    );
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Substitute Medicines" maxWidth="max-w-2xl">
+            <div className="space-y-6">
+                <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                    <p className="text-xs font-black text-indigo-500 uppercase tracking-widest mb-1">Selected Product</p>
+                    <h4 className="text-xl font-bold text-slate-800 dark:text-white">{product.name}</h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Composition: <span className="font-semibold text-indigo-600 dark:text-indigo-400">{product.composition || 'N/A'}</span>
+                    </p>
+                </div>
+
+                <div>
+                    <h5 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-3">Available Alternatives</h5>
+                    <div className="space-y-3">
+                        {substitutes.map(sub => {
+                            const totalStock = sub.batches.reduce((sum, b) => sum + b.stock, 0);
+                            return (
+                                <div key={sub.id} className="flex justify-between items-center p-4 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl hover:shadow-md transition-shadow">
+                                    <div>
+                                        <p className="font-bold text-slate-800 dark:text-slate-200">{sub.name}</p>
+                                        <p className="text-xs text-slate-500">{sub.company}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-sm font-black ${totalStock > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                            Stock: {formatStock(totalStock, sub.unitsPerStrip)}
+                                        </p>
+                                        {sub.batches.length > 0 && (
+                                            <p className="text-xs text-slate-400 mt-0.5">MRP: ₹{sub.batches[0].mrp.toFixed(2)}</p>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {substitutes.length === 0 && (
+                            <div className="py-10 text-center text-slate-400 italic">
+                                No substitutes found with the same composition in your inventory.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex justify-end pt-4 border-t dark:border-slate-700">
+                    <button onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold">Close</button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const ProductMasterView: React.FC<{ 
     products: Product[], 
     systemConfig: SystemConfig,
@@ -123,12 +187,15 @@ const ProductMasterView: React.FC<{
 }> = ({ products, systemConfig, onEdit, onDelete, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
+    const [substituteProduct, setSubstituteProduct] = useState<Product | null>(null);
     const isRetail = systemConfig.softwareMode === 'Retail';
+    const isPharma = systemConfig.softwareMode === 'Pharma';
     
     const filtered = useMemo(() => 
         products.filter(p => 
             p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
             p.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (p.composition && p.composition.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (p.barcode && p.barcode.includes(searchTerm))
         ).sort((a,b) => a.name.localeCompare(b.name))
     , [products, searchTerm]);
@@ -244,7 +311,7 @@ const ProductMasterView: React.FC<{
                 <div className="relative">
                     <input 
                         type="text" 
-                        placeholder="Search..." 
+                        placeholder={isPharma ? "Search Name, Company or Composition..." : "Search Name, Barcode..."}
                         value={searchTerm} 
                         onChange={e => setSearchTerm(e.target.value)} 
                         className="w-full p-3 bg-yellow-100 text-slate-900 placeholder-slate-500 border-none rounded-lg focus:ring-2 focus:ring-indigo-500 shadow-inner" 
@@ -275,6 +342,15 @@ const ProductMasterView: React.FC<{
                                 <td className="px-4 py-3.5 text-center font-medium text-slate-700 dark:text-slate-300">{p.gst}%</td>
                                 <td className="px-4 py-3.5">
                                     <div className="flex justify-center items-center gap-3">
+                                        {isPharma && p.composition && (
+                                             <button 
+                                                onClick={() => setSubstituteProduct(p)} 
+                                                className="p-1 text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 transition-colors" 
+                                                title="Find Substitute Medicines"
+                                            >
+                                                <SwitchHorizontalIcon className="h-5 w-5" />
+                                            </button>
+                                        )}
                                         {isRetail && p.barcode && (
                                             <button 
                                                 onClick={() => setPrintingProduct(p)} 
@@ -316,6 +392,13 @@ const ProductMasterView: React.FC<{
                 onClose={() => setPrintingProduct(null)} 
                 product={printingProduct} 
                 onPrint={(qty) => printingProduct && handlePrintLabels(printingProduct, qty)} 
+            />
+
+            <SubstitutesModal 
+                isOpen={!!substituteProduct}
+                onClose={() => setSubstituteProduct(null)}
+                product={substituteProduct}
+                allProducts={products}
             />
         </Card>
     );
