@@ -12,7 +12,7 @@ import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getTranslation } from '../utils/translationHelper';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 // Helper for matching technical codes (removes dashes, dots, spaces)
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -77,7 +77,7 @@ const TextScannerModal: React.FC<{
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-2/3 h-1/3 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
-                                FOCUS ON PART NO / BRAND
+                                FOCUS ON PRODUCT / BATCH
                             </div>
                             <div className={`w-full h-0.5 bg-red-500/50 ${isProcessing ? 'hidden' : 'animate-pulse'}`}></div>
                         </div>
@@ -85,7 +85,7 @@ const TextScannerModal: React.FC<{
                     {isProcessing && (
                         <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white z-20">
                             <div className="animate-spin h-12 w-12 border-4 border-indigo-400 border-t-transparent rounded-full mb-3 shadow-lg"></div>
-                            <p className="font-black text-sm uppercase tracking-tighter">Gemini is Identifying...</p>
+                            <p className="font-black text-sm uppercase tracking-tighter">Gemini is Gathering Details...</p>
                         </div>
                     )}
                 </div>
@@ -329,11 +329,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
-        // Refined prompt for technical codes
-        const prompt = `Identify the product brand name, model number, or alphanumeric part number visible in this image. 
-        Focus specifically on unique labels, stickers, or printed text on the package. 
-        Return ONLY the most prominent identifier (e.g., 'ABC-123', 'PAN-D', 'MODEL55') and nothing else. 
-        If nothing is found, return 'NONE'.`;
+        // Comprehensive prompt to gather Name, Batch, and potentially Expiry or Barcode from image
+        const prompt = `Identify the product from this image.
+        1. Extract the product Name or Brand.
+        2. Extract any visible Batch Number (often starts with B, BN, Batch No).
+        3. Extract any visible Barcode or SKU code.
+        4. Extract the Expiry Date (YYYY-MM).
+        
+        Return ONLY a JSON object with these fields: { "name": "...", "batch": "...", "barcode": "...", "expiry": "..." }. 
+        If a detail is missing, set it to null.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
@@ -343,40 +347,71 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                     { text: prompt }
                 ] 
             }],
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  batch: { type: Type.STRING },
+                  barcode: { type: Type.STRING },
+                  expiry: { type: Type.STRING }
+                }
+              }
+            }
         });
 
-        const identified = response.text?.trim();
-        if (identified && identified !== 'NONE') {
-            const normIdentified = normalizeCode(identified);
-            
-            // Advanced fuzzy search: check normalized matches for name, barcode, HSN, and partial name
-            const bestMatch = products.find(p => 
-                normalizeCode(p.name).includes(normIdentified) || 
-                normalizeCode(p.barcode) === normIdentified ||
-                normalizeCode(p.hsnCode) === normIdentified ||
-                p.name.toLowerCase().includes(identified.toLowerCase())
-            );
+        if (!response.text) throw new Error("Empty AI response");
+        const detected = JSON.parse(response.text);
+        
+        const identifiedName = detected.name || "";
+        const identifiedBatch = detected.batch || "";
+        const identifiedBarcode = detected.barcode || "";
 
-            if (bestMatch) {
-                // Find batch with most stock
-                const sortedBatches = [...bestMatch.batches].sort((a, b) => b.stock - a.stock);
-                const batch = sortedBatches.find(b => b.stock > 0);
-                
-                if (batch) {
-                    handleAddToCart(bestMatch, batch);
-                    setShowTextScanner(false);
-                } else {
-                    // Item found but out of stock - set search term as fallback
-                    setSearchTerm(identified);
-                    setShowTextScanner(false);
-                }
+        if (!identifiedName && !identifiedBarcode) {
+            alert("Could not identify the product. Please try again with a clearer image.");
+            setIsOcrProcessing(false);
+            return;
+        }
+
+        const normName = normalizeCode(identifiedName);
+        const normBatch = normalizeCode(identifiedBatch);
+        const normBarcode = normalizeCode(identifiedBarcode);
+
+        // Find best matching product
+        const bestMatch = products.find(p => 
+            (identifiedBarcode && normalizeCode(p.barcode) === normBarcode) || 
+            (identifiedName && normalizeCode(p.name).includes(normName)) || 
+            (identifiedName && p.name.toLowerCase().includes(identifiedName.toLowerCase()))
+        );
+
+        if (bestMatch) {
+            // Find specific batch if detected, otherwise default to most stock
+            let targetBatch: Batch | undefined;
+            if (identifiedBatch) {
+                targetBatch = bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0);
+            }
+            
+            // Fallback to highest stock batch if specific batch not found/provided
+            if (!targetBatch) {
+                targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
+            }
+
+            if (targetBatch) {
+                handleAddToCart(bestMatch, targetBatch);
+                setShowTextScanner(false);
             } else {
-                // No exact match - pass to manual search bar so user sees the "AI result"
-                setSearchTerm(identified);
+                alert(`Found product "${bestMatch.name}" but it is out of stock.`);
+                setSearchTerm(identifiedName || identifiedBarcode);
                 setShowTextScanner(false);
             }
         } else {
-            alert("Could not clearly read a part number. Please try again with better light or manual search.");
+            // No product match in database - populate search bar so user can manually find or add
+            const searchVal = identifiedName || identifiedBarcode || "Unknown";
+            setSearchTerm(searchVal);
+            setShowTextScanner(false);
+            // Optional: Alert the user what was detected
+            console.log("AI Detected details but no DB match:", detected);
         }
     } catch (e) {
         console.error("AI Scan Error:", e);
