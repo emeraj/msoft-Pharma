@@ -130,7 +130,7 @@ const TextScannerModal: React.FC<{
                         <CameraIcon className="h-7 w-7" /> CAPTURE & IDENTIFY
                     </button>
                     <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 px-4">
-                        Point the camera at the product label. AI will try to extract **Name, Batch, and Expiry** automatically.
+                        Point the camera at the product label. AI will try to extract **Name, Part No, Batch, and Expiry** automatically.
                     </p>
                 </div>
             </div>
@@ -293,48 +293,80 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     try {
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analyze this product image and extract specific details. Brand Name, Batch Number, Expiry Date. Return JSON: { "name": "...", "batch": "...", "expiry": "...", "code": "..." }.`;
+        
+        // REFINED PROMPT FOR TECHNICAL CODES
+        const prompt = `Strictly analyze this product label image. 
+        Extract with high precision:
+        1. Brand Name / Commercial Name.
+        2. Technical Code / SKU / Part Number / Barcode string (e.g. alphanumeric strings like ABC-123 or 89012345).
+        3. Batch Number (Look for BN, B.No, Batch).
+        4. Expiry Date (EXP, E., in YYYY-MM or MM/YY).
+        
+        Return ONLY valid JSON: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }. 
+        Use "Unknown" if a field is not found.`;
+
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: base64Data } }, { text: prompt }] }],
-            config: { responseMimeType: "application/json" }
+            config: { 
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        name: { type: Type.STRING },
+                        technicalCode: { type: Type.STRING },
+                        batch: { type: Type.STRING },
+                        expiry: { type: Type.STRING }
+                    }
+                }
+            }
         });
 
         if (!response.text) throw new Error("No response from AI");
         const detected = JSON.parse(response.text);
-        const { name: detectedName, batch: detectedBatch, code: detectedCode } = detected;
+        const { name: dName, technicalCode: dCode, batch: dBatch } = detected;
 
-        if (!detectedName || detectedName === "Unknown") {
-            alert("Could not identify product.");
+        if ((!dName || dName === "Unknown") && (!dCode || dCode === "Unknown")) {
+            alert("Could not identify the product details. Ensure the label is clear.");
             setIsOcrProcessing(false);
             return;
         }
 
-        const normName = normalizeCode(detectedName);
-        const normBatch = normalizeCode(detectedBatch);
-        const normCode = normalizeCode(detectedCode);
+        // IMPROVED MATCHING LOGIC
+        const normCode = dCode !== "Unknown" ? normalizeCode(dCode) : "";
+        const normName = dName !== "Unknown" ? normalizeCode(dName) : "";
+        const normBatch = dBatch !== "Unknown" ? normalizeCode(dBatch) : "";
 
-        const bestMatch = products.find(p => (detectedCode !== "Unknown" && normalizeCode(p.barcode) === normCode) || normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
+        // First attempt: Match by exact normalized barcode/technical code
+        let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode) === normCode);
+        
+        // Second attempt: Match by name if code failed
+        if (!bestMatch && normName !== "") {
+            bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
+        }
 
         if (bestMatch) {
-            let targetBatch = detectedBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
+            let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
             if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
+            
             if (targetBatch) {
                 handleAddToCart(bestMatch, targetBatch);
                 setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
                 setTimeout(() => setScanResultFeedback(null), 3000);
                 setShowTextScanner(false);
             } else {
-                alert(`Out of stock.`);
+                alert(`Found ${bestMatch.name} but it is currently out of stock.`);
                 setShowTextScanner(false);
             }
         } else {
-            setSearchTerm(detectedName);
+            // Fallback: Send extracted technical code or name to search bar
+            setSearchTerm(dCode !== "Unknown" ? dCode : dName);
             setShowTextScanner(false);
-            alert(`Detected "${detectedName}" but not found in DB.`);
+            alert(`Detected "${dCode !== "Unknown" ? dCode : dName}" but not found in your inventory.`);
         }
     } catch (e) {
-        alert("Scan failed.");
+        console.error("AI Scan Error:", e);
+        alert("Scan failed. Please check internet connection.");
     } finally {
         setIsOcrProcessing(false);
     }
@@ -350,7 +382,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const mainTerm = parts[0];
     const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
     return products.filter(p => {
-        const nameMatch = p.name.toLowerCase().includes(mainTerm) || (!isPharmaMode && p.barcode && p.barcode.includes(mainTerm));
+        const nameMatch = p.name.toLowerCase().includes(mainTerm) || (!isPharmaMode && p.barcode && p.barcode.toLowerCase().includes(mainTerm));
         if (!nameMatch) return false;
         if (maybeMRP !== null) return p.batches.some(b => Math.abs((b.saleRate || b.mrp) - maybeMRP) < 5);
         return true; 

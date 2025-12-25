@@ -6,6 +6,9 @@ import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon,
 import BarcodeScannerModal from './BarcodeScannerModal';
 import { GoogleGenAI, Type } from "@google/genai";
 
+// Fix: Added missing normalizeCode helper function to fix technical code matching errors
+const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 interface PurchasesProps {
     products: Product[];
     purchases: Purchase[];
@@ -209,6 +212,7 @@ const OcrPreviewModal: React.FC<OcrPreviewModalProps> = ({ isOpen, onClose, data
                                             </td>
                                             <td className="px-4 py-3">
                                                 <input value={item.productName} onChange={e => handleItemChange(index, 'productName', e.target.value)} className="w-full bg-transparent font-bold text-slate-200 focus:outline-none" />
+                                                {item.barcode && <div className="text-[10px] text-slate-500">Extracted Code: {item.barcode}</div>}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <input value={item.hsnCode} onChange={e => handleItemChange(index, 'hsnCode', e.target.value)} className="w-full bg-transparent text-center focus:outline-none" />
@@ -402,7 +406,21 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
 
     const analyzeInvoiceWithGemini = async (base64Data: string, mimeType: string) => {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analyze this purchase invoice. Extract: Supplier Name, Supplier GSTIN, Supplier Address, Invoice Number, Invoice Date (YYYY-MM-DD), and Line Items (Product Name, HSN, Batch, Expiry YYYY-MM, Qty, Rate, MRP, Tax %, Discount %).`;
+        
+        // REFINED INVOICE PROMPT FOR PART NUMBERS
+        const prompt = `Analyze this purchase invoice with high precision. 
+        Extract: Supplier Name, Supplier GSTIN, Supplier Address, Invoice Number, Invoice Date (YYYY-MM-DD), and Line Items.
+        
+        For each line item, capture accurately:
+        1. Product Description / Name.
+        2. Technical Code / Part Number / SKU / Barcode numeric string if printed in its own column or as part of description.
+        3. HSN.
+        4. Batch Number.
+        5. Expiry Date (YYYY-MM).
+        6. Qty, Rate, MRP, Tax%, and Discount%.
+        
+        Return JSON object with fields: supplierName, supplierGstin, supplierAddress, invoiceNumber, invoiceDate, and items (array of objects).`;
+
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: [{ parts: [{ inlineData: { mimeType, data: base64Data } }, { text: prompt }] }],
@@ -422,6 +440,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                                 type: Type.OBJECT,
                                 properties: {
                                     productName: { type: Type.STRING },
+                                    technicalCode: { type: Type.STRING },
                                     hsnCode: { type: Type.STRING },
                                     batchNumber: { type: Type.STRING },
                                     expiryDate: { type: Type.STRING },
@@ -448,19 +467,29 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                 supplierAddress: res.supplierAddress || '',
                 invoiceNumber: res.invoiceNumber || '',
                 invoiceDate: res.invoiceDate || new Date().toISOString().split('T')[0],
-                items: (res.items || []).map((i: any) => ({
-                    isNewProduct: !products.some(p => p.name.toLowerCase() === i.productName?.toLowerCase()),
-                    productName: i.productName || 'Unknown',
-                    company: res.supplierName || 'General',
-                    hsnCode: i.hsnCode || '',
-                    gst: i.gst || 12,
-                    batchNumber: i.batchNumber || (isPharmaMode ? 'BATCH' : 'DEFAULT'),
-                    expiryDate: i.expiryDate || '2025-12',
-                    quantity: i.quantity || 1,
-                    mrp: i.mrp || i.rate || 0,
-                    purchasePrice: i.rate || 0,
-                    discount: i.discount || 0
-                }))
+                items: (res.items || []).map((i: any) => {
+                    const normCode = i.technicalCode ? normalizeCode(i.technicalCode) : "";
+                    const matchingProduct = products.find(p => 
+                        (normCode !== "" && normalizeCode(p.barcode) === normCode) ||
+                        p.name.toLowerCase() === i.productName?.toLowerCase()
+                    );
+
+                    return {
+                        isNewProduct: !matchingProduct,
+                        productId: matchingProduct?.id,
+                        productName: i.productName || 'Unknown',
+                        barcode: i.technicalCode || '', // Map technical code to barcode field
+                        company: res.supplierName || 'General',
+                        hsnCode: i.hsnCode || '',
+                        gst: i.gst || 12,
+                        batchNumber: i.batchNumber || (isPharmaMode ? 'BATCH' : 'DEFAULT'),
+                        expiryDate: i.expiryDate || '2025-12',
+                        quantity: i.quantity || 1,
+                        mrp: i.mrp || i.rate || 0,
+                        purchasePrice: i.rate || 0,
+                        discount: i.discount || 0
+                    };
+                })
             });
             setIsOcrPreviewOpen(true);
             onUpdateConfig({ ...systemConfig, aiInvoiceUsageCount: (systemConfig.aiInvoiceUsageCount || 0) + 1 });
