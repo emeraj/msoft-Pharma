@@ -366,12 +366,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                     handleAddToCart(bestMatch, batch);
                     setShowTextScanner(false);
                 } else {
-                    alert(`Found ${bestMatch.name} but no stock is available.`);
+                    // Item found but out of stock - set search term as fallback
                     setSearchTerm(identified);
                     setShowTextScanner(false);
                 }
             } else {
-                // No exact match - pass to manual search
+                // No exact match - pass to manual search bar so user sees the "AI result"
                 setSearchTerm(identified);
                 setShowTextScanner(false);
             }
