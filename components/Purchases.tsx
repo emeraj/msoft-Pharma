@@ -20,6 +20,7 @@ interface PurchasesProps {
     onUpdateConfig: (config: SystemConfig) => void;
     editingPurchase?: Purchase | null;
     onCancelEdit?: () => void;
+    isSubscriptionExpired?: boolean;
 }
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
@@ -290,7 +291,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     );
 };
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig, editingPurchase, onCancelEdit }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig, editingPurchase, onCancelEdit, isSubscriptionExpired }) => {
     const initialFormState = { supplierName: '', invoiceNumber: '', invoiceDate: new Date().toISOString().split('T')[0], currentItems: [] as PurchaseLineItem[], roundOff: 0 };
     const [formState, setFormState] = useState(initialFormState);
     const [localEditingPurchase, setLocalEditingPurchase] = useState<Purchase | null>(null);
@@ -422,6 +423,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
     };
 
     const handleSavePurchase = () => {
+        if (isSubscriptionExpired) { alert("Your subscription has expired. Please renew to continue entering purchases."); return; }
         if (!formState.supplierName || !formState.invoiceNumber || formState.currentItems.length === 0) { alert('Fill mandatory fields'); return; }
         const purchaseData = { supplier: formState.supplierName, invoiceNumber: formState.invoiceNumber, invoiceDate: formState.invoiceDate, items: formState.currentItems, roundOff: formState.roundOff };
         if (localEditingPurchase) onUpdatePurchase(localEditingPurchase.id, purchaseData as any, localEditingPurchase);
@@ -472,116 +474,132 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
 
             <Card title={<div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                 <span>{localEditingPurchase ? 'Edit Purchase' : 'New Purchase Entry'}</span>
-                <div className="flex gap-2">
-                    <input type="file" accept="image/*,application/pdf" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
-                    <button onClick={() => fileInputRef.current?.click()} disabled={isProcessingOCR} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md">
-                        {isProcessingOCR ? <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> : <UploadIcon className="h-5 w-5" />} AI Auto-Fill (Scan)
-                    </button>
-                </div>
-            </div>}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="relative">
-                        <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Supplier</label>
-                        <input value={formState.supplierName} onChange={e => setFormState({...formState, supplierName: e.target.value})} onFocus={() => setShowSupplierSuggestions(true)} onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)} placeholder="Supplier Name*" className={formInputStyle} required />
-                        {showSupplierSuggestions && formState.supplierName && (
-                            <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border rounded shadow-lg max-h-48 overflow-y-auto">
-                                {suppliers.filter(s => s.name.toLowerCase().includes(formState.supplierName.toLowerCase())).map(s => <li key={s.id} onClick={() => setFormState({...formState, supplierName: s.name})} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer text-slate-800 dark:text-slate-200">{s.name}</li>)}
-                                <li onClick={() => setSupplierModalOpen(true)} className="p-2 text-indigo-600 font-bold border-t cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600">+ Add New Supplier</li>
-                            </ul>
-                        )}
+                {!isSubscriptionExpired && (
+                    <div className="flex gap-2">
+                        <input type="file" accept="image/*,application/pdf" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+                        <button onClick={() => fileInputRef.current?.click()} disabled={isProcessingOCR} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-md">
+                            {isProcessingOCR ? <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> : <UploadIcon className="h-5 w-5" />} AI Auto-Fill (Scan)
+                        </button>
                     </div>
-                    <div><label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Inv #</label><input value={formState.invoiceNumber} onChange={e => setFormState({...formState, invoiceNumber: e.target.value})} placeholder="Invoice Number*" className={formInputStyle} required /></div>
-                    <div><label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Date</label><input value={formState.invoiceDate} onChange={e => setFormState({...formState, invoiceDate: e.target.value})} type="date" className={formInputStyle} required /></div>
-                </div>
-
-                <AddItemForm products={products} onAddItem={item => setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}))} companies={[]} systemConfig={systemConfig} gstRates={gstRates} />
-                
-                {formState.currentItems.length > 0 && (
-                    <div className="mt-8 space-y-6">
-                        <div className="flex items-center gap-3 mb-2">
-                             <AdjustmentsIcon className="h-5 w-5 text-indigo-500" />
-                             <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest">Items in Current Purchase</h4>
+                )}
+            </div>}>
+                {isSubscriptionExpired ? (
+                    <div className="p-8 text-center bg-rose-50 dark:bg-rose-900/10 border-2 border-dashed border-rose-300 dark:border-rose-800 rounded-2xl">
+                        <div className="inline-block p-4 bg-rose-100 dark:bg-rose-900/40 rounded-full mb-4">
+                            <CloudIcon className="h-12 w-12 text-rose-600" />
                         </div>
-                        <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner bg-[#1e293b]/20">
-                            <table className="w-full text-[12px] text-left border-collapse">
-                                <thead className="bg-[#1e293b] text-slate-300 uppercase text-[9px] font-black tracking-widest">
-                                    <tr>
-                                        <th className="px-4 py-4 min-w-[200px]">PRODUCT</th>
-                                        <th className="px-4 py-4 text-center">HSN</th>
-                                        <th className="px-4 py-4 text-center">QTY</th>
-                                        <th className="px-4 py-4 text-right">RATE</th>
-                                        <th className="px-4 py-4 text-center">DISC (%)</th>
-                                        <th className="px-4 py-4 text-center">TAX (%)</th>
-                                        <th className="px-4 py-4 text-right">TOTAL</th>
-                                        <th className="px-4 py-4 text-center">ACTIONS</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-700 bg-white dark:bg-slate-800">
-                                    {formState.currentItems.map((item, idx) => {
-                                        const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0) / 100);
-                                        const lineTotal = itemTotal * (1 + (item.gst || 0) / 100);
-                                        return (
-                                            <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                                <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
-                                                    {item.productName}
-                                                    {isPharmaMode && <div className="text-[9px] text-slate-500 font-normal uppercase mt-0.5">B: {item.batchNumber} / EXP: {item.expiryDate}</div>}
-                                                </td>
-                                                <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.hsnCode || '-'}</td>
-                                                <td className="px-4 py-3 text-center text-slate-800 dark:text-slate-200 font-bold">{item.quantity}</td>
-                                                <td className="px-4 py-3 text-right text-slate-800 dark:text-slate-200">₹{item.purchasePrice.toFixed(2)}</td>
-                                                <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.discount || 0}%</td>
-                                                <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.gst}%</td>
-                                                <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">₹{lineTotal.toFixed(2)}</td>
-                                                <td className="px-4 py-3 text-center">
-                                                    <div className="flex justify-center gap-3">
-                                                        <button onClick={() => setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== idx)}))} className="text-rose-500 hover:text-rose-700 transition-colors">
-                                                            <TrashIcon className="h-4 w-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Summary Section */}
-                        <div className="flex flex-col items-end gap-3 pr-4">
-                            <div className="flex items-center gap-8 text-sm font-bold text-slate-500">
-                                <span>Items Total:</span>
-                                <span className="w-32 text-right text-slate-800 dark:text-slate-200">₹{itemsTotal.toFixed(2)}</span>
+                        <h3 className="text-xl font-black text-rose-700 dark:text-rose-400 uppercase tracking-tighter">Account Blocked</h3>
+                        <p className="text-slate-600 dark:text-slate-400 mt-2 max-w-md mx-auto">
+                            Subscription expired. Purchase entries are disabled until the account is renewed.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="relative">
+                                <label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Supplier</label>
+                                <input value={formState.supplierName} onChange={e => setFormState({...formState, supplierName: e.target.value})} onFocus={() => setShowSupplierSuggestions(true)} onBlur={() => setTimeout(() => setShowSupplierSuggestions(false), 200)} placeholder="Supplier Name*" className={formInputStyle} required />
+                                {showSupplierSuggestions && formState.supplierName && (
+                                    <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border rounded shadow-lg max-h-48 overflow-y-auto">
+                                        {suppliers.filter(s => s.name.toLowerCase().includes(formState.supplierName.toLowerCase())).map(s => <li key={s.id} onClick={() => setFormState({...formState, supplierName: s.name})} className="p-2 hover:bg-indigo-100 dark:hover:bg-indigo-900 cursor-pointer text-slate-800 dark:text-slate-200">{s.name}</li>)}
+                                        <li onClick={() => setSupplierModalOpen(true)} className="p-2 text-indigo-600 font-bold border-t cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600">+ Add New Supplier</li>
+                                    </ul>
+                                )}
                             </div>
-                            <div className="flex items-center gap-4 text-sm font-bold text-slate-500">
-                                <span>Round Off:</span>
-                                <div className="flex items-center gap-2">
-                                    <input 
-                                        type="number" 
-                                        value={formState.roundOff.toFixed(2)} 
-                                        onChange={e => setFormState({...formState, roundOff: parseFloat(e.target.value) || 0})}
-                                        className="w-24 p-1.5 text-right bg-slate-100 dark:bg-slate-700 border dark:border-slate-600 rounded text-slate-800 dark:text-slate-200 font-bold"
-                                    />
+                            <div><label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Inv #</label><input value={formState.invoiceNumber} onChange={e => setFormState({...formState, invoiceNumber: e.target.value})} placeholder="Invoice Number*" className={formInputStyle} required /></div>
+                            <div><label className="block text-sm font-medium mb-1 text-slate-700 dark:text-slate-300">Date</label><input value={formState.invoiceDate} onChange={e => setFormState({...formState, invoiceDate: e.target.value})} type="date" className={formInputStyle} required /></div>
+                        </div>
+
+                        <AddItemForm products={products} onAddItem={item => setFormState(prev => ({...prev, currentItems: [...prev.currentItems, item]}))} companies={[]} systemConfig={systemConfig} gstRates={gstRates} />
+                        
+                        {formState.currentItems.length > 0 && (
+                            <div className="mt-8 space-y-6">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <AdjustmentsIcon className="h-5 w-5 text-indigo-500" />
+                                    <h4 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest">Items in Current Purchase</h4>
+                                </div>
+                                <div className="overflow-hidden border border-slate-200 dark:border-slate-700 rounded-xl shadow-inner bg-[#1e293b]/20">
+                                    <table className="w-full text-[12px] text-left border-collapse">
+                                        <thead className="bg-[#1e293b] text-slate-300 uppercase text-[9px] font-black tracking-widest">
+                                            <tr>
+                                                <th className="px-4 py-4 min-w-[200px]">PRODUCT</th>
+                                                <th className="px-4 py-4 text-center">HSN</th>
+                                                <th className="px-4 py-4 text-center">QTY</th>
+                                                <th className="px-4 py-4 text-right">RATE</th>
+                                                <th className="px-4 py-4 text-center">DISC (%)</th>
+                                                <th className="px-4 py-4 text-center">TAX (%)</th>
+                                                <th className="px-4 py-4 text-right">TOTAL</th>
+                                                <th className="px-4 py-4 text-center">ACTIONS</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-700 bg-white dark:bg-slate-800">
+                                            {formState.currentItems.map((item, idx) => {
+                                                const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0) / 100);
+                                                const lineTotal = itemTotal * (1 + (item.gst || 0) / 100);
+                                                return (
+                                                    <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                                                        <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
+                                                            {item.productName}
+                                                            {isPharmaMode && <div className="text-[9px] text-slate-500 font-normal uppercase mt-0.5">B: {item.batchNumber} / EXP: {item.expiryDate}</div>}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.hsnCode || '-'}</td>
+                                                        <td className="px-4 py-3 text-center text-slate-800 dark:text-slate-200 font-bold">{item.quantity}</td>
+                                                        <td className="px-4 py-3 text-right text-slate-800 dark:text-slate-200">₹{item.purchasePrice.toFixed(2)}</td>
+                                                        <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.discount || 0}%</td>
+                                                        <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.gst}%</td>
+                                                        <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">₹{lineTotal.toFixed(2)}</td>
+                                                        <td className="px-4 py-3 text-center">
+                                                            <div className="flex justify-center gap-3">
+                                                                <button onClick={() => setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== idx)}))} className="text-rose-500 hover:text-rose-700 transition-colors">
+                                                                    <TrashIcon className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* Summary Section */}
+                                <div className="flex flex-col items-end gap-3 pr-4">
+                                    <div className="flex items-center gap-8 text-sm font-bold text-slate-500">
+                                        <span>Items Total:</span>
+                                        <span className="w-32 text-right text-slate-800 dark:text-slate-200">₹{itemsTotal.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-sm font-bold text-slate-500">
+                                        <span>Round Off:</span>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                value={formState.roundOff.toFixed(2)} 
+                                                onChange={e => setFormState({...formState, roundOff: parseFloat(e.target.value) || 0})}
+                                                className="w-24 p-1.5 text-right bg-slate-100 dark:bg-slate-700 border dark:border-slate-600 rounded text-slate-800 dark:text-slate-200 font-bold"
+                                            />
+                                            <button 
+                                                onClick={autoRoundOff}
+                                                className="px-4 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded font-black text-[11px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800 shadow-sm"
+                                            >
+                                                Auto
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-8 mt-2">
+                                        <span className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">Grand Total:</span>
+                                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 w-32 text-right">₹{grandTotal.toFixed(2)}</span>
+                                    </div>
+
                                     <button 
-                                        onClick={autoRoundOff}
-                                        className="px-4 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded font-black text-[11px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800 shadow-sm"
+                                        onClick={handleSavePurchase} 
+                                        className="mt-6 w-full sm:w-64 bg-emerald-600 text-white py-4 rounded-xl font-black text-lg shadow-xl hover:bg-emerald-700 transition-all transform active:scale-95 flex items-center justify-center gap-3"
                                     >
-                                        Auto
+                                        <CheckCircleIcon className="h-6 w-6" /> Save Purchase
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-8 mt-2">
-                                <span className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">Grand Total:</span>
-                                <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 w-32 text-right">₹{grandTotal.toFixed(2)}</span>
-                            </div>
-
-                            <button 
-                                onClick={handleSavePurchase} 
-                                className="mt-6 w-full sm:w-64 bg-emerald-600 text-white py-4 rounded-xl font-black text-lg shadow-xl hover:bg-emerald-700 transition-all transform active:scale-95 flex items-center justify-center gap-3"
-                            >
-                                <CheckCircleIcon className="h-6 w-6" /> Save Purchase
-                            </button>
-                        </div>
-                    </div>
+                        )}
+                    </>
                 )}
             </Card>
 

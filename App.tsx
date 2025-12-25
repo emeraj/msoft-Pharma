@@ -446,6 +446,7 @@ function App() {
                 return { id, ...data } as Bill;
             }}
             onCancelEdit={() => { setEditingBill(null); setActiveView('billing'); }}
+            isSubscriptionExpired={subscriptionStatus.isExpired}
           />
         )}
         {activeView === 'inventory' && (
@@ -475,6 +476,7 @@ function App() {
             editingPurchase={editingPurchase}
             onCancelEdit={() => setEditingPurchase(null)}
             onUpdateConfig={(cfg) => setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), cfg)}
+            isSubscriptionExpired={subscriptionStatus.isExpired}
           />
         )}
         {activeView === 'daybook' && (

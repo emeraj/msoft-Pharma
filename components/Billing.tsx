@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, PlusIcon, UserCircleIcon, InformationCircleIcon, BarcodeIcon, XIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, PlusIcon, UserCircleIcon, InformationCircleIcon, BarcodeIcon, XIcon, CloudIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; 
@@ -119,12 +119,12 @@ interface BillingProps {
   onCancelEdit?: () => void;
   onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
   onAddSalesman?: (salesman: Omit<Salesman, 'id'>) => Promise<Salesman | null>;
+  isSubscriptionExpired?: boolean;
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
-const modalInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
-const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman }) => {
+const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, isSubscriptionExpired }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; 
@@ -210,6 +210,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   }, [editingBill, customers]);
 
   const handleAddToCart = (product: Product, batch: Batch) => { 
+    if (isSubscriptionExpired) { alert("Subscription Expired! Cannot add items to cart. Please renew."); return; }
     if (isPharmaMode) { 
         const expiry = getExpiryDate(batch.expiryDate); 
         const todayNoTime = new Date(); todayNoTime.setHours(0,0,0,0);
@@ -217,7 +218,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     } 
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id); 
     const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; 
-    
     const sellingPrice = batch.saleRate || batch.mrp;
     
     if (existingItem) { 
@@ -234,6 +234,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   };
 
   const handleBarcodeScan = (code: string) => {
+    if (isSubscriptionExpired) { alert("Subscription Expired! Scanning is disabled."); return; }
     const product = products.find(p => p.barcode === code);
     if (product) {
         const batch = product.batches.find(b => b.stock > 0);
@@ -243,40 +244,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   };
 
   const handleTextScan = async (imageData: string) => {
+    if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
     setIsOcrProcessing(true);
     try {
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        
-        const prompt = `Analyze this product image and extract specific details.
-        1. Extract the product Brand Name / Commercial Name.
-        2. Extract the Batch Number (look for BN, B.No, Batch).
-        3. Extract the Expiry Date (look for EXP, E., format YYYY-MM or MM/YY).
-        4. Extract any SKU or Barcode numeric string visible.
-        
-        Return a valid JSON object only: { "name": "...", "batch": "...", "expiry": "...", "code": "..." }. 
-        Use "Unknown" for fields not found.`;
-
+        const prompt = `Analyze this product image and extract specific details. Brand Name, Batch Number, Expiry Date. Return JSON: { "name": "...", "batch": "...", "expiry": "...", "code": "..." }.`;
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
-            contents: [{ 
-                parts: [
-                    { inlineData: { mimeType: 'image/png', data: base64Data } }, 
-                    { text: prompt }
-                ] 
-            }],
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        name: { type: Type.STRING },
-                        batch: { type: Type.STRING },
-                        expiry: { type: Type.STRING },
-                        code: { type: Type.STRING }
-                    }
-                }
-            }
+            contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: base64Data } }, { text: prompt }] }],
+            config: { responseMimeType: "application/json" }
         });
 
         if (!response.text) throw new Error("No response from AI");
@@ -284,7 +261,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const { name: detectedName, batch: detectedBatch, code: detectedCode } = detected;
 
         if (!detectedName || detectedName === "Unknown") {
-            alert("Could not identify the product name. Please try again with a clearer shot of the front label.");
+            alert("Could not identify product.");
             setIsOcrProcessing(false);
             return;
         }
@@ -293,42 +270,27 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const normBatch = normalizeCode(detectedBatch);
         const normCode = normalizeCode(detectedCode);
 
-        // Find match in DB
-        const bestMatch = products.find(p => 
-            (detectedCode !== "Unknown" && normalizeCode(p.barcode) === normCode) ||
-            normalizeCode(p.name).includes(normName) || 
-            normName.includes(normalizeCode(p.name))
-        );
+        const bestMatch = products.find(p => (detectedCode !== "Unknown" && normalizeCode(p.barcode) === normCode) || normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
 
         if (bestMatch) {
-            // Find specific batch or fallback
-            let targetBatch: Batch | undefined;
-            if (detectedBatch !== "Unknown") {
-                targetBatch = bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0);
-            }
-            if (!targetBatch) {
-                targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
-            }
-
+            let targetBatch = detectedBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
+            if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
             if (targetBatch) {
                 handleAddToCart(bestMatch, targetBatch);
                 setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
                 setTimeout(() => setScanResultFeedback(null), 3000);
                 setShowTextScanner(false);
             } else {
-                alert(`Found ${bestMatch.name} but it is currently out of stock.`);
-                setSearchTerm(detectedName);
+                alert(`Out of stock.`);
                 setShowTextScanner(false);
             }
         } else {
-            // Found a name but no DB match - send to search bar
             setSearchTerm(detectedName);
             setShowTextScanner(false);
-            alert(`Detected "${detectedName}" but it's not in your inventory. Search manually or add it.`);
+            alert(`Detected "${detectedName}" but not found in DB.`);
         }
     } catch (e) {
-        console.error("AI Scan Error:", e);
-        alert("Gathering details failed. Check your internet connection.");
+        alert("Scan failed.");
     } finally {
         setIsOcrProcessing(false);
     }
@@ -382,6 +344,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
   const handleSaveBill = useCallback(async (shouldPrint: boolean) => {
+    if (isSubscriptionExpired) { alert("Your subscription has expired. Please renew to continue billing."); return; }
     if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
     let savedBill: Bill | null = null;
     const isUpdate = isEditing && editingBill;
@@ -391,7 +354,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         if (shouldPrint) { const defaultPrinter = systemConfig.printers?.find(p => p.isDefault); if (defaultPrinter) executePrint(savedBill, defaultPrinter, true); else { setBillToPrint(savedBill); setShouldResetAfterPrint(true); setPrinterModalOpen(true); } } 
         else { if (isUpdate) { if(onCancelEdit) onCancelEdit(); return; } setLastSavedBill(savedBill); setShowOrderSuccessModal(true); }
     }
-  }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, roundOff, onGenerateBill, systemConfig, executePrint, t, paymentMode, selectedSalesmanId]);
+  }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, roundOff, onGenerateBill, systemConfig, executePrint, t, paymentMode, selectedSalesmanId, isSubscriptionExpired]);
   
   const resetBillingForm = () => { setCart([]); setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId(''); startTimeRef.current = null; setOrderSeconds(0); };
   
@@ -404,7 +367,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   return (
     <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
-      {/* Toast Notification for Scanned Details */}
       {scanResultFeedback && (
           <div className="fixed top-20 right-4 z-[100] animate-bounce">
               <div className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 border-2 border-emerald-400">
@@ -434,15 +396,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                                             <span className={isOutOfStock ? 'text-rose-500' : ''}>{product.name} {isOutOfStock && '(Out of Stock)'}</span>
                                             {isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase">{product.composition}</span>}
                                         </div>
-                                        {isPharmaMode && product.composition && (
-                                            <button 
-                                                onClick={() => setSubstituteTarget(product)} 
-                                                className="text-indigo-600 bg-indigo-50 p-1.5 rounded-lg hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-1 text-[10px] font-black uppercase tracking-tighter"
-                                                title="Find Substitutes"
-                                            >
-                                                <SwitchHorizontalIcon className="h-4 w-4" /> Substitutes
-                                            </button>
-                                        )}
                                     </div>
                                     <ul className="pl-4 pb-2">
                                         {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { 
@@ -477,97 +430,37 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
       <div className="lg:col-span-1">
         <Card title="Bill Summary" className="sticky top-20">
-            <div className="space-y-4">
-                <div className="relative"><label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label><div className="flex gap-2"><div className="relative flex-grow"><input type="text" id="customerName" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); }} onFocus={() => setShowCustomerSuggestions(true)} onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} autoComplete="off" />{showCustomerSuggestions && customerSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">{customerSuggestions.map(customer => (<li key={customer.id} onClick={() => handleSelectCustomer(customer)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200">{customer.name} <span className="text-xs text-slate-500">({customer.phone || 'No Phone'})</span></li>))}</ul>)}</div><button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors" title="Add New Customer"><PlusIcon className="h-5 w-5" /></button></div></div>
-                {isPharmaMode && (<div><label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{t.billing.doctorName}</label><input type="text" id="doctorName" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="e.g. Dr. Name" className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} /></div>)}
-                <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300"><div className="flex justify-between"><span>{t.billing.subtotal}</span><span>₹{subTotal.toFixed(2)}</span></div><div className="flex justify-between"><span>{t.billing.totalGst}</span><span>₹{totalGst.toFixed(2)}</span></div><div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2"><span>{t.billing.grandTotal}</span><span>₹{grandTotal.toFixed(2)}</span></div></div>
-                <div className="pt-2 flex gap-2"><button onClick={() => handleSaveBill(true)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`} title="Save and Print"><PrinterIcon className="h-5 w-5" /> {isEditing ? "Update & Print" : t.billing.saveAndPrint}</button><button onClick={() => handleSaveBill(false)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`} title="Save Only">{isEditing ? "Update Only" : "Save Only"}</button></div>
-            </div>
+            {isSubscriptionExpired ? (
+                <div className="bg-rose-50 dark:bg-rose-900/20 border-2 border-rose-500 rounded-xl p-6 text-center animate-pulse-subtle">
+                    <div className="flex justify-center mb-3">
+                        <div className="p-3 bg-rose-100 dark:bg-rose-900/40 rounded-full">
+                            <CloudIcon className="h-10 w-10 text-rose-600" />
+                        </div>
+                    </div>
+                    <h3 className="text-lg font-black text-rose-600 dark:text-rose-400 uppercase tracking-tighter">Billing Disabled</h3>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                        Your subscription has expired. Please renew your premium membership to continue generating invoices.
+                    </p>
+                    <div className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-lg shadow-inner border border-rose-100 dark:border-rose-900/40">
+                         <p className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Contact Support</p>
+                         <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">9890072651</p>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    <div className="relative"><label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label><div className="flex gap-2"><div className="relative flex-grow"><input type="text" id="customerName" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); }} onFocus={() => setShowCustomerSuggestions(true)} onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} autoComplete="off" />{showCustomerSuggestions && customerSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">{customerSuggestions.map(customer => (<li key={customer.id} onClick={() => handleSelectCustomer(customer)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200">{customer.name} <span className="text-xs text-slate-500">({customer.phone || 'No Phone'})</span></li>))}</ul>)}</div><button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors" title="Add New Customer"><PlusIcon className="h-5 w-5" /></button></div></div>
+                    {isPharmaMode && (<div><label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{t.billing.doctorName}</label><input type="text" id="doctorName" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="e.g. Dr. Name" className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} /></div>)}
+                    <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300"><div className="flex justify-between"><span>{t.billing.subtotal}</span><span>₹{subTotal.toFixed(2)}</span></div><div className="flex justify-between"><span>{t.billing.totalGst}</span><span>₹{totalGst.toFixed(2)}</span></div><div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2"><span>{t.billing.grandTotal}</span><span>₹{grandTotal.toFixed(2)}</span></div></div>
+                    <div className="pt-2 flex gap-2"><button onClick={() => handleSaveBill(true)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`} title="Save and Print"><PrinterIcon className="h-5 w-5" /> {isEditing ? "Update & Print" : t.billing.saveAndPrint}</button><button onClick={() => handleSaveBill(false)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`} title="Save Only">{isEditing ? "Update Only" : "Save Only"}</button></div>
+                </div>
+            )}
         </Card>
       </div>
-      
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
-      {substituteTarget && (
-        <SubstitutesModal 
-          isOpen={!!substituteTarget} 
-          onClose={() => setSubstituteTarget(null)} 
-          product={substituteTarget} 
-          allProducts={products} 
-          onSelect={(p, b) => handleAddToCart(p, b)}
-        />
-      )}
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={() => {}} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
     </div>
   );
-};
-
-// Substitutes Modal remains defined but ensure it's exported or defined locally
-const SubstitutesModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    product: Product;
-    allProducts: Product[];
-    onSelect: (product: Product, batch: Batch) => void;
-}> = ({ isOpen, onClose, product, allProducts, onSelect }) => {
-    const substitutes = allProducts.filter(p => 
-        p.id !== product.id && 
-        p.composition && 
-        product.composition && 
-        p.composition.toLowerCase().trim().includes(product.composition.toLowerCase().trim().split(' ')[0])
-    );
-
-    const formatStock = (stock: number, unitsPerStrip?: number): string => {
-        if (stock === 0) return '0 U';
-        if (!unitsPerStrip || unitsPerStrip <= 1) return `${stock} U`;
-        const strips = Math.floor(stock / unitsPerStrip);
-        const looseUnits = stock % unitsPerStrip;
-        let result = '';
-        if (strips > 0) result += `${strips} S`;
-        if (looseUnits > 0) result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`;
-        return result || '0 U';
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Substitute Medicines" maxWidth="max-w-2xl">
-            <div className="space-y-6">
-                <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
-                    <p className="text-xs font-black text-indigo-500 uppercase tracking-widest mb-1">Generic / Composition</p>
-                    <h4 className="text-lg font-bold text-slate-800 dark:text-white">{product.composition || 'N/A'}</h4>
-                </div>
-
-                <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                    {substitutes.map(sub => {
-                        const totalStock = sub.batches.reduce((sum, b) => sum + b.stock, 0);
-                        const firstValidBatch = sub.batches.find(b => b.stock > 0);
-                        return (
-                            <div key={sub.id} className="flex justify-between items-center p-4 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl hover:shadow-md transition-shadow group">
-                                <div>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200">{sub.name}</p>
-                                    <p className="text-xs text-slate-500">{sub.company}</p>
-                                </div>
-                                <div className="text-right flex items-center gap-4">
-                                    <div>
-                                        <p className={`text-sm font-black ${totalStock > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                            Stock: {formatStock(totalStock, sub.unitsPerStrip)}
-                                        </p>
-                                    </div>
-                                    <button 
-                                        onClick={() => firstValidBatch && onSelect(sub, firstValidBatch)}
-                                        disabled={totalStock <= 0}
-                                        className="bg-indigo-100 text-indigo-700 p-2 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors disabled:opacity-30"
-                                    >
-                                        <PlusIcon className="h-5 w-5" />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {substitutes.length === 0 && <div className="py-12 text-center text-slate-400 italic">No other medicines found with similar composition.</div>}
-                </div>
-            </div>
-        </Modal>
-    );
 };
 
 export default Billing;
