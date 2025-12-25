@@ -12,6 +12,7 @@ import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
 import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getTranslation } from '../utils/translationHelper';
+import { GoogleGenAI } from "@google/genai";
 
 // OCR Scanner Component
 const TextScannerModal: React.FC<{ 
@@ -65,14 +66,14 @@ const TextScannerModal: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="AI Part Number Scanner" maxWidth="max-w-xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="AI Product Scanner" maxWidth="max-w-xl">
             <div className="space-y-4">
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border-4 border-indigo-600 shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-2/3 h-1/4 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
-                                TARGET PART NO
+                                TARGET PRODUCT NAME
                             </div>
                             <div className={`w-full h-0.5 bg-red-500/50 ${isProcessing ? 'hidden' : 'animate-pulse'}`}></div>
                         </div>
@@ -80,7 +81,7 @@ const TextScannerModal: React.FC<{
                     {isProcessing && (
                         <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white z-20">
                             <div className="animate-spin h-10 w-10 border-4 border-indigo-400 border-t-transparent rounded-full mb-3 shadow-lg"></div>
-                            <p className="font-bold text-xs bg-indigo-600 px-3 py-1 rounded-full border border-indigo-400">ANALYZING PART NO...</p>
+                            <p className="font-bold text-xs bg-indigo-600 px-3 py-1 rounded-full border border-indigo-400">ANALYZING IMAGE...</p>
                         </div>
                     )}
                 </div>
@@ -319,6 +320,46 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     } else alert(`Product with barcode ${code} not found.`);
   };
 
+  const handleTextScan = async (imageData: string) => {
+    setIsOcrProcessing(true);
+    try {
+        const base64Data = imageData.split(',')[1];
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: [{ 
+                parts: [
+                    { inlineData: { mimeType: 'image/png', data: base64Data } }, 
+                    { text: "Identify the brand name or medicine name visible in this image. Return only the name and nothing else." }
+                ] 
+            }],
+        });
+
+        const identifiedName = response.text?.trim();
+        if (identifiedName) {
+            // Find best matching product
+            const bestMatch = products.find(p => p.name.toLowerCase().includes(identifiedName.toLowerCase()));
+            if (bestMatch) {
+                const batch = bestMatch.batches.find(b => b.stock > 0);
+                if (batch) {
+                    handleAddToCart(bestMatch, batch);
+                    setShowTextScanner(false);
+                } else {
+                    alert(`Identified ${bestMatch.name} but no stock is available.`);
+                }
+            } else {
+                setSearchTerm(identifiedName);
+                setShowTextScanner(false);
+            }
+        }
+    } catch (e) {
+        console.error("AI Scan Error:", e);
+        alert("Failed to identify product. Please try again or search manually.");
+    } finally {
+        setIsOcrProcessing(false);
+    }
+  };
+
   const customerSuggestions = useMemo(() => { if (!customerName) return []; return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5); }, [customerName, customers]);
   const handleSelectCustomer = (customer: Customer) => { setCustomerName(customer.name); setSelectedCustomer(customer); setShowCustomerSuggestions(false); };
   
@@ -461,7 +502,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         </Card>
       </div>
       
-      <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={() => {}} isProcessing={isOcrProcessing} />
+      <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
       <SubstitutesModal 
         isOpen={!!substituteTarget} 
         onClose={() => setSubstituteTarget(null)} 
