@@ -73,7 +73,7 @@ const TextScannerModal: React.FC<{
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-2/3 h-1/4 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
-                                TARGET PRODUCT NAME
+                                TARGET PRODUCT / CODE
                             </div>
                             <div className={`w-full h-0.5 bg-red-500/50 ${isProcessing ? 'hidden' : 'animate-pulse'}`}></div>
                         </div>
@@ -330,15 +330,21 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
             contents: [{ 
                 parts: [
                     { inlineData: { mimeType: 'image/png', data: base64Data } }, 
-                    { text: "Identify the brand name or medicine name visible in this image. Return only the name and nothing else." }
+                    { text: "Identify the product name, brand name, or part number/code visible in this image. Look specifically for technical identifiers or unique labels. Return only the primary identifier and nothing else." }
                 ] 
             }],
         });
 
-        const identifiedName = response.text?.trim();
-        if (identifiedName) {
-            // Find best matching product
-            const bestMatch = products.find(p => p.name.toLowerCase().includes(identifiedName.toLowerCase()));
+        const identified = response.text?.trim();
+        if (identified) {
+            const lowerIdentified = identified.toLowerCase();
+            // Broader match: check Name, Barcode, and HSN Code
+            const bestMatch = products.find(p => 
+                p.name.toLowerCase().includes(lowerIdentified) || 
+                p.barcode?.toLowerCase() === lowerIdentified ||
+                p.hsnCode?.toLowerCase() === lowerIdentified
+            );
+
             if (bestMatch) {
                 const batch = bestMatch.batches.find(b => b.stock > 0);
                 if (batch) {
@@ -346,9 +352,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                     setShowTextScanner(false);
                 } else {
                     alert(`Identified ${bestMatch.name} but no stock is available.`);
+                    setSearchTerm(identified);
+                    setShowTextScanner(false);
                 }
             } else {
-                setSearchTerm(identifiedName);
+                setSearchTerm(identified);
                 setShowTextScanner(false);
             }
         }

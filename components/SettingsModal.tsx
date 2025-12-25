@@ -108,15 +108,17 @@ const SubscriptionTab: React.FC<{ subscription?: SubscriptionInfo; onUpgrade: ()
                     <h5 className="font-bold text-slate-800 dark:text-slate-200 mb-3">Free Plan Includes:</h5>
                     <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
                         <li className="flex items-center gap-2">✅ Standard Billing & Inventory</li>
+                        <li className="flex items-center gap-2">✅ <span className="font-bold text-indigo-600 dark:text-indigo-400">Unlimited Sale AI Scanner</span></li>
                         <li className="flex items-center gap-2">✅ GST Reports</li>
-                        <li className="flex items-center gap-2">❌ Limited AI Invoice Entries</li>
+                        <li className="flex items-center gap-2">❌ Limited Purchase AI Entries</li>
                     </ul>
                 </div>
                 <div className="p-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 shadow-lg">
                     <h5 className="font-bold text-indigo-600 dark:text-indigo-400 mb-3">Premium Plan Benefits:</h5>
                     <ul className="space-y-2 text-sm text-slate-800 dark:text-slate-200">
-                        <li className="flex items-center gap-2">🚀 Unlimited AI Invoice Processing</li>
+                        <li className="flex items-center gap-2">🚀 Unlimited Purchase AI Processing</li>
                         <li className="flex items-center gap-2">🚀 Multi-User (Operator) Support</li>
+                        <li className="flex items-center gap-2">🚀 Enhanced Cloud Backup</li>
                     </ul>
                 </div>
             </div>
@@ -335,6 +337,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                 </div>
             );
+        case 'subscription': return <SubscriptionTab subscription={config.subscription} onUpgrade={() => {}} />;
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
         case 'printers': return (
             <div className="space-y-6 animate-fade-in">
