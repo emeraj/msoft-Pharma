@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
@@ -20,6 +19,7 @@ import CompanyWiseBillWiseProfit from './components/CompanyWiseBillWiseProfit';
 import ChequePrint from './components/ChequePrint';
 import SalesDashboard from './components/SalesDashboard';
 import SubscriptionAdmin from './components/SubscriptionAdmin';
+import SubscriptionAlert from './components/SubscriptionAlert';
 import type { 
   AppView, Product, Bill, Purchase, Supplier, Customer, CustomerPayment, 
   Payment, CompanyProfile, SystemConfig, GstRate, Company, UserPermissions, 
@@ -93,7 +93,6 @@ function App() {
 
         if (mappingSnap.exists()) {
           const mapping = mappingSnap.data() as UserMapping;
-          // Update mapping if email or name is missing (for older accounts)
           if (!mapping.email || !mapping.name) {
               updateDoc(mappingRef, { email: currentUser.email, name: currentUser.displayName || mapping.name || '' });
           }
@@ -490,6 +489,8 @@ function App() {
         onUpdateGstRate={(id, r) => updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), { rate: r })}
         onDeleteGstRate={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))}
       />
+
+      <SubscriptionAlert systemConfig={systemConfig} />
     </div>
   );
 }
