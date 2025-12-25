@@ -14,6 +14,9 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { getTranslation } from '../utils/translationHelper';
 import { GoogleGenAI } from "@google/genai";
 
+// Helper for matching technical codes (removes dashes, dots, spaces)
+const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 // OCR Scanner Component
 const TextScannerModal: React.FC<{ 
     isOpen: boolean; 
@@ -54,10 +57,11 @@ const TextScannerModal: React.FC<{
             if (context) {
                 const video = videoRef.current;
                 const canvas = canvasRef.current;
+                // High quality capture
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const dataUrl = canvas.toDataURL('image/png', 0.9);
+                const dataUrl = canvas.toDataURL('image/png', 0.95);
                 onScan(dataUrl);
             }
         }
@@ -71,17 +75,17 @@ const TextScannerModal: React.FC<{
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border-4 border-indigo-600 shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="w-2/3 h-1/4 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
+                        <div className="w-2/3 h-1/3 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
-                                TARGET PRODUCT / CODE
+                                FOCUS ON PART NO / BRAND
                             </div>
                             <div className={`w-full h-0.5 bg-red-500/50 ${isProcessing ? 'hidden' : 'animate-pulse'}`}></div>
                         </div>
                     </div>
                     {isProcessing && (
-                        <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white z-20">
-                            <div className="animate-spin h-10 w-10 border-4 border-indigo-400 border-t-transparent rounded-full mb-3 shadow-lg"></div>
-                            <p className="font-bold text-xs bg-indigo-600 px-3 py-1 rounded-full border border-indigo-400">ANALYZING IMAGE...</p>
+                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white z-20">
+                            <div className="animate-spin h-12 w-12 border-4 border-indigo-400 border-t-transparent rounded-full mb-3 shadow-lg"></div>
+                            <p className="font-black text-sm uppercase tracking-tighter">Gemini is Identifying...</p>
                         </div>
                     )}
                 </div>
@@ -90,7 +94,7 @@ const TextScannerModal: React.FC<{
                     <button 
                         onClick={handleCapture} 
                         disabled={isProcessing} 
-                        className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                        className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-lg shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                     >
                         <CameraIcon className="h-7 w-7" /> CAPTURE & IDENTIFY
                     </button>
@@ -254,7 +258,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   };
 
   // Only auto-open scanner if not in pharma mode and config allows.
-  // Manual opening via button will always work regardless of this effect.
   useEffect(() => {
     if (!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false) {
       setShowScanner(true);
@@ -325,44 +328,59 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     try {
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        // Refined prompt for technical codes
+        const prompt = `Identify the product brand name, model number, or alphanumeric part number visible in this image. 
+        Focus specifically on unique labels, stickers, or printed text on the package. 
+        Return ONLY the most prominent identifier (e.g., 'ABC-123', 'PAN-D', 'MODEL55') and nothing else. 
+        If nothing is found, return 'NONE'.`;
+
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: [{ 
                 parts: [
                     { inlineData: { mimeType: 'image/png', data: base64Data } }, 
-                    { text: "Identify the product name, brand name, or part number/code visible in this image. Look specifically for technical identifiers or unique labels. Return only the primary identifier and nothing else." }
+                    { text: prompt }
                 ] 
             }],
         });
 
         const identified = response.text?.trim();
-        if (identified) {
-            const lowerIdentified = identified.toLowerCase();
-            // Broader match: check Name, Barcode, and HSN Code
+        if (identified && identified !== 'NONE') {
+            const normIdentified = normalizeCode(identified);
+            
+            // Advanced fuzzy search: check normalized matches for name, barcode, HSN, and partial name
             const bestMatch = products.find(p => 
-                p.name.toLowerCase().includes(lowerIdentified) || 
-                p.barcode?.toLowerCase() === lowerIdentified ||
-                p.hsnCode?.toLowerCase() === lowerIdentified
+                normalizeCode(p.name).includes(normIdentified) || 
+                normalizeCode(p.barcode) === normIdentified ||
+                normalizeCode(p.hsnCode) === normIdentified ||
+                p.name.toLowerCase().includes(identified.toLowerCase())
             );
 
             if (bestMatch) {
-                const batch = bestMatch.batches.find(b => b.stock > 0);
+                // Find batch with most stock
+                const sortedBatches = [...bestMatch.batches].sort((a, b) => b.stock - a.stock);
+                const batch = sortedBatches.find(b => b.stock > 0);
+                
                 if (batch) {
                     handleAddToCart(bestMatch, batch);
                     setShowTextScanner(false);
                 } else {
-                    alert(`Identified ${bestMatch.name} but no stock is available.`);
+                    alert(`Found ${bestMatch.name} but no stock is available.`);
                     setSearchTerm(identified);
                     setShowTextScanner(false);
                 }
             } else {
+                // No exact match - pass to manual search
                 setSearchTerm(identified);
                 setShowTextScanner(false);
             }
+        } else {
+            alert("Could not clearly read a part number. Please try again with better light or manual search.");
         }
     } catch (e) {
         console.error("AI Scan Error:", e);
-        alert("Failed to identify product. Please try again or search manually.");
+        alert("AI processing error. Please check your internet connection.");
     } finally {
         setIsOcrProcessing(false);
     }
@@ -381,7 +399,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const nameMatch = p.name.toLowerCase().includes(mainTerm) || (!isPharmaMode && p.barcode && p.barcode.includes(mainTerm));
         if (!nameMatch) return false;
         if (maybeMRP !== null) return p.batches.some(b => Math.abs((b.saleRate || b.mrp) - maybeMRP) < 5);
-        return true; // Show products even if out of stock in Pharma mode to allow substitute search
+        return true; 
     }).slice(0, 10); 
   }, [searchTerm, products, isPharmaMode]);
 
@@ -406,9 +424,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
     const doReset = () => { if (isEditing) { if (onCancelEdit) onCancelEdit(); } else resetBillingForm(); setShouldResetAfterPrint(false); };
     const shouldReset = forceReset || shouldResetAfterPrint;
-    if (printer.connectionType === 'rawbt') {
-        // Logic handled by generatedEscPosBill in previous turns...
-    }
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const rootEl = document.createElement('div'); printWindow.document.body.appendChild(rootEl);
