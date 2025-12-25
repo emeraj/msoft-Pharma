@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
 import Card from './common/Card';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
 import { collection, getDocs } from 'firebase/firestore';
@@ -204,6 +204,49 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                      <div className="flex justify-end pt-4"><button type="button" onClick={handleSaveProfile} className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700"><CheckCircleIcon className="h-5 w-5" /> Save Profile</button></div>
                 </div>
             );
+        case 'language':
+            return (
+                <div className="space-y-6 animate-fade-in">
+                    <div>
+                        <h4 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">Language Selection</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-400">Select your preferred language from the dropdown below. The application will update automatically.</p>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Interface Language</label>
+                        <div className="relative">
+                            <select 
+                                value={config.language || 'en'} 
+                                onChange={(e) => setConfig({...config, language: e.target.value})}
+                                className={formSelectStyle}
+                            >
+                                <option value="en">English</option>
+                                <option value="hi">Hindi (हिन्दी)</option>
+                                <option value="mr">Marathi (मराठी)</option>
+                                <option value="gu">Gujarati (ગુજરાતી)</option>
+                                <option value="bn">Bengali (বাংলা)</option>
+                                <option value="ta">Tamil (தமிழ்)</option>
+                                <option value="te">Telugu (తెలుగు)</option>
+                                <option value="kn">Kannada (ಕನ್ನಡ)</option>
+                                <option value="ml">Malayalam (മലയാളം)</option>
+                                <option value="pa">Punjabi (ਪੰਜਾਬੀ)</option>
+                                <option value="or">Oriya (ଓଡ଼ିଆ)</option>
+                                <option value="ur">Urdu (اردو)</option>
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700">
+                                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.707 6.586 4.293 8z"/></svg>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex justify-end pt-4 border-t dark:border-slate-700">
+                        <button 
+                            onClick={handleSaveConfig} 
+                            className="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700 flex items-center gap-2"
+                        >
+                            <CheckCircleIcon className="h-5 w-5" /> Save Language Setting
+                        </button>
+                    </div>
+                </div>
+            );
         case 'backup':
             return (
                 <div className="space-y-8 animate-fade-in">
@@ -320,6 +363,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="flex flex-col h-full">
         <div className="flex border-b dark:border-slate-700 mb-6 overflow-x-auto pb-1 flex-shrink-0 gap-1">
             <TabButton label="Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
             <TabButton label="Subscription" isActive={activeTab === 'subscription'} onClick={() => setActiveTab('subscription')} icon={<CloudIcon className="h-5 w-5" />} />
             <TabButton label="Backup & Restore" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
             <TabButton label="Operators" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserCircleIcon className="h-5 w-5" />} />
