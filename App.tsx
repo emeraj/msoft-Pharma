@@ -285,12 +285,16 @@ function App() {
               let product = item.productId ? currentProducts.find(p => p.id === item.productId) : currentProducts.find(p => p.name === item.productName && p.company === item.company);
               if (product) {
                   const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
-                  const existingBatchIndex = product.batches.findIndex(b => b.batchNumber.trim().toLowerCase() === item.batchNumber.trim().toLowerCase() && Math.abs(b.mrp - item.mrp) < 0.01);
+                  // Professional logic: If barcode and MRP are same, merge into existing batch instead of creating a new entry
+                  const existingBatchIndex = product.batches.findIndex(b => Math.abs(b.mrp - item.mrp) < 0.01);
                   const units = item.unitsPerStrip || product.unitsPerStrip || 1;
                   const quantityToAdd = item.quantity * units;
                   if (existingBatchIndex >= 0) {
                       product.batches[existingBatchIndex].stock += quantityToAdd;
                       product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
+                      // Update batch info to latest purchase info for merged entry
+                      product.batches[existingBatchIndex].batchNumber = item.batchNumber;
+                      product.batches[existingBatchIndex].expiryDate = item.expiryDate;
                   } else {
                       product.batches.push({ id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: quantityToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 });
                   }

@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, PlusIcon, UserCircleIcon, InformationCircleIcon, BarcodeIcon, XIcon, CloudIcon } from './icons/Icons';
+import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, PlusIcon, UserCircleIcon, InformationCircleIcon, BarcodeIcon, XIcon, CloudIcon, SearchIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableBill from './PrintableBill'; 
@@ -219,13 +219,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
   
+  // Professional workflow: auto-focus the most relevant input field of the last item added
   useEffect(() => {
     if (lastAddedBatchIdRef.current) {
         const newItem = cart.find(item => item.batchId === lastAddedBatchIdRef.current);
-        let inputToFocus: HTMLInputElement | null | undefined = null;
-        if (newItem && isPharmaMode && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) { inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current); } else { inputToFocus = cartItemTabInputRefs.current.get(lastAddedBatchIdRef.current); }
-        if (inputToFocus) { inputToFocus.focus(); inputToFocus.select(); }
-        lastAddedBatchIdRef.current = null;
+        if (newItem) {
+            let inputToFocus: HTMLInputElement | null | undefined = null;
+            if (isPharmaMode && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) { 
+                inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current); 
+            } else { 
+                inputToFocus = cartItemTabInputRefs.current.get(lastAddedBatchIdRef.current); 
+            }
+            if (inputToFocus) { 
+                inputToFocus.focus(); 
+                inputToFocus.select(); 
+            }
+            lastAddedBatchIdRef.current = null;
+        }
     }
   }, [cart, isPharmaMode]);
 
@@ -257,6 +267,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     if (existingItem) { 
         if (unitsPerStrip <= 1) { updateCartItem(existingItem.batchId, 0, existingItem.looseQty + 1); } 
         else { const newTotalUnits = existingItem.quantity + 1; const newStripQty = Math.floor(newTotalUnits / unitsPerStrip); const newLooseQty = newTotalUnits % unitsPerStrip; updateCartItem(existingItem.batchId, newStripQty, newLooseQty); } 
+        lastAddedBatchIdRef.current = existingItem.batchId; // Set ref even on existing item update to trigger focus flow
     } else { 
         const unitPrice = sellingPrice / unitsPerStrip; 
         const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
@@ -271,6 +282,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     if (isSubscriptionExpired) { alert("Subscription Expired! Scanning is disabled."); return; }
     const product = products.find(p => p.barcode === code);
     if (product) {
+        // Find batch with stock. If multiple exist with same MRP (per new grouping rule), it will pick the first valid one.
         const batch = product.batches.find(b => b.stock > 0);
         if (batch) handleAddToCart(product, batch);
         else alert("Out of stock.");
@@ -294,7 +306,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
-        // REFINED PROMPT FOR TECHNICAL CODES
         const prompt = `Strictly analyze this product label image. 
         Extract with high precision:
         1. Brand Name / Commercial Name.
@@ -332,15 +343,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
             return;
         }
 
-        // IMPROVED MATCHING LOGIC
         const normCode = dCode !== "Unknown" ? normalizeCode(dCode) : "";
         const normName = dName !== "Unknown" ? normalizeCode(dName) : "";
         const normBatch = dBatch !== "Unknown" ? normalizeCode(dBatch) : "";
 
-        // First attempt: Match by exact normalized barcode/technical code
         let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode) === normCode);
         
-        // Second attempt: Match by name if code failed
         if (!bestMatch && normName !== "") {
             bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
         }
@@ -359,7 +367,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                 setShowTextScanner(false);
             }
         } else {
-            // Fallback: Send extracted technical code or name to search bar
             setSearchTerm(dCode !== "Unknown" ? dCode : dName);
             setShowTextScanner(false);
             alert(`Detected "${dCode !== "Unknown" ? dCode : dName}" but not found in your inventory.`);
@@ -500,7 +507,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                 </div>
             </div>
           </div>
-          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700" title="Remove Item"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
+          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700" title="Remove Item"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
         </Card>
       </div>
 
