@@ -282,17 +282,22 @@ function App() {
           let runningMaxBarcode = 0;
           currentProducts.forEach(p => { if (p.barcode && /^\d+$/.test(p.barcode)) { const num = parseInt(p.barcode, 10); if (num > runningMaxBarcode) runningMaxBarcode = num; } });
           for (const item of itemsWithIds) {
-              let product = item.productId ? currentProducts.find(p => p.id === item.productId) : currentProducts.find(p => p.name === item.productName && p.company === item.company);
+              // Refined search: ID -> Barcode -> Name+Company
+              let product = item.productId 
+                ? currentProducts.find(p => p.id === item.productId) 
+                : currentProducts.find(p => (p.barcode && item.barcode && p.barcode === item.barcode) || (p.name === item.productName && p.company === item.company));
+              
               if (product) {
                   const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
-                  // Professional logic: If barcode and MRP are same, merge into existing batch instead of creating a new entry
+                  // Requirement: if barcode/part no and mrp same then no need to create separate batch number consider as same item
                   const existingBatchIndex = product.batches.findIndex(b => Math.abs(b.mrp - item.mrp) < 0.01);
                   const units = item.unitsPerStrip || product.unitsPerStrip || 1;
                   const quantityToAdd = item.quantity * units;
+                  
                   if (existingBatchIndex >= 0) {
                       product.batches[existingBatchIndex].stock += quantityToAdd;
                       product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
-                      // Update batch info to latest purchase info for merged entry
+                      // Update expiry/batch info to latest purchase info for merged entry
                       product.batches[existingBatchIndex].batchNumber = item.batchNumber;
                       product.batches[existingBatchIndex].expiryDate = item.expiryDate;
                   } else {

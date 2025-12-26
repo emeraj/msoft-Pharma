@@ -57,7 +57,6 @@ const getExpiryDate = (expiryString: string): Date => {
 
 const formatStock = (stock: number, unitsPerStrip?: number): string => {
     const isNegative = stock < 0;
-    // Fix: Corrected 'absStock' initialization to use the 'stock' parameter instead of 'absStock' itself which was causing a ReferenceError
     const absStock = Math.abs(stock);
     
     if (absStock === 0) return '0 U';
@@ -262,6 +261,7 @@ const ProductMasterView: React.FC<{
                             <th className="px-4 py-4">Company</th>
                             {isRetail && <th className="px-4 py-4">Barcode</th>}
                             {!isRetail && <th className="px-4 py-4">Composition</th>}
+                            {!isRetail && <th className="px-4 py-4 text-center">Sch. H</th>}
                             <th className="px-4 py-4 text-center">GST</th>
                             <th className="px-4 py-4 text-center">Actions</th>
                         </tr>
@@ -269,10 +269,14 @@ const ProductMasterView: React.FC<{
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                         {filtered.map(p => (
                             <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
-                                <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">{p.name}</td>
+                                <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">
+                                    {p.name}
+                                    {!isRetail && p.isScheduleH && <span className="ml-2 text-[9px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">SCH H</span>}
+                                </td>
                                 <td className="px-4 py-3.5 text-slate-600 dark:text-slate-400">{p.company}</td>
                                 {isRetail && <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{p.barcode || '-'}</td>}
                                 {!isRetail && <td className="px-4 py-3.5 text-xs text-slate-500 italic">{p.composition || '-'}</td>}
+                                {!isRetail && <td className="px-4 py-3.5 text-center text-xs font-bold text-slate-500">{p.isScheduleH ? 'YES' : 'NO'}</td>}
                                 <td className="px-4 py-3.5 text-center font-medium text-slate-700 dark:text-slate-300">{p.gst}%</td>
                                 <td className="px-4 py-3.5">
                                     <div className="flex justify-center items-center gap-3">
@@ -861,13 +865,22 @@ const AddEditProductModal: React.FC<{
     systemConfig: SystemConfig;
 }> = ({ isOpen, onClose, product, gstRates, onSave, onUpdate, systemConfig }) => {
     const isPharma = systemConfig.softwareMode === 'Pharma';
-    const [formData, setFormData] = useState({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '' });
+    const [formData, setFormData] = useState({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
 
     useEffect(() => {
         if (product) {
-            setFormData({ name: product.name, company: product.company, hsnCode: product.hsnCode, gst: product.gst, composition: product.composition || '', unitsPerStrip: product.unitsPerStrip || 1, barcode: product.barcode || '' });
+            setFormData({ 
+                name: product.name, 
+                company: product.company, 
+                hsnCode: product.hsnCode, 
+                gst: product.gst, 
+                composition: product.composition || '', 
+                unitsPerStrip: product.unitsPerStrip || 1, 
+                barcode: product.barcode || '',
+                isScheduleH: !!product.isScheduleH
+            });
         } else {
-            setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '' });
+            setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
         }
     }, [product, isOpen]);
 
@@ -899,7 +912,23 @@ const AddEditProductModal: React.FC<{
                 </div>
                 
                 {isPharma && (
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Units per Strip / Pack</label><input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Units per Pack</label>
+                            <input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Scheduled Drug?</label>
+                            <select 
+                                value={formData.isScheduleH ? 'Yes' : 'No'} 
+                                onChange={e => setFormData({...formData, isScheduleH: e.target.value === 'Yes'})} 
+                                className={inputStyle}
+                            >
+                                <option value="No">NO</option>
+                                <option value="Yes">YES (Sch. H)</option>
+                            </select>
+                        </div>
+                    </div>
                 )}
 
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">{product ? 'UPDATE PRODUCT' : 'CREATE PRODUCT'}</button></div>
@@ -995,8 +1024,8 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
     };
 
     const handleDownloadTemplate = () => {
-        const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip"];
-        const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10';
+        const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip", "IsScheduleH(Yes/No)"];
+        const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10,Yes';
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);

@@ -138,6 +138,84 @@ const TextScannerModal: React.FC<{
     );
 };
 
+const SubstituteModal: React.FC<{ 
+    isOpen: boolean; 
+    onClose: () => void; 
+    target: Product | null; 
+    substitutes: Product[]; 
+    onAdd: (product: Product, batch: Batch) => void;
+    formatStock: (stock: number, units?: number) => string;
+}> = ({ isOpen, onClose, target, substitutes, onAdd, formatStock }) => {
+    if (!isOpen || !target) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title={`Substitutes for ${target.name}`} maxWidth="max-w-2xl">
+            <div className="space-y-4">
+                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Matching Composition</p>
+                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{target.composition}</p>
+                </div>
+
+                <div className="space-y-4">
+                    {substitutes.length > 0 ? (
+                        substitutes.map(p => {
+                            const availableBatches = p.batches.filter(b => b.stock > 0);
+                            return (
+                                <div key={p.id} className="p-4 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl shadow-sm hover:shadow-md transition-all">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <h4 className="font-bold text-slate-800 dark:text-slate-100">{p.name}</h4>
+                                            <p className="text-[10px] text-slate-500 uppercase font-medium mt-0.5">{p.company}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Pack Size</p>
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">1 * {p.unitsPerStrip || 1}</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="space-y-2">
+                                        {availableBatches.map(b => (
+                                            <div key={b.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800/50 transition-colors">
+                                                <div className="text-xs">
+                                                    <span className="font-mono text-slate-500 dark:text-slate-400">B: {b.batchNumber}</span>
+                                                    <span className="mx-2 text-slate-300">|</span>
+                                                    <span className="font-black text-indigo-600 dark:text-indigo-400">₹{b.mrp.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-tighter">Stock: {formatStock(b.stock, p.unitsPerStrip)}</span>
+                                                    <button 
+                                                        onClick={() => onAdd(p, b)}
+                                                        className="px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all"
+                                                    >
+                                                        Add to Cart
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {availableBatches.length === 0 && (
+                                            <div className="py-3 text-center border border-dashed border-rose-200 dark:border-rose-900/30 rounded-lg">
+                                                <p className="text-[10px] text-rose-500 font-black uppercase tracking-widest">OUT OF STOCK</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })
+                    ) : (
+                        <div className="py-16 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                            <div className="bg-white dark:bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                                <InformationCircleIcon className="h-8 w-8 text-slate-300" />
+                            </div>
+                            <p className="text-slate-500 font-bold text-sm tracking-tight">No alternative products found in inventory</p>
+                            <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest">Matching composition: {target.composition}</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 interface BillingProps {
   products: Product[];
   bills: Bill[];
@@ -172,11 +250,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const [selectedSalesmanId, setSelectedSalesmanId] = useState<string>('');
   const [isAddSalesmanModalOpen, setAddSalesmanModalOpen] = useState(false);
   const [doctorName, setDoctorName] = useState('');
+  
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastAddedBatchIdRef = useRef<string | null>(null);
+  
+  // Refs for focusing cart item fields
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Credit'>('Cash');
   const [showScanner, setShowScanner] = useState(!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false);
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
@@ -219,12 +301,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
   
-  // Professional workflow: auto-focus the most relevant input field of the last item added
+  // High-speed professional workflow: handle initial focus after adding item
   useEffect(() => {
     if (lastAddedBatchIdRef.current) {
         const newItem = cart.find(item => item.batchId === lastAddedBatchIdRef.current);
         if (newItem) {
             let inputToFocus: HTMLInputElement | null | undefined = null;
+            // Cursor goes to strip (if available) then tabs...
             if (isPharmaMode && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) { 
                 inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current); 
             } else { 
@@ -267,7 +350,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     if (existingItem) { 
         if (unitsPerStrip <= 1) { updateCartItem(existingItem.batchId, 0, existingItem.looseQty + 1); } 
         else { const newTotalUnits = existingItem.quantity + 1; const newStripQty = Math.floor(newTotalUnits / unitsPerStrip); const newLooseQty = newTotalUnits % unitsPerStrip; updateCartItem(existingItem.batchId, newStripQty, newLooseQty); } 
-        lastAddedBatchIdRef.current = existingItem.batchId; // Set ref even on existing item update to trigger focus flow
+        lastAddedBatchIdRef.current = existingItem.batchId;
     } else { 
         const unitPrice = sellingPrice / unitsPerStrip; 
         const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
@@ -282,7 +365,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     if (isSubscriptionExpired) { alert("Subscription Expired! Scanning is disabled."); return; }
     const product = products.find(p => p.barcode === code);
     if (product) {
-        // Find batch with stock. If multiple exist with same MRP (per new grouping rule), it will pick the first valid one.
         const batch = product.batches.find(b => b.stock > 0);
         if (batch) handleAddToCart(product, batch);
         else alert("Out of stock.");
@@ -448,6 +530,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) handleAddToCart(product, batch); } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
   };
 
+  const substitutes = useMemo(() => {
+      if (!substituteTarget || !substituteTarget.composition) return [];
+      const targetComp = substituteTarget.composition.toLowerCase().trim();
+      return products.filter(p => 
+          p.id !== substituteTarget.id && 
+          p.composition && 
+          p.composition.toLowerCase().trim() === targetComp
+      );
+  }, [substituteTarget, products]);
+
   return (
     <div className="p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
       {scanResultFeedback && (
@@ -474,19 +566,47 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                             const isOutOfStock = navigableBatchesByProduct[productIndex].length === 0;
                             return (
                                 <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
-                                    <div className="px-4 py-2 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
+                                    <div className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
                                         <div className="flex flex-col">
                                             <span className={isOutOfStock ? 'text-rose-500' : ''}>{product.name} {isOutOfStock && '(Out of Stock)'}</span>
-                                            {isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase">{product.composition}</span>}
+                                            {isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase mt-0.5 tracking-tight">{product.composition}</span>}
                                         </div>
+                                        {isPharmaMode && product.composition && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); setSubstituteTarget(product); }}
+                                                className="px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-lg text-[10px] font-black uppercase tracking-tighter hover:bg-indigo-200 transition-all flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 shadow-sm"
+                                            >
+                                                <SwitchHorizontalIcon className="h-3 w-3" />
+                                                Alternatives
+                                            </button>
+                                        )}
                                     </div>
                                     <ul className="pl-4 pb-2">
                                         {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { 
                                             const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; 
+                                            const expiryDate = getExpiryDate(batch.expiryDate);
+                                            const today = new Date();
+                                            today.setHours(0,0,0,0);
+                                            const isExpired = expiryDate < today;
+
                                             return (
-                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
-                                                    <div>{isPharmaMode && (<><span className="text-slate-800 dark:text-slate-200 text-sm">B: {batch.batchNumber}</span><span className="text-xs ml-2 text-slate-500">Exp: {batch.expiryDate}</span></>)}</div>
-                                                    <div className="flex items-center gap-3"><span className="text-slate-800 dark:text-slate-200 font-bold">₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className="text-[10px] text-green-600 dark:text-green-400 font-black uppercase bg-green-50 dark:bg-green-900/30 px-1.5 py-0.5 rounded">Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock}`}</span></div>
+                                                <li key={batch.id} 
+                                                    className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired ? 'opacity-70' : ''}`} 
+                                                    onClick={() => handleAddToCart(product, batch)} 
+                                                    onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}
+                                                >
+                                                    <div>{isPharmaMode && (<>
+                                                        <span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span>
+                                                        <span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>
+                                                            Exp: {batch.expiryDate} {isExpired && '(EXPIRED)'}
+                                                        </span>
+                                                    </>)}</div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span>
+                                                        <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'}`}>
+                                                            Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock}`}
+                                                        </span>
+                                                    </div>
                                                 </li>
                                             ); 
                                         })}
@@ -540,6 +660,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         </Card>
       </div>
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
+      <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCart} formatStock={formatStock} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={() => {}} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
       <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="Smart AI Bill Entry" />
