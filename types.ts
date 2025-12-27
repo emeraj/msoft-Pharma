@@ -162,6 +162,7 @@ export interface PrinterProfile {
   id: string;
   name: string;
   format: 'A4' | 'A5' | 'Thermal';
+  orientation?: 'Portrait' | 'Landscape';
   isDefault: boolean;
   isShared?: boolean;
   connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt';

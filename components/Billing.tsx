@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
@@ -6,6 +7,7 @@ import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, PlusIcon, UserCircleIcon, InformationCircleIcon, BarcodeIcon, XIcon, CloudIcon, SearchIcon } from './icons/Icons';
 import ThermalPrintableBill from './ThermalPrintableBill';
 import PrintableA5Bill from './PrintableA5Bill';
+import PrintableA5LandscapeBill from './PrintableA5LandscapeBill';
 import PrintableBill from './PrintableBill'; 
 import PrinterSelectionModal from './PrinterSelectionModal';
 import BarcodeScannerModal, { EmbeddedScanner } from './BarcodeScannerModal';
@@ -229,12 +231,13 @@ interface BillingProps {
   onCancelEdit?: () => void;
   onAddCustomer: (customer: Omit<Customer, 'id' | 'balance'>) => Promise<Customer | null>;
   onAddSalesman?: (salesman: Omit<Salesman, 'id'>) => Promise<Salesman | null>;
+  onUpdateConfig: (config: SystemConfig) => void;
   isSubscriptionExpired?: boolean;
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 
-const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, isSubscriptionExpired }) => {
+const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, onUpdateConfig, isSubscriptionExpired }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; 
@@ -503,7 +506,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     if (printWindow) {
         const rootEl = document.createElement('div'); printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
-        if (printer.format === 'Thermal') root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); else if (printer.format === 'A5') root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />); else root.render(<PrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        
+        if (printer.format === 'Thermal') {
+            root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        } else if (printer.format === 'A5') {
+            if (printer.orientation === 'Landscape') {
+                root.render(<PrintableA5LandscapeBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else {
+                root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            }
+        } else {
+            root.render(<PrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        }
+        
         setTimeout(() => { printWindow.print(); printWindow.close(); if (shouldReset) doReset(); }, 500);
     }
   }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
@@ -529,6 +544,18 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const findPrev = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) return current; if (batch > 0) return { product, batch: batch - 1 }; let prevProductIndex = product - 1; while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) prevProductIndex--; if (prevProductIndex >= 0) return { product: prevProductIndex, batch: navigableBatchesByProduct[prevProductIndex].length - 1 }; return current; }; 
     switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) handleAddToCart(product, batch); } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
   };
+
+  // Add ALT+P Shortcut
+  useEffect(() => {
+    const handleGlobalShortcuts = (e: KeyboardEvent) => {
+        if (e.altKey && (e.key === 'p' || e.key === 'P')) {
+            e.preventDefault();
+            handleSaveBill(true);
+        }
+    };
+    window.addEventListener('keydown', handleGlobalShortcuts);
+    return () => window.removeEventListener('keydown', handleGlobalShortcuts);
+  }, [handleSaveBill]);
 
   const substitutes = useMemo(() => {
       if (!substituteTarget || !substituteTarget.composition) return [];
@@ -654,7 +681,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                     <div className="relative"><label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label><div className="flex gap-2"><div className="relative flex-grow"><input type="text" id="customerName" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); }} onFocus={() => setShowCustomerSuggestions(true)} onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} autoComplete="off" />{showCustomerSuggestions && customerSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">{customerSuggestions.map(customer => (<li key={customer.id} onClick={() => handleSelectCustomer(customer)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200">{customer.name} <span className="text-xs text-slate-500">({customer.phone || 'No Phone'})</span></li>))}</ul>)}</div><button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors" title="Add New Customer"><PlusIcon className="h-5 w-5" /></button></div></div>
                     {isPharmaMode && (<div><label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{t.billing.doctorName}</label><input type="text" id="doctorName" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="e.g. Dr. Name" className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} /></div>)}
                     <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300"><div className="flex justify-between"><span>{t.billing.subtotal}</span><span>₹{subTotal.toFixed(2)}</span></div><div className="flex justify-between"><span>{t.billing.totalGst}</span><span>₹{totalGst.toFixed(2)}</span></div><div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2"><span>{t.billing.grandTotal}</span><span>₹{grandTotal.toFixed(2)}</span></div></div>
-                    <div className="pt-2 flex gap-2"><button onClick={() => handleSaveBill(true)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`} title="Save and Print"><PrinterIcon className="h-5 w-5" /> {isEditing ? "Update & Print" : t.billing.saveAndPrint}</button><button onClick={() => handleSaveBill(false)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`} title="Save Only">{isEditing ? "Update Only" : "Save Only"}</button></div>
+                    <div className="pt-2 flex gap-2"><button onClick={() => handleSaveBill(true)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`} title="Save and Print (Alt+P)"><PrinterIcon className="h-5 w-5" /> {isEditing ? "Update & Print" : t.billing.saveAndPrint} (Alt+P)</button><button onClick={() => handleSaveBill(false)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`} title="Save Only">{isEditing ? "Update Only" : "Save Only"}</button></div>
                 </div>
             )}
         </Card>
@@ -662,7 +689,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
       <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCart} formatStock={formatStock} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
-      <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={() => {}} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
+      <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={onUpdateConfig} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
       <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="Smart AI Bill Entry" />
     </div>
   );

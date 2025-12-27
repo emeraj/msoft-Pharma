@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
@@ -154,6 +155,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [config, setConfig] = useState<SystemConfig>(systemConfig);
   const [newPrinterName, setNewPrinterName] = useState('');
   const [newPrinterFormat, setNewPrinterFormat] = useState<'A4' | 'A5' | 'Thermal'>('Thermal');
+  const [newPrinterOrientation, setNewPrinterOrientation] = useState<'Portrait' | 'Landscape'>('Portrait');
   const [subUsers, setSubUsers] = useState<SubUser[]>([]);
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: string}>({ type: '', msg: '' });
@@ -229,7 +231,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <option value="kn">Kannada (ಕನ್ನಡ)</option>
                                 <option value="ml">Malayalam (മലയാളം)</option>
                                 <option value="pa">Punjabi (ਪੰਜਾਬੀ)</option>
-                                <option value="or">Oriya (ଓଡ଼ିଆ)</option>
+                                <option value="or">Oriya (ଓડ଼િଆ)</option>
                                 <option value="ur">Urdu (اردو)</option>
                             </select>
                             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700">
@@ -338,17 +340,81 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
         case 'printers': return (
             <div className="space-y-6 animate-fade-in">
-                <div className="flex flex-col sm:flex-row gap-4 items-end bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border dark:border-slate-600">
-                    <div className="flex-grow w-full"><label className="block text-sm font-medium mb-1">Printer Name</label><input type="text" value={newPrinterName} onChange={e => setNewPrinterName(e.target.value)} className={formInputStyle} /></div>
-                    <button onClick={() => { if(!newPrinterName) return; onSystemConfigChange({...config, printers: [...(config.printers || []), { id: `p_${Date.now()}`, name: newPrinterName, format: 'Thermal', isDefault: false }]}); setNewPrinterName(''); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Add Printer</button>
+                <div className="flex flex-col gap-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Printer Name</label>
+                            <input type="text" value={newPrinterName} onChange={e => setNewPrinterName(e.target.value)} className={formInputStyle} placeholder="Counter 1" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Format</label>
+                            <select value={newPrinterFormat} onChange={e => setNewPrinterFormat(e.target.value as any)} className={formSelectStyle}>
+                                <option value="Thermal">Thermal</option>
+                                <option value="A5">A5 Page</option>
+                                <option value="A4">A4 Full Page</option>
+                            </select>
+                        </div>
+                    </div>
+                    {newPrinterFormat !== 'Thermal' && (
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Orientation</label>
+                            <select value={newPrinterOrientation} onChange={e => setNewPrinterOrientation(e.target.value as any)} className={formSelectStyle}>
+                                <option value="Portrait">Portrait</option>
+                                <option value="Landscape">Landscape</option>
+                            </select>
+                        </div>
+                    )}
+                    <div className="flex justify-end">
+                        <button 
+                            onClick={() => { 
+                                if(!newPrinterName) return; 
+                                onSystemConfigChange({
+                                    ...config, 
+                                    printers: [...(config.printers || []), { 
+                                        id: `p_${Date.now()}`, 
+                                        name: newPrinterName, 
+                                        format: newPrinterFormat, 
+                                        orientation: newPrinterOrientation,
+                                        isDefault: (config.printers || []).length === 0 
+                                    }]
+                                }); 
+                                setNewPrinterName(''); 
+                            }} 
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700"
+                        >
+                            Add Printer
+                        </button>
+                    </div>
                 </div>
                 <div className="space-y-2">
+                    <label className="block text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Configured Printers</label>
                     {config.printers?.map(p => (
-                        <div key={p.id} className="flex justify-between p-3 bg-white dark:bg-slate-800 border rounded-lg">
-                            <span>{p.name}</span>
-                            <button onClick={() => onSystemConfigChange({...config, printers: config.printers?.filter(pr => pr.id !== p.id)})} className="text-red-500"><TrashIcon className="h-4 w-4"/></button>
+                        <div key={p.id} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 border rounded-lg shadow-sm">
+                            <div>
+                                <p className="font-bold text-slate-800 dark:text-slate-100">{p.name} {p.isDefault && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full uppercase">Default</span>}</p>
+                                <p className="text-[11px] text-slate-500">{p.format} - {p.orientation || 'Portrait'}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                {!p.isDefault && (
+                                    <button 
+                                        onClick={() => onSystemConfigChange({...config, printers: config.printers?.map(pr => ({...pr, isDefault: pr.id === p.id}))})} 
+                                        className="text-[10px] font-black text-indigo-600 hover:underline px-2"
+                                    >
+                                        SET DEFAULT
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => onSystemConfigChange({...config, printers: config.printers?.filter(pr => pr.id !== p.id)})} 
+                                    className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                                >
+                                    <TrashIcon className="h-5 w-5"/>
+                                </button>
+                            </div>
                         </div>
                     ))}
+                    {(!config.printers || config.printers.length === 0) && (
+                        <div className="py-10 text-center text-slate-400 italic">No printers configured yet.</div>
+                    )}
                 </div>
             </div>
         );

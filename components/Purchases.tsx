@@ -289,6 +289,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const getInitialFormState = () => ({ isNewProduct: false, productSearch: '', selectedProduct: null as Product | null, productName: '', company: '', hsnCode: '', gst: defaultGst, composition: '', unitsPerStrip: '', isScheduleH: 'No', batchNumber: '', expiryDate: '', quantity: '', mrp: '', purchasePrice: '', barcode: '', discount: '', tax: defaultGst });
     const [formState, setFormState] = useState(getInitialFormState());
     const isPharmaMode = systemConfig.softwareMode === 'Pharma';
+    const [isScannerOpen, setScannerOpen] = useState(false);
     
     // Keyboard navigation state for Product search
     const [activeProductIndex, setActiveProductIndex] = useState(-1);
@@ -304,13 +305,13 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
 
     useEffect(() => { if (itemToEdit) { const existingProduct = itemToEdit.productId ? products.find(p => p.id === itemToEdit.productId) : null; setFormState({ isNewProduct: itemToEdit.isNewProduct, productSearch: itemToEdit.productName, selectedProduct: existingProduct || null, productName: itemToEdit.productName, company: itemToEdit.company, hsnCode: itemToEdit.hsnCode, gst: String(itemToEdit.gst), composition: itemToEdit.composition || '', unitsPerStrip: String(itemToEdit.unitsPerStrip || ''), isScheduleH: itemToEdit.isScheduleH ? 'Yes' : 'No', batchNumber: itemToEdit.batchNumber, expiryDate: itemToEdit.expiryDate, quantity: String(itemToEdit.quantity), mrp: String(itemToEdit.mrp), purchasePrice: String(itemToEdit.purchasePrice), barcode: itemToEdit.barcode || '', discount: itemToEdit.discount ? String(itemToEdit.discount) : '', tax: String(itemToEdit.gst) }); } }, [itemToEdit, products]);
     
-    const handleSelectProduct = (product: Product) => { setFormState(prev => ({ ...prev, selectedProduct: product, productSearch: product.name, productName: product.name, company: product.company, hsnCode: product.hsnCode, gst: String(product.gst), tax: String(product.gst), unitsPerStrip: String(product.unitsPerStrip || ''), isScheduleH: product.isScheduleH ? 'Yes' : 'No', isNewProduct: false, })); setActiveProductIndex(-1); };
+    const handleSelectProduct = (product: Product) => { setFormState(prev => ({ ...prev, selectedProduct: product, productSearch: product.name, productName: product.name, company: product.company, hsnCode: product.hsnCode, gst: String(product.gst), tax: String(product.gst), unitsPerStrip: String(product.unitsPerStrip || ''), isScheduleH: product.isScheduleH ? 'Yes' : 'No', isNewProduct: false, barcode: product.barcode || '' })); setActiveProductIndex(-1); };
     
     const handleAddItem = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
-        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, batchNumber, expiryDate, quantity, mrp, purchasePrice, discount, tax } = formState;
+        const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, batchNumber, expiryDate, quantity, mrp, purchasePrice, discount, tax, barcode } = formState;
         if (isNewProduct && (!productName || !company)) { alert('Name and Company required.'); return; }
-        const item: PurchaseLineItem = { isNewProduct, productName: isNewProduct ? productName : selectedProduct!.name, company: company.trim(), hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode, gst: parseFloat(tax) || parseFloat(gst) || 0, batchNumber: isPharmaMode ? batchNumber : 'DEFAULT', expiryDate: isPharmaMode ? expiryDate : '9999-12', quantity: parseInt(quantity, 10), mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice), discount: parseFloat(discount) || 0 };
+        const item: PurchaseLineItem = { isNewProduct, productName: isNewProduct ? productName : selectedProduct!.name, company: company.trim(), hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode, gst: parseFloat(tax) || parseFloat(gst) || 0, batchNumber: isPharmaMode ? batchNumber : 'DEFAULT', expiryDate: isPharmaMode ? expiryDate : '9999-12', quantity: parseInt(quantity, 10), mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice), discount: parseFloat(discount) || 0, barcode: barcode || (selectedProduct?.barcode || '') };
         if (!isNewProduct && selectedProduct) item.productId = selectedProduct.id;
         onAddItem(item);
         setFormState(getInitialFormState());
@@ -358,27 +359,47 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/10 rounded border border-emerald-100">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <input name="productName" value={formState.productName} onChange={e => setFormState({...formState, productName: e.target.value})} placeholder="Product Name*" className={formInputStyle} required />
-                        <input name="company" value={formState.company} onChange={e => setFormState({...formState, company: e.target.value})} placeholder="Company*" className={formInputStyle} required />
+                        <div className="relative">
+                            <input 
+                                name="company" 
+                                list="purchase-company-list"
+                                value={formState.company} 
+                                onChange={e => setFormState({...formState, company: e.target.value})} 
+                                placeholder="Company*" 
+                                className={formInputStyle} 
+                                required 
+                                autoComplete="off"
+                            />
+                            <datalist id="purchase-company-list">
+                                {companies.map(c => <option key={c.id} value={c.name} />)}
+                            </datalist>
+                        </div>
                         <input name="hsnCode" value={formState.hsnCode} onChange={e => setFormState({...formState, hsnCode: e.target.value})} placeholder="HSN Code" className={formInputStyle} />
                         <select name="gst" value={formState.gst} onChange={e => setFormState({...formState, gst: e.target.value, tax: e.target.value})} className={formSelectStyle}>{sortedGstRates.map(r => <option key={r.id} value={r.rate}>GST {r.rate}%</option>)}</select>
                     </div>
                 </div>
             )}
             {(formState.selectedProduct || formState.isNewProduct) && (
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
+                    <div className="flex gap-1 md:col-span-2">
+                        <input name="barcode" value={formState.barcode} onChange={e => setFormState({...formState, barcode: e.target.value})} placeholder="Barcode" className={formInputStyle} />
+                        <button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button>
+                    </div>
                     {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={e => setFormState({...formState, batchNumber: e.target.value})} placeholder="Batch No.*" className={formInputStyle} required />}
                     {isPharmaMode && <input name="expiryDate" value={formState.expiryDate} onChange={e => setFormState({...formState, expiryDate: e.target.value})} type="month" className={formInputStyle} required />}
                     <input name="quantity" value={formState.quantity} onChange={e => setFormState({...formState, quantity: e.target.value})} type="number" placeholder="Qty*" className={formInputStyle} required />
                     <input name="purchasePrice" value={formState.purchasePrice} onChange={e => setFormState({...formState, purchasePrice: e.target.value})} type="number" placeholder="Price*" className={formInputStyle} required step="0.01" />
+                    <input name="discount" value={formState.discount} onChange={e => setFormState({...formState, discount: e.target.value})} type="number" placeholder="Disc%" className={formInputStyle} step="0.01" />
                     <input name="mrp" value={formState.mrp} onChange={e => setFormState({...formState, mrp: e.target.value})} type="number" placeholder="MRP*" className={formInputStyle} required step="0.01" />
-                    <button type="submit" className="bg-indigo-600 text-white rounded-lg px-4 py-2 font-bold shadow hover:bg-indigo-700 transition-colors">{itemToEdit ? 'Update Item' : 'Add to List'}</button>
+                    <button type="submit" className="bg-indigo-600 text-white rounded-lg px-4 py-2 font-bold shadow hover:bg-indigo-700 transition-colors md:col-span-2 lg:col-span-1">{itemToEdit ? 'Update' : 'Add'}</button>
                 </div>
             )}
+            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={(code) => { setFormState({...formState, barcode: code}); setScannerOpen(false); }} />
         </form>
     );
 };
 
-const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig, editingPurchase, onCancelEdit, isSubscriptionExpired }) => {
+const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, suppliers, systemConfig, gstRates, onAddPurchase, onUpdatePurchase, onDeletePurchase, onAddSupplier, onUpdateConfig, editingPurchase, onCancelEdit, isSubscriptionExpired }) => {
     const initialFormState = { supplierName: '', invoiceNumber: '', invoiceDate: new Date().toISOString().split('T')[0], currentItems: [] as PurchaseLineItem[], roundOff: 0 };
     const [formState, setFormState] = useState(initialFormState);
     const [localEditingPurchase, setLocalEditingPurchase] = useState<Purchase | null>(null);
@@ -587,7 +608,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
         }));
     };
 
-    // Fix: Changed 'idx' to 'index' to resolve ReferenceError within handleEditLineItem
     const handleEditLineItem = (item: PurchaseLineItem, index: number) => {
         setEditingLineItem(item);
         setFormState(prev => ({
@@ -701,7 +721,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                                 setEditingLineItem(null);
                             }} 
                             itemToEdit={editingLineItem}
-                            companies={[]} 
+                            companies={companies} 
                             systemConfig={systemConfig} 
                             gstRates={gstRates} 
                         />
@@ -735,6 +755,8 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                                                         <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-200">
                                                             {item.productName}
                                                             {isPharmaMode && <div className="text-[9px] text-slate-500 font-normal uppercase mt-0.5">B: {item.batchNumber} / EXP: {item.expiryDate}</div>}
+                                                            {item.barcode && <div className="text-[8px] text-indigo-400 font-mono mt-0.5 uppercase">Barcode: {item.barcode}</div>}
+                                                            <div className="text-[8px] text-slate-400 uppercase font-medium">Company: {item.company}</div>
                                                         </td>
                                                         <td className="px-4 py-3 text-center text-slate-600 dark:text-slate-400">{item.hsnCode || '-'}</td>
                                                         <td className="px-4 py-3 text-center text-slate-800 dark:text-slate-200 font-bold">{item.quantity}</td>
@@ -752,7 +774,6 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, suppliers, s
                                                                     <PencilIcon className="h-4 w-4" />
                                                                 </button>
                                                                 <button 
-                                                                    /* Fix: Changed 'index' to 'idx' to resolve ReferenceError */
                                                                     onClick={() => setFormState(prev => ({...prev, currentItems: prev.currentItems.filter((_, i) => i !== idx)}))} 
                                                                     className="text-rose-500 hover:text-rose-700 transition-colors"
                                                                     title="Remove Item"

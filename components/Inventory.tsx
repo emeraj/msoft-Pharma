@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch } from '../types';
+import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon, SearchIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon, SearchIcon, XIcon, CameraIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
+import BarcodeScannerModal from './BarcodeScannerModal';
 
 interface InventoryProps {
   products: Product[];
+  companies: Company[];
   purchases?: Purchase[];
   bills?: Bill[];
   systemConfig: SystemConfig;
@@ -14,6 +16,7 @@ interface InventoryProps {
   onAddProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   onDeleteProduct: (id: string) => Promise<void>;
+  onAddCompany: (company: Omit<Company, 'id'>) => Promise<Company | null>;
 }
 
 const inputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
@@ -52,7 +55,7 @@ const exportToCsv = (filename: string, data: any[]) => {
 const getExpiryDate = (expiryString: string): Date => {
     if (!expiryString) return new Date('9999-12-31');
     const [year, month] = expiryString.split('-').map(Number);
-    return new Date(year, month, 0); // Last day of that month
+    return new Date(year, month, 0);
 };
 
 const formatStock = (stock: number, unitsPerStrip?: number): string => {
@@ -114,6 +117,37 @@ const PrintLabelModal: React.FC<{
     );
 };
 
+const AddCompanyModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onAdd: (name: string) => void;
+}> = ({ isOpen, onClose, onAdd }) => {
+    const [name, setName] = useState('');
+    if (!isOpen) return null;
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (name.trim()) {
+            onAdd(name.trim());
+            setName('');
+            onClose();
+        }
+    };
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Add New Company">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Company Name*</label>
+                    <input autoFocus value={name} onChange={e => setName(e.target.value)} className={inputStyle} required placeholder="e.g. Cipla Ltd" />
+                </div>
+                <div className="flex justify-end gap-3 pt-4 border-t dark:border-slate-700">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold">Cancel</button>
+                    <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700">ADD COMPANY</button>
+                </div>
+            </form>
+        </Modal>
+    );
+};
+
 const ProductMasterView: React.FC<{ 
     products: Product[], 
     systemConfig: SystemConfig,
@@ -122,16 +156,22 @@ const ProductMasterView: React.FC<{
     t: any 
 }> = ({ products, systemConfig, onEdit, onDelete, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [companyFilter, setCompanyFilter] = useState('All');
     const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
     const isRetail = systemConfig.softwareMode === 'Retail';
     
+    const companies = useMemo(() => {
+        return ['All', ...new Set(products.filter(p => p !== null).map(p => p.company))].sort();
+    }, [products]);
+
     const filtered = useMemo(() => 
-        products.filter(p => 
+        products.filter(p => p !== null && (
             p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
             p.company.toLowerCase().includes(searchTerm.toLowerCase()) ||
             (p.barcode && p.barcode.includes(searchTerm))
-        ).sort((a,b) => a.name.localeCompare(b.name))
-    , [products, searchTerm]);
+        )).filter(p => companyFilter === 'All' || p.company === companyFilter)
+        .sort((a,b) => a.name.localeCompare(b.name))
+    , [products, searchTerm, companyFilter]);
 
     const handlePrintLabels = (product: Product, quantity: number) => {
         const barcodeValue = product.barcode || '00000000';
@@ -139,6 +179,9 @@ const ProductMasterView: React.FC<{
         
         const printWindow = window.open('', '_blank');
         if (printWindow) {
+            // Use single quotes for inner strings to avoid breaking the outer template literal backticks
+            const itemsHtml = Array(quantity).fill(0).map((_, i) => '<div class="label-container"><div class="name">' + product.name + '</div><svg id="barcode-' + i + '" class="barcode-svg"></svg><div class="price">MRP: ₹' + mrp + '</div></div>').join('');
+
             printWindow.document.write(`
                 <html>
                     <head>
@@ -146,79 +189,23 @@ const ProductMasterView: React.FC<{
                         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
                         <style>
                             @page { margin: 0; size: 50mm 25mm; }
-                            body { 
-                                margin: 0; 
-                                padding: 0; 
-                                font-family: Arial, sans-serif;
-                                background: white;
-                            }
-                            .label-container {
-                                display: flex;
-                                flex-direction: column;
-                                align-items: center;
-                                justify-content: center;
-                                height: 25mm;
-                                width: 50mm;
-                                box-sizing: border-box;
-                                page-break-after: always;
-                                overflow: hidden;
-                            }
-                            .name { 
-                                font-size: 11pt; 
-                                font-weight: bold; 
-                                text-transform: uppercase; 
-                                margin-bottom: 1px;
-                                text-align: center;
-                                width: 95%;
-                                white-space: nowrap;
-                                overflow: hidden;
-                                text-overflow: ellipsis;
-                                color: black;
-                            }
-                            .barcode-svg {
-                                width: 90%;
-                                max-height: 40px;
-                            }
-                            .price { 
-                                font-size: 14pt; 
-                                font-weight: 900; 
-                                margin-top: 1px; 
-                                text-align: center;
-                                color: black;
-                            }
+                            body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: white; }
+                            .label-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 25mm; width: 50mm; box-sizing: border-box; page-break-after: always; overflow: hidden; }
+                            .name { font-size: 11pt; font-weight: bold; text-transform: uppercase; margin-bottom: 1px; text-align: center; width: 95%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: black; }
+                            .barcode-svg { width: 90%; max-height: 40px; }
+                            .price { font-size: 14pt; font-weight: 900; margin-top: 1px; text-align: center; color: black; }
                         </style>
                     </head>
                     <body>
-                        ${Array(quantity).fill(0).map((_, i) => `
-                            <div class="label-container">
-                                <div class="name">${product.name}</div>
-                                <svg id="barcode-${i}" class="barcode-svg"></svg>
-                                <div class="price">MRP: ₹${mrp}</div>
-                            </div>
-                        `).join('')}
+                        ${itemsHtml}
                         <script>
                             window.onload = function() {
                                 try {
                                     for (let i = 0; i < ${quantity}; i++) {
-                                        JsBarcode("#barcode-" + i, "${barcodeValue}", {
-                                            format: "CODE128",
-                                            width: 1.8,
-                                            height: 35,
-                                            displayValue: true,
-                                            fontSize: 10,
-                                            font: "Arial",
-                                            margin: 0,
-                                            textMargin: 0
-                                        });
+                                        JsBarcode("#barcode-" + i, "${barcodeValue}", { format: "CODE128", width: 1.8, height: 35, displayValue: true, fontSize: 10, font: "Arial", margin: 0, textMargin: 0 });
                                     }
-                                    setTimeout(() => {
-                                        window.print();
-                                        window.close();
-                                    }, 500);
-                                } catch (e) {
-                                    console.error("Barcode Generation Error:", e);
-                                    window.close();
-                                }
+                                    setTimeout(() => { window.print(); window.close(); }, 500);
+                                } catch (e) { console.error(e); window.close(); }
                             };
                         </script>
                     </body>
@@ -240,16 +227,25 @@ const ProductMasterView: React.FC<{
                 </button>
             </div>
         }>
-            <div className="mb-6">
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="relative">
                     <input 
                         type="text" 
-                        placeholder="Search..." 
+                        placeholder="Search by Name or Barcode..." 
                         value={searchTerm} 
                         onChange={e => setSearchTerm(e.target.value)} 
                         className="w-full p-3 bg-yellow-100 text-slate-900 placeholder-slate-500 border-none rounded-lg focus:ring-2 focus:ring-indigo-500 shadow-inner" 
                     />
                     <SearchIcon className="absolute right-4 top-3.5 h-5 w-5 text-slate-400" />
+                </div>
+                <div className="relative">
+                    <select 
+                        value={companyFilter}
+                        onChange={e => setCompanyFilter(e.target.value)}
+                        className="w-full p-3 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                    >
+                        {companies.map(c => <option key={c} value={c}>{c === 'All' ? 'Filter by Company' : c}</option>)}
+                    </select>
                 </div>
             </div>
             
@@ -259,54 +255,50 @@ const ProductMasterView: React.FC<{
                         <tr>
                             <th className="px-4 py-4">Name</th>
                             <th className="px-4 py-4">Company</th>
-                            {isRetail && <th className="px-4 py-4">Barcode</th>}
+                            <th className="px-4 py-4">Barcode</th>
+                            <th className="px-4 py-4 text-center">Total Stock</th>
                             {!isRetail && <th className="px-4 py-4">Composition</th>}
-                            {!isRetail && <th className="px-4 py-4 text-center">Sch. H</th>}
                             <th className="px-4 py-4 text-center">GST</th>
                             <th className="px-4 py-4 text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
-                        {filtered.map(p => (
-                            <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
-                                <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">
-                                    {p.name}
-                                    {!isRetail && p.isScheduleH && <span className="ml-2 text-[9px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">SCH H</span>}
-                                </td>
-                                <td className="px-4 py-3.5 text-slate-600 dark:text-slate-400">{p.company}</td>
-                                {isRetail && <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{p.barcode || '-'}</td>}
-                                {!isRetail && <td className="px-4 py-3.5 text-xs text-slate-500 italic">{p.composition || '-'}</td>}
-                                {!isRetail && <td className="px-4 py-3.5 text-center text-xs font-bold text-slate-500">{p.isScheduleH ? 'YES' : 'NO'}</td>}
-                                <td className="px-4 py-3.5 text-center font-medium text-slate-700 dark:text-slate-300">{p.gst}%</td>
-                                <td className="px-4 py-3.5">
-                                    <div className="flex justify-center items-center gap-3">
-                                        {isRetail && p.barcode && (
-                                            <button 
-                                                onClick={() => setPrintingProduct(p)} 
-                                                className="p-1 text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-200 transition-colors" 
-                                                title="Print Professional Barcode Label"
-                                            >
-                                                <BarcodeIcon className="h-5 w-5" />
+                        {filtered.map(p => {
+                            if (!p) return null;
+                            const totalUnits = (p.batches || []).reduce((sum, b) => sum + b.stock, 0);
+                            const isLowStock = totalUnits <= (p.unitsPerStrip || 1);
+                            return (
+                                <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
+                                    <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">
+                                        {p.name}
+                                        {!isRetail && p.isScheduleH && <span className="ml-2 text-[9px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-black">SCH H</span>}
+                                    </td>
+                                    <td className="px-4 py-3.5 text-slate-600 dark:text-slate-400">{p.company}</td>
+                                    <td className="px-4 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">{p.barcode || '-'}</td>
+                                    <td className={`px-4 py-3.5 text-center font-black ${isLowStock ? 'text-rose-600 bg-rose-50/30' : 'text-emerald-600'}`}>
+                                        {formatStock(totalUnits, p.unitsPerStrip)}
+                                        {isLowStock && <div className="text-[8px] uppercase tracking-tighter">Refill Required</div>}
+                                    </td>
+                                    {!isRetail && <td className="px-4 py-3.5 text-xs text-slate-500 italic">{p.composition || '-'}</td>}
+                                    <td className="px-4 py-3.5 text-center font-medium text-slate-700 dark:text-slate-300">{p.gst}%</td>
+                                    <td className="px-4 py-3.5">
+                                        <div className="flex justify-center items-center gap-3">
+                                            {isRetail && p.barcode && (
+                                                <button onClick={() => setPrintingProduct(p)} className="p-1 text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 transition-colors" title="Labels">
+                                                    <BarcodeIcon className="h-5 w-5" />
+                                                </button>
+                                            )}
+                                            <button onClick={() => onEdit(p)} className="p-1 text-blue-500 dark:text-blue-400 hover:text-blue-700 transition-colors" title="Edit">
+                                                <PencilIcon className="h-5 w-5" />
                                             </button>
-                                        )}
-                                        <button 
-                                            onClick={() => onEdit(p)} 
-                                            className="p-1 text-blue-500 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 transition-colors" 
-                                            title="Edit"
-                                        >
-                                            <PencilIcon className="h-5 w-5" />
-                                        </button>
-                                        <button 
-                                            onClick={() => onDelete(p.id)} 
-                                            className="p-1 text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-200 transition-colors" 
-                                            title="Delete"
-                                        >
-                                            <TrashIcon className="h-5 w-5" />
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
+                                            <button onClick={() => onDelete(p.id)} className="p-1 text-rose-500 dark:text-rose-400 hover:text-rose-700 transition-colors" title="Delete">
+                                                <TrashIcon className="h-5 w-5" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
                 {filtered.length === 0 && (
@@ -316,12 +308,7 @@ const ProductMasterView: React.FC<{
                 )}
             </div>
 
-            <PrintLabelModal 
-                isOpen={!!printingProduct} 
-                onClose={() => setPrintingProduct(null)} 
-                product={printingProduct} 
-                onPrint={(qty) => printingProduct && handlePrintLabels(printingProduct, qty)} 
-            />
+            <PrintLabelModal isOpen={!!printingProduct} onClose={() => setPrintingProduct(null)} product={printingProduct} onPrint={(qty) => printingProduct && handlePrintLabels(printingProduct, qty)} />
         </Card>
     );
 };
@@ -332,7 +319,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
     const companies = useMemo(() => {
-        return ['All', ...new Set(products.map(p => p.company))].sort();
+        return ['All', ...new Set(products.filter(p => p !== null).map(p => p.company))].sort();
     }, [products]);
 
     const detailedStockData = useMemo(() => {
@@ -344,6 +331,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
         const rows: any[] = [];
 
         products.forEach(p => {
+            if (!p) return;
             if (selectedCompany !== 'All' && p.company !== selectedCompany) return;
 
             const unitsPerStrip = p.unitsPerStrip || 1;
@@ -358,7 +346,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 batchIds: Set<string>;
             }>();
 
-            p.batches.forEach(b => {
+            (p.batches || []).forEach(b => {
                 const existing = batchMap.get(b.batchNumber) || {
                     batchNumber: b.batchNumber,
                     expiryDate: b.expiryDate,
@@ -382,7 +370,6 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                     pur.items.forEach(item => {
                         const isMatch = item.productId === p.id && item.batchNumber === bName;
                         if (!isMatch) return;
-
                         const qtyInUnits = item.quantity * unitsPerStrip;
                         if (purDate < (start || new Date(0))) {
                             opening += qtyInUnits;
@@ -397,7 +384,6 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                     bill.items.forEach(item => {
                         const isMatch = item.productId === p.id && agg.batchIds.has(item.batchId);
                         if (!isMatch) return;
-
                         if (billDate < (start || new Date(0))) {
                             opening -= item.quantity;
                         } else if (billDate <= end) {
@@ -410,19 +396,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 const valuation = closing * (agg.purchasePrice / unitsPerStrip);
 
                 if (purchased !== 0 || sold !== 0 || closing !== 0 || opening !== 0) {
-                    rows.push({
-                        productId: p.id,
-                        productName: p.name,
-                        company: p.company,
-                        batchNumber: agg.batchNumber,
-                        expiryDate: agg.expiryDate,
-                        opening,
-                        purchased,
-                        sold,
-                        closing,
-                        valuation,
-                        unitsPerStrip
-                    });
+                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening, purchased, sold, closing, valuation, unitsPerStrip });
                 }
             });
         });
@@ -445,15 +419,11 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
     };
 
     return (
-        <Card title="Company Wise Stock">
+        <Card title="Company Stock Ledger">
             <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
                 <div className="w-full md:w-1/3">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Company</label>
-                    <select 
-                        value={selectedCompany} 
-                        onChange={e => setSelectedCompany(e.target.value)} 
-                        className={inputStyle}
-                    >
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Company</label>
+                    <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className={inputStyle}>
                         {companies.map(c => <option key={c} value={c}>{c === 'All' ? 'All Companies' : c}</option>)}
                     </select>
                 </div>
@@ -467,7 +437,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                         <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} />
                     </div>
                 </div>
-                <button onClick={handleExport} className="w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded-lg font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-md transform active:scale-95 transition-all">
+                <button onClick={handleExport} className="w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded-lg font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-md transition-all">
                     <DownloadIcon className="h-5 w-5" /> Export Excel
                 </button>
             </div>
@@ -479,8 +449,8 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                             <th className="px-4 py-4">PRODUCT / COMPANY</th>
                             <th className="px-4 py-4">BATCH / EXPIRY</th>
                             <th className="px-4 py-4 text-center">OPENING</th>
-                            <th className="px-4 py-4 text-center">PURCHASED</th>
-                            <th className="px-4 py-4 text-center">SOLD</th>
+                            <th className="px-4 py-4 text-center">INWARD</th>
+                            <th className="px-4 py-4 text-center">OUTWARD</th>
                             <th className="px-4 py-4 text-center">CLOSING</th>
                             <th className="px-4 py-4 text-right">VALUE</th>
                         </tr>
@@ -496,30 +466,15 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                                     <div className="font-mono text-slate-700 dark:text-slate-300">{row.batchNumber}</div>
                                     <div className="text-[10px] text-slate-500 italic">{row.expiryDate}</div>
                                 </td>
-                                <td className="px-4 py-3 text-center font-medium text-slate-500">
-                                    {formatStock(row.opening, row.unitsPerStrip)}
-                                </td>
-                                <td className="px-4 py-3 text-center text-teal-600 dark:text-teal-400 font-bold">
-                                    {row.purchased > 0 ? formatStock(row.purchased, row.unitsPerStrip) : '-'}
-                                </td>
-                                <td className="px-4 py-3 text-center text-rose-500 font-bold">
-                                    {row.sold > 0 ? formatStock(row.sold, row.unitsPerStrip) : '-'}
-                                </td>
-                                <td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/40">
-                                    {formatStock(row.closing, row.unitsPerStrip)}
-                                </td>
-                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">
-                                    ₹{row.valuation.toFixed(2)}
-                                </td>
+                                <td className="px-4 py-3 text-center font-medium text-slate-500">{formatStock(row.opening, row.unitsPerStrip)}</td>
+                                <td className="px-4 py-3 text-center text-teal-600 dark:text-teal-400 font-bold">{row.purchased > 0 ? formatStock(row.purchased, row.unitsPerStrip) : '-'}</td>
+                                <td className="px-4 py-3 text-center text-rose-500 font-bold">{row.sold > 0 ? formatStock(row.sold, row.unitsPerStrip) : '-'}</td>
+                                <td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/40">{formatStock(row.closing, row.unitsPerStrip)}</td>
+                                <td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">₹{row.valuation.toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-                {detailedStockData.length === 0 && (
-                    <div className="py-20 text-center text-slate-400 italic bg-white dark:bg-slate-800">
-                        No transactions found for the selected criteria.
-                    </div>
-                )}
             </div>
         </Card>
     );
@@ -528,10 +483,10 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
 const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConfig, t: any }> = ({ products, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const stockData = useMemo(() => {
-        return products.map(p => {
-            const totalStock = p.batches.reduce((sum, b) => sum + b.stock, 0);
+        return products.filter(p => !!p).map(p => {
+            const totalStock = (p.batches || []).reduce((sum, b) => sum + b.stock, 0);
             const unitsPerStrip = p.unitsPerStrip || 1;
-            const totalValue = p.batches.reduce((sum, b) => sum + (b.stock * (b.purchasePrice / unitsPerStrip)), 0);
+            const totalValue = (p.batches || []).reduce((sum, b) => sum + (b.stock * (b.purchasePrice / unitsPerStrip)), 0);
             return { id: p.id, name: p.name, company: p.company, unitsPerStrip, totalStock, totalValue };
         }).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.company.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
     }, [products, searchTerm]);
@@ -545,7 +500,7 @@ const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConf
                     <SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" />
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-                    <div className="bg-teal-50 dark:bg-teal-900/30 px-6 py-3 rounded-xl w-full sm:w-auto text-center border border-teal-100 dark:border-teal-800 shadow-sm"><span className="text-[10px] font-black uppercase text-teal-600 dark:text-teal-400 tracking-widest block">Total Valuation</span><span className="text-xl font-black text-teal-900 dark:text-teal-100">₹{totalValuation.toFixed(2)}</span></div>
+                    <div className="bg-teal-50 dark:bg-teal-900/30 px-6 py-3 rounded-xl w-full sm:w-auto text-center border border-teal-100 dark:border-teal-800 shadow-sm"><span className="text-[10px] font-black uppercase text-teal-600 dark:text-teal-400 tracking-widest block">Total Inventory Value</span><span className="text-xl font-black text-teal-900 dark:text-teal-100">₹{totalValuation.toFixed(2)}</span></div>
                     <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95 uppercase text-xs"><DownloadIcon className="h-5 w-5" /> Export Excel</button>
                 </div>
             </div>
@@ -570,7 +525,6 @@ const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConf
                         ))}
                     </tbody>
                 </table>
-                {stockData.length === 0 && <div className="text-center py-20 text-slate-500 italic bg-white dark:bg-slate-800">No stock records found.</div>}
             </div>
         </Card>
     );
@@ -582,7 +536,7 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
-    const productSuggestions = useMemo(() => { if (!searchTerm) return []; return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10); }, [searchTerm, products]);
+    const productSuggestions = useMemo(() => { if (!searchTerm) return []; return products.filter(p => p && p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10); }, [searchTerm, products]);
     const handleSelectProduct = (p: Product) => { setSelectedProduct(p); setSearchTerm(p.name); setIsSuggestionsOpen(false); };
     const transactions = useMemo(() => {
         if (!selectedProduct) return [];
@@ -630,7 +584,7 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
                     </div>
                     <div className="text-right">
                         <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Available Stock</p>
-                        <p className="text-3xl font-black">{formatStock(selectedProduct.batches.reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</p>
+                        <p className="text-3xl font-black">{formatStock((selectedProduct.batches || []).reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</p>
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700">
@@ -677,9 +631,9 @@ const ExpiredStockView: React.FC<{ products: Product[], t: any }> = ({ products,
     today.setHours(0,0,0,0);
     
     const expiredBatches = useMemo(() => {
-        return products.flatMap(p => 
-            p.batches.map(b => ({ ...b, product: p }))
-        ).filter(item => getExpiryDate(item.expiryDate) < today && item.stock > 0);
+        return products.filter(p => !!p).flatMap(p => 
+            (p.batches || []).map(b => ({ ...b, product: p }))
+        ).filter(item => item && getExpiryDate(item.expiryDate) < today && item.stock > 0);
     }, [products]);
 
     return (
@@ -709,7 +663,6 @@ const ExpiredStockView: React.FC<{ products: Product[], t: any }> = ({ products,
                         ))}
                     </tbody>
                 </table>
-                {expiredBatches.length === 0 && <div className="py-20 text-center text-emerald-500 font-bold bg-white dark:bg-slate-800">Perfect! No expired stock in your inventory.</div>}
             </div>
         </Card>
     );
@@ -722,9 +675,10 @@ const NearExpiryView: React.FC<{ products: Product[], t: any }> = ({ products, t
     thirtyDaysLater.setDate(today.getDate() + 30);
     
     const nearExpiryBatches = useMemo(() => {
-        return products.flatMap(p => 
-            p.batches.map(b => ({ ...b, product: p }))
+        return products.filter(p => !!p).flatMap(p => 
+            (p.batches || []).map(b => ({ ...b, product: p }))
         ).filter(item => {
+            if (!item) return false;
             const exp = getExpiryDate(item.expiryDate);
             return exp >= today && exp <= thirtyDaysLater && item.stock > 0;
         });
@@ -757,7 +711,6 @@ const NearExpiryView: React.FC<{ products: Product[], t: any }> = ({ products, t
                         ))}
                     </tbody>
                 </table>
-                {nearExpiryBatches.length === 0 && <div className="py-20 text-center text-slate-500 italic bg-white dark:bg-slate-800">No batches expiring in the next 30 days.</div>}
             </div>
         </Card>
     );
@@ -777,13 +730,13 @@ const EditBatchModal: React.FC<{
         setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseFloat(value) || 0 : value }));
     };
     const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); onSave(product.id, formData); onClose(); };
-    if (!isOpen) return null;
+    if (!isOpen || !product) return null;
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Edit Batch Details">
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-lg border dark:border-slate-700">
                     <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Product</label>
-                    <p className="font-bold text-indigo-600 dark:text-indigo-400">{product.name}</p>
+                    <p className="font-bold text-indigo-600 dark:text-indigo-400">{product.name || 'N/A'}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Batch No</label><input name="batchNumber" value={formData.batchNumber} onChange={handleChange} className={inputStyle} required /></div>
@@ -802,8 +755,8 @@ const EditBatchModal: React.FC<{
 const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingBatchData, setEditingBatchData] = useState<{ product: Product, batch: Batch } | null>(null);
-    const allBatches = useMemo(() => products.flatMap(p => p.batches.map(b => ({ ...b, product: p }))).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }), [products, searchTerm]);
-    const handleUpdateBatch = (pid: string, updatedBatch: Batch) => { const product = products.find(p => p.id === pid); if (product) { const updatedBatches = product.batches.map(b => b.id === updatedBatch.id ? updatedBatch : b); onUpdateProduct(pid, { batches: updatedBatches }); } };
+    const allBatches = useMemo(() => products.filter(p => !!p).flatMap(p => (p.batches || []).map(b => ({ ...b, product: p }))).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }), [products, searchTerm]);
+    const handleUpdateBatch = (pid: string, updatedBatch: Batch) => { const product = products.find(p => p.id === pid); if (product) { const updatedBatches = (product.batches || []).map(b => b.id === updatedBatch.id ? updatedBatch : b); onUpdateProduct(pid, { batches: updatedBatches }); } };
     return (
         <Card title={t.inventory.batchStock}>
             <div className="mb-6 relative">
@@ -840,17 +793,8 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
                         ))}
                     </tbody>
                 </table>
-                {allBatches.length === 0 && <div className="text-center py-20 text-slate-500 italic bg-white dark:bg-slate-800">No matching batches found.</div>}
             </div>
-            {editingBatchData && (
-                <EditBatchModal 
-                    isOpen={!!editingBatchData} 
-                    onClose={() => setEditingBatchData(null)} 
-                    product={editingBatchData.product} 
-                    batch={editingBatchData.batch} 
-                    onSave={handleUpdateBatch} 
-                />
-            )}
+            {editingBatchData && <EditBatchModal isOpen={!!editingBatchData} onClose={() => setEditingBatchData(null)} product={editingBatchData.product} batch={editingBatchData.batch} onSave={handleUpdateBatch} />}
         </Card>
     );
 };
@@ -859,135 +803,160 @@ const AddEditProductModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
     product?: Product | null;
+    companies: Company[];
     gstRates: GstRate[];
     onSave: (p: Omit<Product, 'id'>) => void;
     onUpdate: (id: string, p: Partial<Product>) => void;
+    onAddCompany: (company: Omit<Company, 'id'>) => Promise<Company | null>;
     systemConfig: SystemConfig;
-}> = ({ isOpen, onClose, product, gstRates, onSave, onUpdate, systemConfig }) => {
+}> = ({ isOpen, onClose, product, companies, gstRates, onSave, onUpdate, onAddCompany, systemConfig }) => {
     const isPharma = systemConfig.softwareMode === 'Pharma';
     const [formData, setFormData] = useState({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
+    const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
+    const [isAddCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
+    const [activeCompanyIndex, setActiveCompanyIndex] = useState(-1);
+    const [isScannerOpen, setScannerOpen] = useState(false);
+
+    const filteredCompanySuggestions = useMemo(() => {
+        if (!formData.company || !showCompanySuggestions) return [];
+        return companies.filter(c => c && c.name && c.name.toLowerCase().includes(formData.company.toLowerCase())).slice(0, 5);
+    }, [formData.company, showCompanySuggestions, companies]);
 
     useEffect(() => {
-        if (product) {
-            setFormData({ 
-                name: product.name, 
-                company: product.company, 
-                hsnCode: product.hsnCode, 
-                gst: product.gst, 
-                composition: product.composition || '', 
-                unitsPerStrip: product.unitsPerStrip || 1, 
-                barcode: product.barcode || '',
-                isScheduleH: !!product.isScheduleH
-            });
-        } else {
-            setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
-        }
+        if (product) setFormData({ 
+            name: product.name || '', 
+            company: product.company || '', 
+            hsnCode: product.hsnCode || '', 
+            gst: product.gst !== undefined ? product.gst : 12, 
+            composition: product.composition || '', 
+            unitsPerStrip: product.unitsPerStrip || 1, 
+            barcode: product.barcode || '', 
+            isScheduleH: !!product.isScheduleH 
+        });
+        else setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
+        setActiveCompanyIndex(-1);
     }, [product, isOpen]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (product) {
-            onUpdate(product.id, formData);
-        } else {
-            onSave({ ...formData, batches: [] });
-        }
+        if (product) onUpdate(product.id, formData); else onSave({ ...formData, batches: [] });
         onClose();
+    };
+
+    const handleCompanyKeyDown = (e: React.KeyboardEvent) => {
+        const totalItems = filteredCompanySuggestions.length + 1; 
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveCompanyIndex(prev => (prev < totalItems - 1 ? prev + 1 : prev));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveCompanyIndex(prev => (prev > 0 ? prev - 1 : prev));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeCompanyIndex >= 0 && activeCompanyIndex < filteredCompanySuggestions.length) {
+                setFormData({...formData, company: filteredCompanySuggestions[activeCompanyIndex].name});
+                setShowCompanySuggestions(false);
+                setActiveCompanyIndex(-1);
+            } else if (activeCompanyIndex === filteredCompanySuggestions.length || (formData.company && filteredCompanySuggestions.length === 0)) {
+                setAddCompanyModalOpen(true);
+                setShowCompanySuggestions(false);
+                setActiveCompanyIndex(-1);
+            }
+        } else if (e.key === 'Escape') {
+            setShowCompanySuggestions(false);
+            setActiveCompanyIndex(-1);
+        }
     };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product Master' : 'Create New Product'}>
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Product Name*</label><input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required /></div>
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Company / Manufacturer*</label><input value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} className={inputStyle} required /></div>
                 
-                {!isPharma ? (
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Barcode</label><input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Scan or type barcode..." /></div>
-                ) : (
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" /></div>
-                )}
+                <div className="relative">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Company*</label>
+                    <div className="relative flex gap-2">
+                        <div className="relative flex-grow">
+                            <input 
+                                value={formData.company} 
+                                onChange={e => { setFormData({...formData, company: e.target.value}); setShowCompanySuggestions(true); }} 
+                                onFocus={() => setShowCompanySuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)}
+                                onKeyDown={handleCompanyKeyDown}
+                                className={inputStyle} 
+                                required 
+                                autoComplete="off"
+                                placeholder="Select or Add Company"
+                            />
+                            {showCompanySuggestions && (formData.company || filteredCompanySuggestions.length > 0) && (
+                                <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border rounded shadow-lg max-h-48 overflow-y-auto">
+                                    {filteredCompanySuggestions.map((c, idx) => (
+                                        <li key={c.id} onClick={() => setFormData({...formData, company: c.name})} className={`p-2 cursor-pointer text-slate-800 dark:text-slate-200 transition-colors ${idx === activeCompanyIndex ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-indigo-50 dark:hover:bg-slate-600'}`}>
+                                            {c.name}
+                                        </li>
+                                    ))}
+                                    <li 
+                                        onClick={() => setAddCompanyModalOpen(true)} 
+                                        className={`p-2 text-indigo-600 font-bold border-t cursor-pointer transition-colors ${activeCompanyIndex === filteredCompanySuggestions.length ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-600'}`}
+                                    >
+                                        + Add New Company
+                                    </li>
+                                </ul>
+                            )}
+                        </div>
+                        <button type="button" onClick={() => setAddCompanyModalOpen(true)} className="p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors" title="Add New Company"><PlusIcon className="h-5 w-5" /></button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Barcode</label>
+                        <div className="flex gap-2">
+                            <input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Scan or type barcode..." />
+                            <button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button>
+                        </div>
+                    </div>
+                    {isPharma && <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" /></div>}
+                </div>
 
                 <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">HSN Code</label><input value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">GST Rate (%)</label><select value={formData.gst} onChange={e => setFormData({...formData, gst: parseInt(e.target.value)})} className={inputStyle}>{gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}</select></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">GST Rate (%)</label><select value={formData.gst} onChange={e => setFormData({...formData, gst: Number(e.target.value)})} className={inputStyle}>{gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}</select></div>
                 </div>
-                
                 {isPharma && (
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Units per Pack</label>
-                            <input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Scheduled Drug?</label>
-                            <select 
-                                value={formData.isScheduleH ? 'Yes' : 'No'} 
-                                onChange={e => setFormData({...formData, isScheduleH: e.target.value === 'Yes'})} 
-                                className={inputStyle}
-                            >
-                                <option value="No">NO</option>
-                                <option value="Yes">YES (Sch. H)</option>
-                            </select>
-                        </div>
+                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Units per Pack</label><input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} /></div>
+                        <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Scheduled Drug?</label><select value={formData.isScheduleH ? 'Yes' : 'No'} onChange={e => setFormData({...formData, isScheduleH: e.target.value === 'Yes'})} className={inputStyle}><option value="No">NO</option><option value="Yes">YES (Sch. H)</option></select></div>
                     </div>
                 )}
-
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">{product ? 'UPDATE PRODUCT' : 'CREATE PRODUCT'}</button></div>
             </form>
+            <AddCompanyModal isOpen={isAddCompanyModalOpen} onClose={() => setAddCompanyModalOpen(false)} onAdd={async (name) => { const c = await onAddCompany({ name }); if (c) setFormData({...formData, company: c.name}); }} />
+            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={(code) => { setFormData({...formData, barcode: code}); setScannerOpen(false); }} />
         </Modal>
     );
 };
 
-const ProductImportModal: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    onImport: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    onDownloadTemplate: () => void;
-}> = ({ isOpen, onClose, onImport, onDownloadTemplate }) => {
+const ProductImportModal: React.FC<{ isOpen: boolean; onClose: () => void; onImport: (event: React.ChangeEvent<HTMLInputElement>) => void; onDownloadTemplate: () => void; }> = ({ isOpen, onClose, onImport, onDownloadTemplate }) => {
     if (!isOpen) return null;
-
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Import Product Database">
             <div className="space-y-6">
                 <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                    <h4 className="text-sm font-black text-indigo-800 dark:text-indigo-300 mb-2 uppercase tracking-widest">Important Instructions</h4>
+                    <h4 className="text-sm font-black text-indigo-800 dark:text-indigo-300 mb-2 uppercase tracking-widest">Instructions</h4>
                     <ul className="text-xs text-indigo-700 dark:text-indigo-400 space-y-2 list-disc pl-4">
-                        <li>Download the CSV template below for correct column structure.</li>
-                        <li>Fill in your product details in the specified format.</li>
-                        <li>Batch details are not part of product import; they are added via Purchase Entry.</li>
-                        <li>Upload the saved file to bulk import products.</li>
+                        <li>Use the CSV template for column mapping.</li>
+                        <li>Company name is required for sorting reports.</li>
                     </ul>
                 </div>
-                
                 <div className="flex flex-col gap-4">
-                    <button 
-                        onClick={onDownloadTemplate}
-                        className="flex items-center justify-center gap-2 w-full py-4 bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
-                    >
-                        <DownloadIcon className="h-5 w-5 text-indigo-500" />
-                        <span className="font-bold text-slate-700 dark:text-slate-300">Download CSV Template</span>
-                    </button>
-
+                    <button onClick={onDownloadTemplate} className="flex items-center justify-center gap-2 w-full py-4 bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl hover:border-indigo-400 transition-colors"><DownloadIcon className="h-5 w-5 text-indigo-500" /><span className="font-bold text-slate-700 dark:text-slate-300">Download Template</span></button>
                     <div className="relative">
-                        <input 
-                            type="file" 
-                            accept=".csv" 
-                            onChange={onImport}
-                            className="hidden" 
-                            id="csv-import-input"
-                        />
-                        <label 
-                            htmlFor="csv-import-input"
-                            className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 text-white rounded-xl font-black cursor-pointer hover:bg-indigo-700 shadow-xl transform active:scale-95 transition-all uppercase text-sm"
-                        >
-                            <UploadIcon className="h-5 w-5" />
-                            Select File & Upload
-                        </label>
+                        <input type="file" accept=".csv" onChange={onImport} className="hidden" id="csv-import-input" />
+                        <label htmlFor="csv-import-input" className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 text-white rounded-xl font-black cursor-pointer hover:bg-indigo-700 shadow-xl transition-all uppercase text-sm"><UploadIcon className="h-5 w-5" /> Select File & Upload</label>
                     </div>
                 </div>
-                
-                <div className="flex justify-end pt-4 border-t dark:border-slate-700">
-                    <button type="button" onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold">Close</button>
-                </div>
+                <div className="flex justify-end pt-4 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold">Close</button></div>
             </div>
         </Modal>
     );
@@ -995,91 +964,36 @@ const ProductImportModal: React.FC<{
 
 type InventoryTab = 'productMaster' | 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearExpiry';
 
-const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
+const Inventory: React.FC<InventoryProps> = ({ products, companies, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany }) => {
     const t = getTranslation(systemConfig.language);
     const isPharma = systemConfig.softwareMode === 'Pharma';
     const [activeTab, setActiveTab] = useState<InventoryTab>('productMaster');
     const [isImportModalOpen, setImportModalOpen] = useState(false);
     const [isProductModalOpen, setProductModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-    
-    const handleDeleteBatch = (pid: string, bid: string) => {
-        if (!window.confirm("Delete this batch record permanently?")) return;
-        const product = products.find(p => p.id === pid);
-        if (product) {
-            const updatedBatches = product.batches.filter(b => b.id !== bid);
-            onUpdateProduct(pid, { batches: updatedBatches });
-        }
-    };
-
-    const handleImportCsv = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            alert("CSV Import module triggered. Processing records...");
-            setImportModalOpen(false);
-        };
-        reader.readAsText(file);
-    };
-
-    const handleDownloadTemplate = () => {
-        const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip", "IsScheduleH(Yes/No)"];
-        const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10,Yes';
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.setAttribute("download", "inventory_import_template.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
+    const handleDeleteBatch = (pid: string, bid: string) => { if (!window.confirm("Delete batch?")) return; const product = products.find(p => p && p.id === pid); if (product) { const updatedBatches = (product.batches || []).filter(b => b.id !== bid); onUpdateProduct(pid, { batches: updatedBatches }); } };
+    const handleImportCsv = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; setImportModalOpen(false); };
+    const handleDownloadTemplate = () => { const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip", "IsScheduleH(Yes/No)"]; const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10,Yes'; const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.setAttribute("download", "inventory_import_template.csv"); document.body.appendChild(link); link.click(); };
     const TabButton: React.FC<{ tab: InventoryTab, label: string }> = ({ tab, label }) => (
-        <button 
-            onClick={() => setActiveTab(tab)} 
-            className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${
-                activeTab === tab 
-                ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-500/50' 
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-700'
-            }`}
-        >
-            {label}
-        </button>
+        <button onClick={() => setActiveTab(tab)} className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-500/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-700'}`}>{label}</button>
     );
-
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-end gap-4 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3">
-                        <ArchiveIcon className="h-8 w-8 text-indigo-600" />
-                        {t.inventory.title}
-                    </h1>
-                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1 uppercase text-[10px] tracking-widest">Real-time Stock Tracking & Valuations</p>
+                    <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3"><ArchiveIcon className="h-8 w-8 text-indigo-600" />Professional Pharma Inventory</h1>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium mt-1 uppercase text-[10px] tracking-widest">Real-time Batch, Expiry & Stock Tracking</p>
                 </div>
-                <div className="flex gap-3 w-full sm:w-auto">
-                    <button onClick={() => setImportModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800">
-                        <UploadIcon className="h-5 w-5" /> Import Data
-                    </button>
-                </div>
+                <div className="flex gap-3 w-full sm:w-auto"><button onClick={() => setImportModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800"><UploadIcon className="h-5 w-5" /> Bulk Import</button></div>
             </div>
-
-            {/* Pill Navigation */}
             <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide">
                 <TabButton tab="productMaster" label="Product Master" />
+                <TabButton tab="company" label="Company Stock" />
                 <TabButton tab="all" label="Stock Summary" />
                 <TabButton tab="selected" label="Item Ledger" />
                 <TabButton tab="batch" label="Batch Status" />
-                <TabButton tab="company" label="Company Wise" />
-                {isPharma && (
-                    <>
-                        <TabButton tab="expired" label="Expired" />
-                        <TabButton tab="nearExpiry" label="Expiring Soon" />
-                    </>
-                )}
+                {isPharma && <><TabButton tab="expired" label="Expired" /><TabButton tab="nearExpiry" label="Expiring Soon" /></>}
             </div>
-
             <div className="mt-2 transition-all duration-300">
                 {activeTab === 'productMaster' && <ProductMasterView products={products} systemConfig={systemConfig} onEdit={(p) => { setEditingProduct(p); setProductModalOpen(true); }} onDelete={onDeleteProduct} t={t} />}
                 {activeTab === 'all' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
@@ -1089,25 +1003,9 @@ const Inventory: React.FC<InventoryProps> = ({ products, purchases = [], bills =
                 {activeTab === 'expired' && <ExpiredStockView products={products} t={t} />}
                 {activeTab === 'nearExpiry' && <NearExpiryView products={products} t={t} />}
             </div>
-
-            <ProductImportModal 
-                isOpen={isImportModalOpen} 
-                onClose={() => setImportModalOpen(false)} 
-                onImport={handleImportCsv} 
-                onDownloadTemplate={handleDownloadTemplate} 
-            />
-
-            <AddEditProductModal 
-                isOpen={isProductModalOpen}
-                onClose={() => setProductModalOpen(false)}
-                product={editingProduct}
-                gstRates={gstRates}
-                onSave={onAddProduct}
-                onUpdate={onUpdateProduct}
-                systemConfig={systemConfig}
-            />
+            <ProductImportModal isOpen={isImportModalOpen} onClose={() => setImportModalOpen(false)} onImport={handleImportCsv} onDownloadTemplate={handleDownloadTemplate} />
+            <AddEditProductModal isOpen={isProductModalOpen} onClose={() => setProductModalOpen(false)} product={editingProduct} companies={companies} gstRates={gstRates} onSave={onAddProduct} onUpdate={onUpdateProduct} onAddCompany={onAddCompany} systemConfig={systemConfig} />
         </div>
     );
 };
-
 export default Inventory;

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Modal from './common/Modal';
-import { PrinterIcon, PlusIcon, CheckCircleIcon, BluetoothIcon, MapPinIcon, InformationCircleIcon, DeviceMobileIcon, UsbIcon } from './icons/Icons';
+import { PrinterIcon, PlusIcon, CheckCircleIcon, BluetoothIcon, MapPinIcon, InformationCircleIcon, DeviceMobileIcon, UsbIcon, SwitchHorizontalIcon } from './icons/Icons';
 import type { PrinterProfile, SystemConfig } from '../types';
 
 interface PrinterSelectionModalProps {
@@ -16,9 +16,10 @@ type ViewState = 'list' | 'type_select' | 'manual_setup' | 'scanning' | 'perm_ne
 
 const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, onClose, systemConfig, onUpdateConfig, onSelectPrinter }) => {
   const [view, setView] = useState<ViewState>('list');
-  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; isDefault: boolean; connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt' }>({
+  const [newPrinter, setNewPrinter] = useState<{ name: string; format: 'A4' | 'A5' | 'Thermal'; orientation: 'Portrait' | 'Landscape'; isDefault: boolean; connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt' }>({
     name: '',
     format: 'Thermal',
+    orientation: 'Portrait',
     isDefault: false,
   });
   const [isShared, setIsShared] = useState(false);
@@ -51,9 +52,10 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     if (!newPrinter.name) return;
 
     const printer: PrinterProfile = {
-      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`, // Use MAC as ID if available (simple heuristic) or random
+      id: newPrinter.name.includes(':') ? newPrinter.name : `printer_${Date.now()}`,
       name: newPrinter.name,
       format: newPrinter.format,
+      orientation: newPrinter.orientation,
       isDefault: newPrinter.isDefault || printers.length === 0,
       isShared: isShared,
       connectionType: newPrinter.connectionType,
@@ -66,7 +68,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     updatedPrinters.push(printer);
 
     onUpdateConfig({ ...systemConfig, printers: updatedPrinters });
-    setNewPrinter({ name: '', format: 'Thermal', isDefault: false });
+    setNewPrinter({ name: '', format: 'Thermal', orientation: 'Portrait', isDefault: false });
     setIsShared(false);
     
     setSelectedPrinterId(printer.id);
@@ -81,17 +83,14 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     }
   };
   
-  // Scanning Logic
   useEffect(() => {
     let timer: number;
 
     if (view === 'scanning') {
       setScannedDevices([]);
 
-      // Check if cordova bluetooth plugin is available
       if (window.bluetoothSerial) {
         setIsScanning(true);
-        // Real scanning with Cordova
         const onDiscover = (device: any) => {
             setScannedDevices(prev => {
                 if (prev.some(d => d.id === device.address)) return prev;
@@ -104,12 +103,9 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             setIsScanning(false);
         };
         
-        // List paired devices first
         window.bluetoothSerial.list((devices: any[]) => {
             const mapped = devices.map(d => ({ name: d.name || 'Unknown', id: d.address }));
             setScannedDevices(mapped);
-            
-            // Then discover unpaired
             window.bluetoothSerial.discoverUnpaired((unpaired: any[]) => {
                  const mappedUnpaired = unpaired.map(d => ({ name: d.name || 'Unknown', id: d.address }));
                  setScannedDevices(prev => {
@@ -126,7 +122,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
         }, onError);
 
       } else if (!(navigator as any).bluetooth) {
-        // Fallback simulation if Web Bluetooth is NOT available and NO Cordova
         setIsScanning(true);
         timer = window.setTimeout(() => {
             setScannedDevices([
@@ -135,8 +130,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
             setIsScanning(false);
         }, 2000);
       } else {
-          // Web Bluetooth is available, but we don't auto-scan.
-          // We wait for user action.
           setIsScanning(false);
       }
     }
@@ -153,7 +146,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     }
     setIsScanning(true);
     try {
-        // Request device using acceptAllDevices as requested
         const device = await (navigator as any).bluetooth.requestDevice({
              acceptAllDevices: true,
              optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
@@ -162,15 +154,26 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
         if (device) {
              handleDeviceSelect({ name: device.name || 'Bluetooth Device', id: device.id }, 'bluetooth');
         }
-    } catch (error) {
-        console.error("Web Bluetooth Error:", error);
+    } catch (error: any) {
+        // Robust cancellation check
+        const isCancelled = error.name === 'NotFoundError' || 
+                           error.name === 'AbortError' || 
+                           error.message.toLowerCase().includes('cancelled') ||
+                           error.message.toLowerCase().includes('canceled');
+        
+        if (isCancelled) {
+            console.debug("User cancelled the device picker.");
+        } else {
+            console.error("Web Bluetooth Error:", error);
+            alert(`Bluetooth Error: ${error.message}`);
+        }
     } finally {
         setIsScanning(false);
     }
   };
 
   const handleDeviceSelect = (device: {name: string, id: string}, type: 'bluetooth' | 'usb' = 'bluetooth') => {
-      setNewPrinter({ name: device.name, format: 'Thermal', isDefault: false, connectionType: type });
+      setNewPrinter({ name: device.name, format: 'Thermal', orientation: 'Portrait', isDefault: false, connectionType: type });
       setView('multi_device'); 
   };
 
@@ -180,8 +183,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     'Thermal': <div className="w-6 h-10 border-x-2 border-t-2 border-b-2 border-slate-400 border-b-transparent rounded-t-sm bg-white flex items-center justify-center text-[8px] font-bold text-slate-600 relative"><div className="absolute -bottom-1 w-full h-2 border-t border-dashed border-slate-400"></div>T</div>
   };
 
-  // --- Permission Views ---
-  
   if (view === 'perm_nearby') {
       return (
           <Modal isOpen={true} onClose={() => setView('type_select')} title="">
@@ -192,7 +193,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                       </div>
                   </div>
                   <h3 className="text-xl font-medium text-slate-900 dark:text-white mb-8 px-2 leading-relaxed">
-                      Allow Billing Fast to find, connect to, and determine the relative position of nearby devices?
+                      Allow Cloud-TAG to find, connect to, and determine the relative position of nearby devices?
                   </h3>
                   <div className="flex flex-col w-full gap-3">
                       <button onClick={() => setView('perm_location')} className="w-full py-3 bg-pink-200 hover:bg-pink-300 text-pink-900 rounded-full font-semibold transition-colors">
@@ -216,7 +217,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                        <MapPinIcon className="h-12 w-12 text-pink-500" />
                   </div>
                   <h3 className="text-xl font-medium text-slate-900 dark:text-white mb-6 px-2 leading-relaxed">
-                      Allow Billing Fast to access this device's location?
+                      Allow Cloud-TAG to access this device's location?
                   </h3>
                   
                   <div className="flex justify-center gap-12 w-full mb-8">
@@ -262,7 +263,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 <h3 className="text-lg font-medium text-slate-800 dark:text-slate-200 mb-8 px-4">Do you want to use same printer with multiple devices?</h3>
                 
                 <div className="relative mb-10 w-full flex flex-col items-center">
-                     {/* Printer */}
                      <div className="bg-blue-500 p-4 rounded-xl w-24 h-20 flex items-center justify-center mb-4 relative z-10 shadow-lg">
                         <div className="bg-white w-10 h-1.5 absolute top-8 rounded-sm"></div>
                         <div className="bg-white w-10 h-1 absolute bottom-3 flex justify-between px-0.5">
@@ -270,8 +270,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                         </div>
                          <div className="absolute top-3 right-3 w-1.5 h-1.5 bg-white rounded-full"></div>
                      </div>
-                     
-                     {/* Phones */}
                      <div className="flex justify-center gap-6 mt-4">
                         <div className="bg-gradient-to-b from-indigo-400 to-purple-500 p-0.5 rounded-lg transform -rotate-12 w-14 h-24 flex items-center justify-center shadow-lg">
                             <div className="w-full h-full bg-slate-800 rounded-lg border-2 border-transparent opacity-30"></div>
@@ -309,8 +307,6 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
     )
   }
 
-  // --- Main Render Logic ---
-
   if (!isOpen) return null;
 
   return (
@@ -340,7 +336,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                             <div className="flex-grow">
                                 <p className="font-semibold text-slate-800 dark:text-slate-200">{printer.name}</p>
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    {printer.format} Format 
+                                    {printer.format} {printer.orientation} 
                                     {printer.connectionType === 'bluetooth' && ' (Bluetooth)'}
                                     {printer.connectionType === 'rawbt' && ' (RawBT App)'}
                                 </p>
@@ -392,7 +388,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 </button>
                 <button 
                      onClick={() => {
-                         setNewPrinter({ name: 'RawBT Printer', format: 'Thermal', isDefault: false, connectionType: 'rawbt' });
+                         setNewPrinter({ name: 'RawBT Printer', format: 'Thermal', orientation: 'Portrait', isDefault: false, connectionType: 'rawbt' });
                          setView('manual_setup');
                      }}
                     className="flex flex-col items-center justify-center p-4 bg-green-100 dark:bg-green-900/30 rounded-2xl hover:bg-green-200 dark:hover:bg-green-900/50 transition-all aspect-square shadow-sm"
@@ -402,7 +398,7 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                 </button>
                 <button 
                      onClick={() => {
-                         setNewPrinter({ name: '', format: 'Thermal', isDefault: false, connectionType: 'usb' });
+                         setNewPrinter({ name: '', format: 'Thermal', orientation: 'Portrait', isDefault: false, connectionType: 'usb' });
                          setView('multi_device');
                      }}
                     className="flex flex-col items-center justify-center p-4 bg-slate-100 dark:bg-slate-700 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-all aspect-square shadow-sm"
@@ -502,6 +498,29 @@ const PrinterSelectionModal: React.FC<PrinterSelectionModalProps> = ({ isOpen, o
                     ))}
                 </div>
             </div>
+
+            {newPrinter.format !== 'Thermal' && (
+                <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Orientation</label>
+                    <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-full w-full">
+                        <button 
+                            type="button"
+                            onClick={() => setNewPrinter({...newPrinter, orientation: 'Portrait'})}
+                            className={`flex-1 py-2 text-xs font-black rounded-full flex items-center justify-center gap-2 transition-all ${newPrinter.orientation === 'Portrait' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Portrait
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => setNewPrinter({...newPrinter, orientation: 'Landscape'})}
+                            className={`flex-1 py-2 text-xs font-black rounded-full flex items-center justify-center gap-2 transition-all ${newPrinter.orientation === 'Landscape' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Landscape
+                        </button>
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center gap-2">
                 <input 
                     type="checkbox" 

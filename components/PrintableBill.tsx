@@ -1,6 +1,33 @@
-
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { Bill, CompanyProfile, SystemConfig } from '../types';
+
+const toWords = (num: number): string => {
+    const a = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+    const b = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+    
+    const numStr = num.toFixed(2);
+    const [integerPartStr, decimalPartStr] = numStr.split('.');
+    const integerPart = parseInt(integerPartStr, 10);
+    const decimalPart = parseInt(decimalPartStr, 10);
+    
+    if (integerPart === 0 && decimalPart === 0) return 'Zero Only';
+    
+    const convert = (n: number): string => {
+        if (n < 20) return a[n];
+        if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '');
+        if (n < 1000) return a[Math.floor(n / 100)] + ' hundred' + (n % 100 !== 0 ? ' and ' + convert(n % 100) : '');
+        if (n < 100000) return convert(Math.floor(n / 1000)) + ' thousand' + (n % 1000 !== 0 ? ' ' + convert(n % 1000) : '');
+        if (n < 10000000) return convert(Math.floor(n / 100000)) + ' lakh' + (n % 100000 !== 0 ? ' ' + convert(n % 100000) : '');
+        return convert(Math.floor(n / 10000000)) + ' crore' + (n % 10000000 !== 0 ? ' ' + convert(n % 10000000) : '');
+    };
+    
+    let words = integerPart > 0 ? convert(integerPart) + ' Rupees' : '';
+    if (decimalPart > 0) {
+        words += (words ? ' and ' : '') + convert(decimalPart) + ' Paise';
+    }
+    
+    return words.split(' ').filter(s => s).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' ') + ' Only';
+};
 
 interface PrintableBillProps {
   bill: Bill;
@@ -11,137 +38,278 @@ interface PrintableBillProps {
 const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile, systemConfig }) => {
   const items = bill?.items || [];
 
-  return (
-    <div style={{
+  const gstBreakdown = useMemo(() => {
+    const summary = new Map<string, { taxable: number; gstRate: number; amount: number; hsn: string }>();
+    items.forEach(item => {
+        const taxable = item.total / (1 + item.gst / 100);
+        const existing = summary.get(item.hsnCode) || { taxable: 0, gstRate: item.gst, amount: 0, hsn: item.hsnCode };
+        existing.taxable += taxable;
+        existing.amount += (item.total - taxable);
+        summary.set(item.hsnCode, existing);
+    });
+    return Array.from(summary.values());
+  }, [items]);
+
+  const styles: { [key: string]: React.CSSProperties } = {
+    page: {
       width: '210mm',
-      height: '297mm',
+      minHeight: '297mm',
       boxSizing: 'border-box',
       backgroundColor: 'white',
       color: 'black',
-      fontFamily: 'Arial, sans-serif',
-      fontSize: '9pt',
-    }}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '8mm' }}>
-        
-        {/* Header */}
-        <header style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          borderBottom: '1.5pt solid #333',
-          paddingBottom: '2mm',
-        }}>
-          <div style={{ width: '65%', display: 'flex', alignItems: 'center' }}>
-            {companyProfile.logo && (
-                <img 
-                    src={companyProfile.logo} 
-                    alt="Logo" 
-                    style={{ height: '20mm', marginRight: '5mm', objectFit: 'contain' }} 
-                />
-            )}
-            <div>
-                <h1 style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '14pt', margin: 0, color: '#1a202c' }}>
-                {companyProfile.name}
-                </h1>
-                <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>{companyProfile.address}</p>
-                <p style={{ margin: '1mm 0 0 0', color: '#4a5568' }}>
-                <strong style={{ fontWeight: 'bold' }}>GSTIN:</strong> {companyProfile.gstin}
-                </p>
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      fontSize: '10pt',
+      padding: '8mm',
+      lineHeight: '1.3'
+    },
+    outerBox: {
+      border: '0.8pt solid black',
+      display: 'flex',
+      flexDirection: 'column',
+    },
+    headerRow: {
+        display: 'flex',
+        borderBottom: '0.8pt solid black',
+    },
+    headerColLeft: {
+        width: '50%',
+        borderRight: '0.8pt solid black',
+        padding: '2mm',
+    },
+    headerColRight: {
+        width: '50%',
+        display: 'flex',
+        flexDirection: 'column',
+    },
+    label: { fontSize: '7.5pt', color: '#000', marginBottom: '1mm' },
+    value: { fontWeight: 'bold', fontSize: '9pt' },
+    table: {
+        width: '100%',
+        borderCollapse: 'collapse',
+        borderBottom: '0.8pt solid black'
+    },
+    th: {
+        borderBottom: '0.8pt solid black',
+        borderRight: '0.8pt solid black',
+        padding: '1mm 2mm',
+        fontSize: '8.5pt',
+        textAlign: 'center',
+        fontWeight: 'bold',
+        height: '8mm'
+    },
+    td: {
+        borderRight: '0.8pt solid black',
+        padding: '1mm 2mm',
+        fontSize: '9pt',
+        verticalAlign: 'top',
+        minHeight: '8mm'
+    },
+    gstTable: {
+        width: '100%',
+        borderCollapse: 'collapse',
+        marginTop: '-0.1pt'
+    },
+    gstTh: {
+        border: '0.8pt solid black',
+        padding: '1mm',
+        fontSize: '8pt',
+        textAlign: 'center',
+        fontWeight: 'bold'
+    },
+    gstTd: {
+        border: '0.8pt solid black',
+        padding: '1mm 2mm',
+        fontSize: '8.5pt',
+        textAlign: 'right'
+    }
+  };
+
+  return (
+    <div style={styles.page}>
+      <div style={{ textAlign: 'center', fontWeight: 'bold', marginBottom: '2mm', fontSize: '11pt' }}>Tax Invoice</div>
+      
+      <div style={styles.outerBox}>
+        {/* Row 1: Seller and Invoice Info */}
+        <div style={styles.headerRow}>
+          <div style={styles.headerColLeft}>
+            <div style={{ fontWeight: 'bold', fontSize: '11pt' }}>{companyProfile.name}</div>
+            <div style={{ fontSize: '8.5pt', marginTop: '1mm' }}>{companyProfile.address}</div>
+            <div style={{ marginTop: '2mm', fontSize: '8.5pt' }}>GSTIN/UIN: <strong>{companyProfile.gstin}</strong></div>
+            <div style={{ fontSize: '8.5pt' }}>State Name: Maharashtra, Code: 27</div>
+          </div>
+          <div style={styles.headerColRight}>
+            <div style={{ display: 'flex', borderBottom: '0.8pt solid black', height: '12mm' }}>
+                <div style={{ flex: 1, borderRight: '0.8pt solid black', padding: '1mm 2mm' }}>
+                    <div style={styles.label}>Invoice No.</div>
+                    <div style={styles.value}>{bill.billNumber}</div>
+                </div>
+                <div style={{ flex: 1, padding: '1mm 2mm' }}>
+                    <div style={styles.label}>Dated</div>
+                    <div style={styles.value}>{new Date(bill.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</div>
+                </div>
+            </div>
+            <div style={{ display: 'flex', borderBottom: '0.8pt solid black', height: '12mm' }}>
+                <div style={{ flex: 1, borderRight: '0.8pt solid black', padding: '1mm 2mm' }}>
+                    <div style={styles.label}>Delivery Note</div>
+                    <div style={styles.value}>-</div>
+                </div>
+                <div style={{ flex: 1, padding: '1mm 2mm' }}>
+                    <div style={styles.label}>Mode/Terms of Payment</div>
+                    <div style={styles.value}>{bill.paymentMode || 'Cash'}</div>
+                </div>
+            </div>
+            <div style={{ display: 'flex', height: '12mm' }}>
+                <div style={{ flex: 1, borderRight: '0.8pt solid black', padding: '1mm 2mm' }}>
+                    <div style={styles.label}>Reference No. & Date</div>
+                    <div style={styles.value}>-</div>
+                </div>
+                <div style={{ flex: 1, padding: '1mm 2mm' }}>
+                    <div style={styles.label}>Other References</div>
+                    <div style={styles.value}>-</div>
+                </div>
             </div>
           </div>
-          <div style={{ width: '35%', textAlign: 'right' }}>
-            <h2 style={{ fontWeight: 'bold', fontSize: '12pt', margin: 0, color: '#1a202c' }}>TAX INVOICE</h2>
-            <p style={{ margin: '1.5mm 0 0 0' }}><strong style={{ fontWeight: 'bold' }}>Bill No:</strong> {bill.billNumber}</p>
-            <p style={{ margin: '1mm 0 0 0' }}><strong style={{ fontWeight: 'bold' }}>Date:</strong> {new Date(bill.date).toLocaleString()}</p>
-          </div>
-        </header>
+        </div>
 
-        {/* Customer Details */}
-        <section style={{ borderBottom: '0.5pt solid #ccc', paddingTop: '2mm', paddingBottom: '2mm' }}>
-          <div>
-            <h3 style={{ fontWeight: 600, margin: 0, color: '#2d3748' }}>Bill To:</h3>
-            <p style={{ margin: '1mm 0 0 0' }}>{bill.customerName}</p>
-          </div>
-        </section>
+        {/* Row 2: Consignee and Buyer side-by-side */}
+        <div style={{ ...styles.headerRow, height: '35mm' }}>
+           <div style={styles.headerColLeft}>
+              <div style={styles.label}>Consignee (Ship to)</div>
+              <div style={styles.value}>{bill.customerName}</div>
+              <div style={{ fontSize: '8.5pt', marginTop: '1mm' }}>{bill.customerName} Agencies</div>
+              <div style={{ fontSize: '8.5pt' }}>GSTIN/UIN: <strong>{companyProfile.gstin}</strong></div>
+              <div style={{ fontSize: '8.5pt' }}>State Name: Maharashtra, Code: 27</div>
+           </div>
+           <div style={{ ...styles.headerColRight, padding: '2mm' }}>
+              <div style={styles.label}>Buyer (Bill to)</div>
+              <div style={styles.value}>{bill.customerName}</div>
+              <div style={{ fontSize: '8.5pt', marginTop: '1mm' }}>Customer Address, {bill.customerName} City</div>
+              <div style={{ marginTop: '1mm', fontSize: '8.5pt' }}>GSTIN/UIN: <strong>{companyProfile.gstin}</strong></div>
+              <div style={{ fontSize: '8.5pt' }}>State Name: Maharashtra, Code: 27</div>
+           </div>
+        </div>
 
         {/* Items Table */}
-        <main style={{ flexGrow: 1, paddingTop: '2mm', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8.5pt' }}>
+        <table style={styles.table}>
             <thead>
-              <tr style={{ backgroundColor: '#f3f4f6' }}>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>S.No</th>
-                <th style={{ width: '35%', fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>Product Name</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>HSN</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>Batch</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'left', borderBottom: '1.5pt solid #666' }}>Exp</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'center', borderBottom: '1.5pt solid #666' }}>Qty</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'right', borderBottom: '1.5pt solid #666' }}>MRP</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'center', borderBottom: '1.5pt solid #666' }}>GST%</th>
-                <th style={{ fontWeight: 'bold', padding: '1.5mm 2mm', textAlign: 'right', borderBottom: '1.5pt solid #666' }}>Amount</th>
-              </tr>
+                <tr style={{ height: '8mm' }}>
+                    <th style={{ ...styles.th, width: '10mm' }}>Sl No.</th>
+                    <th style={{ ...styles.th, textAlign: 'left' }}>Description of Goods</th>
+                    <th style={{ ...styles.th, width: '25mm' }}>HSN/SAC</th>
+                    <th style={{ ...styles.th, width: '25mm' }}>Quantity</th>
+                    <th style={{ ...styles.th, width: '25mm' }}>Rate</th>
+                    <th style={{ ...styles.th, width: '15mm' }}>per</th>
+                    <th style={{ ...styles.th, width: '30mm', borderRight: 0 }}>Amount</th>
+                </tr>
             </thead>
             <tbody>
-              {items.map((item, index) => (
-                <tr key={item.batchId} style={{ borderBottom: '0.5pt solid #eee' }}>
-                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{index + 1}</td>
-                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.productName}</td>
-                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.hsnCode}</td>
-                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.batchNumber}</td>
-                  <td style={{ padding: '1.5mm 2mm', verticalAlign: 'top' }}>{item.expiryDate}</td>
-                  <td style={{ padding: '1.5mm 2mm', textAlign: 'center', verticalAlign: 'top' }}>{item.quantity}</td>
-                  <td style={{ padding: '1.5mm 2mm', textAlign: 'right', verticalAlign: 'top' }}>{(item.mrp || 0).toFixed(2)}</td>
-                  <td style={{ padding: '1.5mm 2mm', textAlign: 'center', verticalAlign: 'top' }}>{item.gst}%</td>
-                  <td style={{ padding: '1.5mm 2mm', textAlign: 'right', verticalAlign: 'top', fontWeight: 500 }}>{(item.total || 0).toFixed(2)}</td>
+                {items.map((item, idx) => (
+                    <tr key={idx} style={{ minHeight: '8mm' }}>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>{idx + 1}</td>
+                        <td style={{ ...styles.td, fontWeight: 'bold' }}>{item.productName}</td>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>{item.hsnCode}</td>
+                        <td style={{ ...styles.td, textAlign: 'center', fontWeight: 'bold' }}>{item.quantity} Nos</td>
+                        <td style={{ ...styles.td, textAlign: 'right' }}>{item.mrp.toFixed(2)}</td>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>Nos</td>
+                        <td style={{ ...styles.td, textAlign: 'right', borderRight: 0, fontWeight: 'bold' }}>{item.total.toFixed(2)}</td>
+                    </tr>
+                ))}
+                {/* Spacer row to ensure lines go down */}
+                <tr style={{ height: '40mm' }}>
+                    <td style={styles.td}></td>
+                    <td style={styles.td}></td>
+                    <td style={styles.td}></td>
+                    <td style={styles.td}></td>
+                    <td style={styles.td}></td>
+                    <td style={styles.td}></td>
+                    <td style={{ ...styles.td, borderRight: 0 }}></td>
                 </tr>
-              ))}
+                {/* Total Row */}
+                <tr style={{ borderTop: '0.8pt solid black', fontWeight: 'bold', height: '8mm' }}>
+                    <td style={styles.td}></td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>Total</td>
+                    <td style={styles.td}></td>
+                    <td style={{ ...styles.td, textAlign: 'center' }}>{items.reduce((sum, i) => sum + i.quantity, 0)} Nos</td>
+                    <td style={styles.td}></td>
+                    <td style={styles.td}></td>
+                    <td style={{ ...styles.td, borderRight: 0, textAlign: 'right', fontSize: '11pt' }}>₹ {bill.grandTotal.toFixed(2)}</td>
+                </tr>
             </tbody>
-          </table>
-          {items.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '10mm 0', color: '#718096' }}>
-                  <p>-- No items in this bill --</p>
-              </div>
-          )}
-        </main>
+        </table>
 
-        {/* Footer */}
-        <footer style={{ marginTop: 'auto', borderTop: '1.5pt solid #333', paddingTop: '2mm' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-            <div style={{ width: '50%' }}>
-                {systemConfig.remarkLine1 && <p style={{ fontWeight: 600, margin: 0 }}>{systemConfig.remarkLine1}</p>}
-                {systemConfig.remarkLine2 && <p style={{ margin: '1mm 0 0 0' }}>{systemConfig.remarkLine2}</p>}
+        {/* Amount Chargeable Section */}
+        <div style={{ padding: '2mm', borderBottom: '0.8pt solid black' }}>
+            <div style={{ fontSize: '8pt' }}>Amount Chargeable (in words)</div>
+            <div style={{ fontWeight: 'bold', marginTop: '1mm', fontSize: '9.5pt' }}>INR {toWords(bill.grandTotal)}</div>
+        </div>
+
+        {/* GST Breakup Table */}
+        <table style={styles.gstTable}>
+            <thead>
+                <tr>
+                    <th style={{ ...styles.gstTh, width: '20%' }} rowSpan={2}>HSN/SAC</th>
+                    <th style={{ ...styles.gstTh, width: '20%' }} rowSpan={2}>Taxable Value</th>
+                    <th style={{ ...styles.gstTh, width: '25%' }} colSpan={2}>CGST</th>
+                    <th style={{ ...styles.gstTh, width: '25%' }} colSpan={2}>SGST/UTGST</th>
+                    <th style={{ ...styles.gstTh, width: '10%' }} rowSpan={2}>Total Tax Amount</th>
+                </tr>
+                <tr>
+                    <th style={styles.gstTh}>Rate</th>
+                    <th style={styles.gstTh}>Amount</th>
+                    <th style={styles.gstTh}>Rate</th>
+                    <th style={styles.gstTh}>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {gstBreakdown.map((row, i) => (
+                    <tr key={i}>
+                        <td style={{ ...styles.gstTd, textAlign: 'center' }}>{row.hsn}</td>
+                        <td style={styles.gstTd}>{row.taxable.toFixed(2)}</td>
+                        <td style={{ ...styles.gstTd, textAlign: 'center' }}>{(row.gstRate / 2)}%</td>
+                        <td style={styles.gstTd}>{(row.amount / 2).toFixed(2)}</td>
+                        <td style={{ ...styles.gstTd, textAlign: 'center' }}>{(row.gstRate / 2)}%</td>
+                        <td style={styles.gstTd}>{(row.amount / 2).toFixed(2)}</td>
+                        <td style={styles.gstTd}>{row.amount.toFixed(2)}</td>
+                    </tr>
+                ))}
+                <tr style={{ fontWeight: 'bold' }}>
+                    <td style={{ ...styles.gstTd, textAlign: 'right' }}>Total</td>
+                    <td style={styles.gstTd}>{gstBreakdown.reduce((s, r) => s + r.taxable, 0).toFixed(2)}</td>
+                    <td style={styles.gstTd}></td>
+                    <td style={styles.gstTd}>{(gstBreakdown.reduce((s, r) => s + r.amount, 0) / 2).toFixed(2)}</td>
+                    <td style={styles.gstTd}></td>
+                    <td style={styles.gstTd}>{(gstBreakdown.reduce((s, r) => s + r.amount, 0) / 2).toFixed(2)}</td>
+                    <td style={styles.gstTd}>{gstBreakdown.reduce((s, r) => s + r.amount, 0).toFixed(2)}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        {/* Tax Amount In Words */}
+        <div style={{ padding: '2mm', fontSize: '9pt', borderTop: '0.8pt solid black' }}>
+            Tax Amount (in words) : <strong>INR {toWords(gstBreakdown.reduce((s, r) => s + r.amount, 0))}</strong>
+        </div>
+
+        {/* Declaration and Signature */}
+        <div style={{ display: 'flex', borderTop: '0.8pt solid black', minHeight: '30mm' }}>
+            <div style={{ width: '60%', borderRight: '0.8pt solid black', padding: '2mm' }}>
+                <div style={{ fontSize: '8pt', textDecoration: 'underline' }}>Declaration</div>
+                <div style={{ fontSize: '8pt', marginTop: '2mm' }}>
+                    We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+                </div>
             </div>
-            <div style={{ width: '50%', textAlign: 'right' }}>
-              <div style={{ display: 'inline-block', minWidth: '80mm' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Subtotal</span>
-                  <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>₹{(bill.subTotal || 0).toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1mm' }}>
-                  <span>Total GST</span>
-                  <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>₹{(bill.totalGst || 0).toFixed(2)}</span>
-                </div>
-                {bill.roundOff !== undefined && Math.abs(bill.roundOff) > 0.005 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1mm' }}>
-                        <span>Round Off</span>
-                        <span style={{ fontWeight: 500, minWidth: '30mm', textAlign: 'right' }}>{bill.roundOff > 0 ? '+' : ''}{bill.roundOff.toFixed(2)}</span>
-                    </div>
-                )}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontWeight: 'bold',
-                  fontSize: '11pt',
-                  borderTop: '1.5pt solid #888',
-                  marginTop: '1.5mm',
-                  paddingTop: '1.5mm'
-                }}>
-                  <span>GRAND TOTAL</span>
-                  <span>₹{(bill.grandTotal || 0).toFixed(2)}</span>
-                </div>
-              </div>
+            <div style={{ width: '40%', padding: '2mm', textAlign: 'right', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div style={{ fontSize: '9pt', fontWeight: 'bold' }}>for {companyProfile.name}</div>
+                <div style={{ fontSize: '9pt', marginTop: '15mm' }}>Authorised Signatory</div>
             </div>
-          </div>
-        </footer>
+        </div>
+      </div>
+      
+      {/* Footer Jurisdictions */}
+      <div style={{ textAlign: 'center', marginTop: '4mm', fontSize: '8pt', textTransform: 'uppercase' }}>
+        Subject to {companyProfile.address.split(',').pop()?.trim() || 'Local'} Jurisdiction
+      </div>
+      <div style={{ textAlign: 'center', fontSize: '8pt' }}>
+        This is a Computer Generated Invoice
       </div>
     </div>
   );

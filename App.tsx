@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment } from 'firebase/firestore';
@@ -368,6 +369,17 @@ function App() {
       await batch.commit();
   };
 
+  const handleAddCompany = async (companyData: Omit<Company, 'id'>) => {
+    if (!dataOwnerId) return null;
+    const ref = await addDoc(collection(db, `users/${dataOwnerId}/companies`), companyData);
+    return { id: ref.id, ...companyData };
+  };
+
+  const handleUpdateConfig = (config: SystemConfig) => {
+      if (!dataOwnerId) return;
+      setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), config);
+  };
+
   if (!user) return <Auth />;
 
   return (
@@ -455,12 +467,14 @@ function App() {
                 return { id, ...data } as Bill;
             }}
             onCancelEdit={() => { setEditingBill(null); setActiveView('billing'); }}
+            onUpdateConfig={handleUpdateConfig}
             isSubscriptionExpired={subscriptionStatus.isExpired}
           />
         )}
         {activeView === 'inventory' && (
           <Inventory
             products={products}
+            companies={companies}
             purchases={purchases}
             bills={bills}
             systemConfig={systemConfig}
@@ -468,6 +482,7 @@ function App() {
             onAddProduct={handleAddProduct}
             onUpdateProduct={handleUpdateProduct}
             onDeleteProduct={handleDeleteProduct}
+            onAddCompany={handleAddCompany}
           />
         )}
         {activeView === 'purchases' && (
@@ -484,13 +499,14 @@ function App() {
             onAddSupplier={handleAddSupplier}
             editingPurchase={editingPurchase}
             onCancelEdit={() => setEditingPurchase(null)}
-            onUpdateConfig={(cfg) => setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), cfg)}
+            onUpdateConfig={handleUpdateConfig}
             isSubscriptionExpired={subscriptionStatus.isExpired}
           />
         )}
         {activeView === 'daybook' && (
           <DayBook
             bills={bills}
+            products={products}
             companyProfile={companyProfile}
             systemConfig={systemConfig}
             onDeleteBill={handleDeleteBill}
@@ -544,7 +560,7 @@ function App() {
         {activeView === 'salesmanReport' && <SalesmanReport bills={bills} salesmen={salesmen} />}
         {activeView === 'companyWiseSale' && <CompanyWiseSale bills={bills} products={products} systemConfig={systemConfig} />}
         {activeView === 'companyWiseBillWiseProfit' && <CompanyWiseBillWiseProfit bills={bills} products={products} />}
-        {activeView === 'chequePrint' && <ChequePrint systemConfig={systemConfig} onUpdateConfig={(cfg) => setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), cfg)} />}
+        {activeView === 'chequePrint' && <ChequePrint systemConfig={systemConfig} onUpdateConfig={handleUpdateConfig} />}
         {activeView === 'dashboard' && <SalesDashboard bills={bills} products={products} systemConfig={systemConfig} />}
         {activeView === 'subscriptionAdmin' && user.email === 'emeraj@gmail.com' && <SubscriptionAdmin />}
       </main>
@@ -555,7 +571,7 @@ function App() {
         companyProfile={companyProfile}
         onProfileChange={(p) => setDoc(doc(db, `users/${dataOwnerId}/companyProfile`, 'profile'), p)}
         systemConfig={systemConfig}
-        onSystemConfigChange={(c) => setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), c)}
+        onSystemConfigChange={handleUpdateConfig}
         onBackupData={() => {
             const backup = { products, bills, purchases, suppliers, customers, payments: supplierPayments, gstRates, companyProfile, systemConfig };
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup));
