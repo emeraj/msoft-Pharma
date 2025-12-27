@@ -75,6 +75,84 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return isNegative ? `-${result}` : result;
 };
 
+/**
+ * HELPER: Calculate current stock for a specific product and its batches by aggregating transactions.
+ * Robust matching by ID OR (Name + Company) to ensure 100% accuracy with the Ledger.
+ */
+const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]) => {
+    const unitsPerStrip = product.unitsPerStrip || 1;
+    let totalIn = (product.openingStock || 0);
+    let totalOut = 0;
+
+    const batchStockMap = new Map<string, number>();
+    
+    // Track normalized name/company for more robust matching
+    const pName = product.name.toLowerCase().trim();
+    const pCompany = product.company.toLowerCase().trim();
+
+    // Initialize with existing batch info
+    (product.batches || []).forEach(b => {
+        batchStockMap.set(b.id, 0);
+        // Attribute opening stock to 'OPENING' or the only available 'DEFAULT' batch
+        if (b.batchNumber === 'OPENING' || (b.batchNumber === 'DEFAULT' && (product.batches || []).length === 1)) {
+            batchStockMap.set(b.id, product.openingStock || 0);
+        }
+    });
+
+    // 1. Sum all Purchases
+    purchases.forEach(pur => {
+        pur.items.forEach(item => {
+            const isMatch = item.productId === product.id || 
+                          (item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
+            
+            if (isMatch) {
+                const qtyUnits = item.quantity * unitsPerStrip;
+                totalIn += qtyUnits;
+                
+                // Try to find the exact batch or merge with a batch of same MRP
+                const targetBatch = product.batches.find(b => b.batchNumber === item.batchNumber && Math.abs(b.mrp - item.mrp) < 0.1) ||
+                                  product.batches.find(b => Math.abs(b.mrp - item.mrp) < 0.1);
+                
+                if (targetBatch) {
+                    batchStockMap.set(targetBatch.id, (batchStockMap.get(targetBatch.id) || 0) + qtyUnits);
+                } else if (product.batches.length > 0) {
+                    // Fallback to the first batch if no specific match found
+                    const firstId = product.batches[0].id;
+                    batchStockMap.set(firstId, (batchStockMap.get(firstId) || 0) + qtyUnits);
+                }
+            }
+        });
+    });
+
+    // 2. Subtract all Sales
+    bills.forEach(bill => {
+        bill.items.forEach(item => {
+            const isMatch = item.productId === product.id || 
+                          (item.productName.toLowerCase().trim() === pName);
+            
+            if (isMatch) {
+                totalOut += item.quantity;
+                // Bills are linked directly to batchId during selection
+                if (batchStockMap.has(item.batchId)) {
+                    batchStockMap.set(item.batchId, (batchStockMap.get(item.batchId) || 0) - item.quantity);
+                } else if (product.batches.length > 0) {
+                    // If batch link is broken, subtract from the matching batch number or first batch
+                    const matchedBatch = product.batches.find(b => b.batchNumber === item.batchNumber);
+                    const fallbackId = matchedBatch ? matchedBatch.id : product.batches[0].id;
+                    batchStockMap.set(fallbackId, (batchStockMap.get(fallbackId) || 0) - item.quantity);
+                }
+            }
+        });
+    });
+
+    return {
+        total: totalIn - totalOut,
+        totalIn,
+        totalOut,
+        batchStocks: batchStockMap
+    };
+};
+
 const PrintLabelModal: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
@@ -150,11 +228,13 @@ const AddCompanyModal: React.FC<{
 
 const ProductMasterView: React.FC<{ 
     products: Product[], 
+    purchases: Purchase[],
+    bills: Bill[],
     systemConfig: SystemConfig,
     onEdit: (p: Product) => void, 
     onDelete: (id: string) => void, 
     t: any 
-}> = ({ products, systemConfig, onEdit, onDelete, t }) => {
+}> = ({ products, purchases, bills, systemConfig, onEdit, onDelete, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [companyFilter, setCompanyFilter] = useState('All');
     const [printingProduct, setPrintingProduct] = useState<Product | null>(null);
@@ -179,9 +259,7 @@ const ProductMasterView: React.FC<{
         
         const printWindow = window.open('', '_blank');
         if (printWindow) {
-            // Use single quotes for inner strings to avoid breaking the outer template literal backticks
             const itemsHtml = Array(quantity).fill(0).map((_, i) => '<div class="label-container"><div class="name">' + product.name + '</div><svg id="barcode-' + i + '" class="barcode-svg"></svg><div class="price">MRP: ₹' + mrp + '</div></div>').join('');
-
             printWindow.document.write(`
                 <html>
                     <head>
@@ -256,7 +334,8 @@ const ProductMasterView: React.FC<{
                             <th className="px-4 py-4">Name</th>
                             <th className="px-4 py-4">Company</th>
                             <th className="px-4 py-4">Barcode</th>
-                            <th className="px-4 py-4 text-center">Total Stock</th>
+                            <th className="px-4 py-4 text-center">Opening Stock</th>
+                            <th className="px-4 py-4 text-center">Live Stock</th>
                             {!isRetail && <th className="px-4 py-4">Composition</th>}
                             <th className="px-4 py-4 text-center">GST</th>
                             <th className="px-4 py-4 text-center">Actions</th>
@@ -265,8 +344,8 @@ const ProductMasterView: React.FC<{
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                         {filtered.map(p => {
                             if (!p) return null;
-                            const totalUnits = (p.batches || []).reduce((sum, b) => sum + b.stock, 0);
-                            const isLowStock = totalUnits <= (p.unitsPerStrip || 1);
+                            const liveStock = getLiveStockData(p, purchases, bills);
+                            const isLowStock = liveStock.total <= (p.unitsPerStrip || 1);
                             return (
                                 <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                                     <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">
@@ -275,8 +354,9 @@ const ProductMasterView: React.FC<{
                                     </td>
                                     <td className="px-4 py-3.5 text-slate-600 dark:text-slate-400">{p.company}</td>
                                     <td className="px-4 py-3.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">{p.barcode || '-'}</td>
+                                    <td className="px-4 py-3.5 text-center text-slate-500">{p.openingStock || 0} U</td>
                                     <td className={`px-4 py-3.5 text-center font-black ${isLowStock ? 'text-rose-600 bg-rose-50/30' : 'text-emerald-600'}`}>
-                                        {formatStock(totalUnits, p.unitsPerStrip)}
+                                        {formatStock(liveStock.total, p.unitsPerStrip)}
                                         {isLowStock && <div className="text-[8px] uppercase tracking-tighter">Refill Required</div>}
                                     </td>
                                     {!isRetail && <td className="px-4 py-3.5 text-xs text-slate-500 italic">{p.composition || '-'}</td>}
@@ -360,6 +440,8 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 batchMap.set(b.batchNumber, existing);
             });
 
+            const baseOpening = p.openingStock || 0;
+
             batchMap.forEach((agg, bName) => {
                 let opening = 0;
                 let purchased = 0;
@@ -368,8 +450,9 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                 purchases.forEach(pur => {
                     const purDate = new Date(pur.invoiceDate);
                     pur.items.forEach(item => {
-                        const isMatch = item.productId === p.id && item.batchNumber === bName;
-                        if (!isMatch) return;
+                        const isMatch = item.productId === p.id || 
+                                      (item.productName.toLowerCase().trim() === p.name.toLowerCase().trim() && item.company.toLowerCase().trim() === p.company.toLowerCase().trim());
+                        if (!isMatch || item.batchNumber !== bName) return;
                         const qtyInUnits = item.quantity * unitsPerStrip;
                         if (purDate < (start || new Date(0))) {
                             opening += qtyInUnits;
@@ -392,13 +475,17 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                     });
                 });
 
-                const closing = opening + purchased - sold;
+                const closing = opening + purchased - sold + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0);
                 const valuation = closing * (agg.purchasePrice / unitsPerStrip);
 
                 if (purchased !== 0 || sold !== 0 || closing !== 0 || opening !== 0) {
-                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening, purchased, sold, closing, valuation, unitsPerStrip });
+                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening: opening + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0), purchased, sold, closing, valuation, unitsPerStrip });
                 }
             });
+            
+            if (batchMap.size === 0 && baseOpening > 0) {
+                 rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: 'OPENING', expiryDate: '-', opening: baseOpening, purchased: 0, sold: 0, closing: baseOpening, valuation: 0, unitsPerStrip });
+            }
         });
 
         return rows.sort((a, b) => a.productName.localeCompare(b.productName));
@@ -480,16 +567,23 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
     );
 };
 
-const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConfig, t: any }> = ({ products, systemConfig, t }) => {
+const AllItemStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const stockData = useMemo(() => {
         return products.filter(p => !!p).map(p => {
-            const totalStock = (p.batches || []).reduce((sum, b) => sum + b.stock, 0);
+            const liveStock = getLiveStockData(p, purchases, bills);
             const unitsPerStrip = p.unitsPerStrip || 1;
-            const totalValue = (p.batches || []).reduce((sum, b) => sum + (b.stock * (b.purchasePrice / unitsPerStrip)), 0);
-            return { id: p.id, name: p.name, company: p.company, unitsPerStrip, totalStock, totalValue };
+            
+            // Average purchase price across batches for valuation
+            const totalValuation = (p.batches || []).reduce((sum, b) => {
+                const batchStock = liveStock.batchStocks.get(b.id) || 0;
+                return sum + (batchStock * (b.purchasePrice / unitsPerStrip));
+            }, 0);
+
+            return { id: p.id, name: p.name, company: p.company, unitsPerStrip, totalStock: liveStock.total, totalValue: totalValuation };
         }).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.company.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
-    }, [products, searchTerm]);
+    }, [products, purchases, bills, searchTerm]);
+
     const totalValuation = useMemo(() => stockData.reduce((sum, item) => sum + item.totalValue, 0), [stockData]);
     const handleExport = () => { exportToCsv('all_item_stock_summary', stockData.map(item => ({ 'Product': item.name, 'Company': item.company, 'Total Stock': formatStock(item.totalStock, item.unitsPerStrip), 'Stock Value': item.totalValue.toFixed(2) }))); };
     return (
@@ -501,7 +595,7 @@ const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConf
                 </div>
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
                     <div className="bg-teal-50 dark:bg-teal-900/30 px-6 py-3 rounded-xl w-full sm:w-auto text-center border border-teal-100 dark:border-teal-800 shadow-sm"><span className="text-[10px] font-black uppercase text-teal-600 dark:text-teal-400 tracking-widest block">Total Inventory Value</span><span className="text-xl font-black text-teal-900 dark:text-teal-100">₹{totalValuation.toFixed(2)}</span></div>
-                    <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95 uppercase text-xs"><DownloadIcon className="h-5 w-5" /> Export Excel</button>
+                    <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-700 transition-all transform active:scale-95 uppercase text-sm"><DownloadIcon className="h-5 w-5" /> Export Excel</button>
                 </div>
             </div>
             <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -532,30 +626,53 @@ const AllItemStockView: React.FC<{ products: Product[], systemConfig: SystemConf
 
 const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
-    const productSuggestions = useMemo(() => { if (!searchTerm) return []; return products.filter(p => p && p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10); }, [searchTerm, products]);
-    const handleSelectProduct = (p: Product) => { setSelectedProduct(p); setSearchTerm(p.name); setIsSuggestionsOpen(false); };
+    
+    const selectedProduct = useMemo(() => {
+        if (!selectedProductId) return null;
+        return products.find(p => p.id === selectedProductId) || null;
+    }, [selectedProductId, products]);
+
+    const productSuggestions = useMemo(() => { 
+        if (!searchTerm) return []; 
+        return products.filter(p => p && p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10); 
+    }, [searchTerm, products]);
+
+    const handleSelectProduct = (p: Product) => { 
+        setSelectedProductId(p.id); 
+        setSearchTerm(p.name); 
+        setIsSuggestionsOpen(false); 
+    };
+
     const transactions = useMemo(() => {
         if (!selectedProduct) return [];
         const txs: any[] = [];
         const unitsPerStrip = selectedProduct.unitsPerStrip || 1;
+        const pName = selectedProduct.name.toLowerCase().trim();
+        const pCompany = selectedProduct.company.toLowerCase().trim();
+
         purchases?.forEach(pur => pur.items.forEach(item => {
-            if (item.productId === selectedProduct.id || (!item.productId && item.productName === selectedProduct.name && item.company === selectedProduct.company)) {
+            const isMatch = item.productId === selectedProduct.id || 
+                          (item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
+            if (isMatch) {
                 txs.push({ date: new Date(pur.invoiceDate), type: 'Purchase', particulars: `Inv: ${pur.invoiceNumber} (${pur.supplier})`, inQty: item.quantity * (item.unitsPerStrip || unitsPerStrip), outQty: 0 });
             }
         }));
         bills?.forEach(bill => bill.items.forEach(item => {
-            if (item.productId === selectedProduct.id) {
+            const isMatch = item.productId === selectedProduct.id || 
+                          (item.productName.toLowerCase().trim() === pName);
+            if (isMatch) {
                 txs.push({ date: new Date(bill.date), type: 'Sale', particulars: `Bill: ${bill.billNumber} (${bill.customerName})`, inQty: 0, outQty: item.quantity });
             }
         }));
         return txs.sort((a, b) => a.date.getTime() - b.date.getTime());
     }, [selectedProduct, purchases, bills]);
+
     const filteredResults = useMemo(() => {
-        let opening = 0;
+        let opening = selectedProduct?.openingStock || 0;
         const start = fromDate ? new Date(fromDate) : null; if (start) start.setHours(0,0,0,0);
         const end = toDate ? new Date(toDate) : new Date(); end.setHours(23,59,59,999);
         if (start) transactions.forEach(tx => { if (tx.date < start) opening += (tx.inQty - tx.outQty); });
@@ -564,8 +681,9 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             running += (tx.inQty - tx.outQty);
             return { ...tx, balance: running };
         });
-        return { opening, rows };
-    }, [transactions, fromDate, toDate]);
+        return { opening, rows, closing: running };
+    }, [transactions, fromDate, toDate, selectedProduct]);
+
     return (
         <Card title={t.inventory.selectedStock}>
             <div className="mb-6 relative">
@@ -583,8 +701,8 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
                         <p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p>
                     </div>
                     <div className="text-right">
-                        <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Available Stock</p>
-                        <p className="text-3xl font-black">{formatStock((selectedProduct.batches || []).reduce((sum, b) => sum + b.stock, 0), selectedProduct.unitsPerStrip)}</p>
+                        <p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Current Stock</p>
+                        <p className="text-3xl font-black">{formatStock(filteredResults.closing, selectedProduct.unitsPerStrip)}</p>
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700">
@@ -626,15 +744,20 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
     );
 };
 
-const ExpiredStockView: React.FC<{ products: Product[], t: any }> = ({ products, t }) => {
+const ExpiredStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], t: any }> = ({ products, purchases, bills, t }) => {
     const today = new Date();
     today.setHours(0,0,0,0);
     
     const expiredBatches = useMemo(() => {
-        return products.filter(p => !!p).flatMap(p => 
-            (p.batches || []).map(b => ({ ...b, product: p }))
-        ).filter(item => item && getExpiryDate(item.expiryDate) < today && item.stock > 0);
-    }, [products]);
+        return products.filter(p => !!p).flatMap(p => {
+            const liveData = getLiveStockData(p, purchases, bills);
+            return (p.batches || []).map(b => ({ 
+                ...b, 
+                product: p,
+                liveStock: liveData.batchStocks.get(b.id) || 0
+            }));
+        }).filter(item => item && getExpiryDate(item.expiryDate) < today && item.liveStock > 0);
+    }, [products, purchases, bills]);
 
     return (
         <Card title="Expired Stock (Loss Analysis)">
@@ -657,8 +780,8 @@ const ExpiredStockView: React.FC<{ products: Product[], t: any }> = ({ products,
                                 <td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td>
                                 <td className="px-6 py-4 text-rose-600 dark:text-rose-400 font-black">{item.expiryDate}</td>
                                 <td className="px-6 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td>
-                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
-                                <td className="px-6 py-4 text-right font-black text-rose-600 dark:text-rose-400">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
+                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.liveStock, item.product.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-right font-black text-rose-600 dark:text-rose-400">₹{(item.liveStock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -668,21 +791,26 @@ const ExpiredStockView: React.FC<{ products: Product[], t: any }> = ({ products,
     );
 };
 
-const NearExpiryView: React.FC<{ products: Product[], t: any }> = ({ products, t }) => {
+const NearExpiryView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], t: any }> = ({ products, purchases, bills, t }) => {
     const today = new Date();
     today.setHours(0,0,0,0);
     const thirtyDaysLater = new Date();
     thirtyDaysLater.setDate(today.getDate() + 30);
     
     const nearExpiryBatches = useMemo(() => {
-        return products.filter(p => !!p).flatMap(p => 
-            (p.batches || []).map(b => ({ ...b, product: p }))
-        ).filter(item => {
+        return products.filter(p => !!p).flatMap(p => {
+            const liveData = getLiveStockData(p, purchases, bills);
+            return (p.batches || []).map(b => ({ 
+                ...b, 
+                product: p,
+                liveStock: liveData.batchStocks.get(b.id) || 0
+            }));
+        }).filter(item => {
             if (!item) return false;
             const exp = getExpiryDate(item.expiryDate);
-            return exp >= today && exp <= thirtyDaysLater && item.stock > 0;
+            return exp >= today && exp <= thirtyDaysLater && item.liveStock > 0;
         });
-    }, [products]);
+    }, [products, purchases, bills]);
 
     return (
         <Card title="Expiring in Next 30 Days">
@@ -705,8 +833,8 @@ const NearExpiryView: React.FC<{ products: Product[], t: any }> = ({ products, t
                                 <td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td>
                                 <td className="px-6 py-4 text-orange-600 dark:text-orange-400 font-black">{item.expiryDate}</td>
                                 <td className="px-6 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td>
-                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
-                                <td className="px-6 py-4 text-right font-black text-slate-700 dark:text-slate-300">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
+                                <td className="px-6 py-4 text-center font-bold">{formatStock(item.liveStock, item.product.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-right font-black text-slate-700 dark:text-slate-300">₹{(item.liveStock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -744,7 +872,7 @@ const EditBatchModal: React.FC<{
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={handleChange} className={inputStyle} required /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={handleChange} className={inputStyle} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={handleChange} className={inputStyle} required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock (Total Units)</label><input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Internal Reference Stock (U)</label><input type="number" name="stock" value={formData.stock} onChange={handleChange} className={inputStyle} required /></div>
                 </div>
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE CHANGES</button></div>
             </form>
@@ -752,10 +880,18 @@ const EditBatchModal: React.FC<{
     );
 };
 
-const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: string, bid: string) => void, onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>, systemConfig: SystemConfig, t: any }> = ({ products, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
+const BatchWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], onDeleteBatch: (pid: string, bid: string) => void, onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>, systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [editingBatchData, setEditingBatchData] = useState<{ product: Product, batch: Batch } | null>(null);
-    const allBatches = useMemo(() => products.filter(p => !!p).flatMap(p => (p.batches || []).map(b => ({ ...b, product: p }))).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }), [products, searchTerm]);
+    const allBatches = useMemo(() => products.filter(p => !!p).flatMap(p => {
+        const liveData = getLiveStockData(p, purchases, bills);
+        return (p.batches || []).map(b => ({ 
+            ...b, 
+            product: p,
+            liveStock: liveData.batchStocks.get(b.id) || 0
+        }));
+    }).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }), [products, purchases, bills, searchTerm]);
+    
     const handleUpdateBatch = (pid: string, updatedBatch: Batch) => { const product = products.find(p => p.id === pid); if (product) { const updatedBatches = (product.batches || []).map(b => b.id === updatedBatch.id ? updatedBatch : b); onUpdateProduct(pid, { batches: updatedBatches }); } };
     return (
         <Card title={t.inventory.batchStock}>
@@ -771,7 +907,7 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
                             <th className="px-6 py-4">Batch No</th>
                             <th className="px-6 py-4">Expiry Date</th>
                             <th className="px-6 py-4 text-right">MRP</th>
-                            <th className="px-6 py-4 text-center">In Stock</th>
+                            <th className="px-6 py-4 text-center">Live Stock</th>
                             <th className="px-6 py-4 text-center">Actions</th>
                         </tr>
                     </thead>
@@ -782,7 +918,7 @@ const BatchWiseStockView: React.FC<{ products: Product[], onDeleteBatch: (pid: s
                                 <td className="px-6 py-4 font-mono text-xs text-slate-500">{item.batchNumber}</td>
                                 <td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.expiryDate}</td>
                                 <td className="px-6 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td>
-                                <td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.stock, item.product.unitsPerStrip)}</td>
+                                <td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.liveStock, item.product.unitsPerStrip)}</td>
                                 <td className="px-6 py-4 text-center">
                                     <div className="flex justify-center gap-3">
                                         <button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit Batch"><PencilIcon className="h-5 w-5" /></button>
@@ -811,7 +947,7 @@ const AddEditProductModal: React.FC<{
     systemConfig: SystemConfig;
 }> = ({ isOpen, onClose, product, companies, gstRates, onSave, onUpdate, onAddCompany, systemConfig }) => {
     const isPharma = systemConfig.softwareMode === 'Pharma';
-    const [formData, setFormData] = useState({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
+    const [formData, setFormData] = useState({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', openingStock: 0, isScheduleH: false });
     const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
     const [isAddCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
     const [activeCompanyIndex, setActiveCompanyIndex] = useState(-1);
@@ -831,9 +967,10 @@ const AddEditProductModal: React.FC<{
             composition: product.composition || '', 
             unitsPerStrip: product.unitsPerStrip || 1, 
             barcode: product.barcode || '', 
+            openingStock: product.openingStock || 0,
             isScheduleH: !!product.isScheduleH 
         });
-        else setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', isScheduleH: false });
+        else setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', openingStock: 0, isScheduleH: false });
         setActiveCompanyIndex(-1);
     }, [product, isOpen]);
 
@@ -916,8 +1053,18 @@ const AddEditProductModal: React.FC<{
                             <button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button>
                         </div>
                     </div>
-                    {isPharma && <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" /></div>}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Opening Stock (U)</label>
+                        <input type="number" value={formData.openingStock} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} placeholder="Stock from prev years" />
+                    </div>
                 </div>
+
+                {isPharma && (
+                    <div className="grid grid-cols-1 gap-4">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label>
+                        <input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" />
+                    </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">HSN Code</label><input value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div>
@@ -973,7 +1120,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, purchases = 
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const handleDeleteBatch = (pid: string, bid: string) => { if (!window.confirm("Delete batch?")) return; const product = products.find(p => p && p.id === pid); if (product) { const updatedBatches = (product.batches || []).filter(b => b.id !== bid); onUpdateProduct(pid, { batches: updatedBatches }); } };
     const handleImportCsv = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; setImportModalOpen(false); };
-    const handleDownloadTemplate = () => { const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip", "IsScheduleH(Yes/No)"]; const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10,Yes'; const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.setAttribute("download", "inventory_import_template.csv"); document.body.appendChild(link); link.click(); };
+    const handleDownloadTemplate = () => { const headers = ["Name", "Barcode", "Company", "GST", "Composition", "UnitsPerStrip", "IsScheduleH(Yes/No)", "OpeningStock"]; const csvContent = headers.join(',') + '\nExample Tablet,1001,Demo Corp,12,Paracetamol 500mg,10,Yes,50'; const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.setAttribute("download", "inventory_import_template.csv"); document.body.appendChild(link); link.click(); };
     const TabButton: React.FC<{ tab: InventoryTab, label: string }> = ({ tab, label }) => (
         <button onClick={() => setActiveTab(tab)} className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-500/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-700'}`}>{label}</button>
     );
@@ -981,7 +1128,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, purchases = 
         <div className="p-4 sm:p-6 space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-end gap-4 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3"><ArchiveIcon className="h-8 w-8 text-indigo-600" />Professional Pharma Inventory</h1>
+                    <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3"><ArchiveIcon className="h-8 w-8 text-indigo-600" />Inventory Reports</h1>
                     <p className="text-slate-500 dark:text-slate-400 font-medium mt-1 uppercase text-[10px] tracking-widest">Real-time Batch, Expiry & Stock Tracking</p>
                 </div>
                 <div className="flex gap-3 w-full sm:w-auto"><button onClick={() => setImportModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800"><UploadIcon className="h-5 w-5" /> Bulk Import</button></div>
@@ -995,13 +1142,13 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, purchases = 
                 {isPharma && <><TabButton tab="expired" label="Expired" /><TabButton tab="nearExpiry" label="Expiring Soon" /></>}
             </div>
             <div className="mt-2 transition-all duration-300">
-                {activeTab === 'productMaster' && <ProductMasterView products={products} systemConfig={systemConfig} onEdit={(p) => { setEditingProduct(p); setProductModalOpen(true); }} onDelete={onDeleteProduct} t={t} />}
-                {activeTab === 'all' && <AllItemStockView products={products} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'productMaster' && <ProductMasterView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} onEdit={(p) => { setEditingProduct(p); setProductModalOpen(true); }} onDelete={onDeleteProduct} t={t} />}
+                {activeTab === 'all' && <AllItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
-                {activeTab === 'batch' && <BatchWiseStockView products={products} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'batch' && <BatchWiseStockView products={products} purchases={purchases} bills={bills} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} t={t} />}
-                {activeTab === 'expired' && <ExpiredStockView products={products} t={t} />}
-                {activeTab === 'nearExpiry' && <NearExpiryView products={products} t={t} />}
+                {activeTab === 'expired' && <ExpiredStockView products={products} purchases={purchases} bills={bills} t={t} />}
+                {activeTab === 'nearExpiry' && <NearExpiryView products={products} purchases={purchases} bills={bills} t={t} />}
             </div>
             <ProductImportModal isOpen={isImportModalOpen} onClose={() => setImportModalOpen(false)} onImport={handleImportCsv} onDownloadTemplate={handleDownloadTemplate} />
             <AddEditProductModal isOpen={isProductModalOpen} onClose={() => setProductModalOpen(false)} product={editingProduct} companies={companies} gstRates={gstRates} onSave={onAddProduct} onUpdate={onUpdateProduct} onAddCompany={onAddCompany} systemConfig={systemConfig} />

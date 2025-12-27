@@ -1,4 +1,3 @@
-
 export interface Batch {
   id: string;
   batchNumber: string;
@@ -17,6 +16,7 @@ export interface Product {
   hsnCode: string;
   gst: number;
   barcode?: string;
+  openingStock?: number; // Base stock from previous years
   composition?: string; // e.g., "Paracetamol 500mg"
   unitsPerStrip?: number; // e.g., 10 tablets per strip
   isScheduleH?: boolean;
