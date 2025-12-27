@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
@@ -356,7 +355,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         lastAddedBatchIdRef.current = existingItem.batchId;
     } else { 
         const unitPrice = sellingPrice / unitsPerStrip; 
-        const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
+        /* Fix: Included product barcode in CartItem to fix stock analysis issues */
+        const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, barcode: product.barcode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
         lastAddedBatchIdRef.current = newItem.batchId; 
         setCart(currentCart => [...currentCart, newItem]); 
     } 

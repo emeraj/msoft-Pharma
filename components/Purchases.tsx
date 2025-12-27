@@ -310,6 +310,16 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
     const handleAddItem = (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, batchNumber, expiryDate, quantity, mrp, purchasePrice, discount, tax, barcode } = formState;
+        
+        // Validation: Alert if barcode already exists when creating a 'New' product
+        if (isNewProduct && barcode) {
+            const exists = products.find(p => p.barcode && p.barcode.toLowerCase().trim() === barcode.toLowerCase().trim());
+            if (exists) {
+                alert(`Product with barcode "${barcode}" already exists as "${exists.name}". Please search and select the existing product instead of creating a new one.`);
+                return;
+            }
+        }
+
         if (isNewProduct && (!productName || !company)) { alert('Name and Company required.'); return; }
         const item: PurchaseLineItem = { isNewProduct, productName: isNewProduct ? productName : selectedProduct!.name, company: company.trim(), hsnCode: isNewProduct ? hsnCode : selectedProduct!.hsnCode, gst: parseFloat(tax) || parseFloat(gst) || 0, batchNumber: isPharmaMode ? batchNumber : 'DEFAULT', expiryDate: isPharmaMode ? expiryDate : '9999-12', quantity: parseInt(quantity, 10), mrp: parseFloat(mrp), purchasePrice: parseFloat(purchasePrice), discount: parseFloat(discount) || 0, barcode: barcode || (selectedProduct?.barcode || '') };
         if (!isNewProduct && selectedProduct) item.productId = selectedProduct.id;

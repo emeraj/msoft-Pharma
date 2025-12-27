@@ -31,6 +31,8 @@ export interface CartItem {
   batchNumber: string;
   expiryDate: string;
   hsnCode: string;
+  /* Fix: Added barcode property to CartItem to support stock tracking by barcode */
+  barcode?: string;
   unitsPerStrip?: number;
   isScheduleH?: boolean;
   stripQty: number;
