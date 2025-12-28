@@ -3,13 +3,14 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
 import Card from './common/Card';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon, BluetoothIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { auth } from '../firebase';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { BluetoothHelper } from '../utils/BluetoothHelper';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -93,9 +94,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [profile, setProfile] = useState<CompanyProfile>(companyProfile);
   const [config, setConfig] = useState<SystemConfig>(systemConfig);
   const [newPrinterName, setNewPrinterName] = useState('');
-  const [newPrinterFormat, setNewPrinterFormat] = useState<'A4' | 'A5' | 'Thermal'>('Thermal');
+  const [newPrinterFormat, setNewPrinterFormat] = useState<'A4' | 'A5' | 'Thermal' | 'Bluetooth'>('Thermal');
   const [newPrinterOrientation, setNewPrinterOrientation] = useState<'Portrait' | 'Landscape'>('Portrait');
   const [subUsers, setSubUsers] = useState<SubUser[]>([]);
+  const [isBtConnected, setIsBtConnected] = useState(BluetoothHelper.isConnected);
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: string}>({ type: '', msg: '' });
 
@@ -105,6 +107,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         setConfig(systemConfig);
         setPasswords({ current: '', new: '', confirm: '' });
         setPasswordStatus({ type: '', msg: '' });
+        setIsBtConnected(BluetoothHelper.isConnected);
         fetchSubUsers();
     }
   }, [companyProfile, systemConfig, isOpen]);
@@ -119,8 +122,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSaveProfile = () => { 
-    // SANITIZATION: Firestore does not accept 'undefined' values.
-    // Ensure all fields are either a string or an empty string, never undefined.
     const sanitizedProfile: CompanyProfile = {
         name: profile.name || '',
         address: profile.address || '',
@@ -128,13 +129,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         phone: profile.phone || '',
         email: profile.email || '',
         upiId: profile.upiId || '',
-        logo: profile.logo || '' // Crucial: default to empty string if undefined/null
+        logo: profile.logo || ''
     };
     onProfileChange(sanitizedProfile); 
     onClose(); 
   };
 
   const handleSaveConfig = () => { onSystemConfigChange(config); onClose(); };
+
+  const handleBtConnect = async () => {
+      const success = await BluetoothHelper.connect();
+      setIsBtConnected(success);
+      if (success) {
+          alert("Connected to BT-Printer!");
+      }
+  };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -318,11 +327,37 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
         case 'printers': return (
             <div className="space-y-6 animate-fade-in pb-4">
+                {/* Bluetooth Direct Connect Status Card */}
+                <div className={`p-4 rounded-xl border-2 transition-all ${isBtConnected ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-indigo-50 border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800'}`}>
+                    <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-3">
+                            <div className={`p-2.5 rounded-full ${isBtConnected ? 'bg-emerald-500' : 'bg-indigo-500'} text-white shadow-lg`}>
+                                <BluetoothIcon className="h-6 w-6" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Web Bluetooth Status</p>
+                                <h4 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    Direct Connect: 
+                                    <span className={isBtConnected ? 'text-emerald-600' : 'text-slate-400'}>
+                                        {isBtConnected ? 'CONNECTED' : 'DISCONNECTED'}
+                                    </span>
+                                </h4>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={handleBtConnect}
+                            className={`px-4 py-2 rounded-lg font-black text-[10px] uppercase tracking-widest shadow-md transition-all active:scale-95 ${isBtConnected ? 'bg-white text-emerald-600 border border-emerald-100' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                        >
+                            {isBtConnected ? 'Reconnect' : 'Scan & Connect'}
+                        </button>
+                    </div>
+                </div>
+
                 <div className="flex flex-col gap-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium mb-1">Printer Name</label>
-                            <input type="text" value={newPrinterName} onChange={e => setNewPrinterName(e.target.value)} className={formInputStyle} placeholder="Counter 1" />
+                            <input type="text" value={newPrinterName} onChange={e => setNewPrinterName(e.target.value)} className={formInputStyle} placeholder="Counter 1 / BT-Printer" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-1">Format</label>
@@ -330,10 +365,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <option value="Thermal">Thermal</option>
                                 <option value="A5">A5 Page</option>
                                 <option value="A4">A4 Full Page</option>
+                                <option value="Bluetooth">Web Bluetooth Direct Connect</option>
                             </select>
                         </div>
                     </div>
-                    {newPrinterFormat !== 'Thermal' && (
+                    {newPrinterFormat !== 'Thermal' && newPrinterFormat !== 'Bluetooth' && (
                         <div>
                             <label className="block text-sm font-medium mb-1">Orientation</label>
                             <select value={newPrinterOrientation} onChange={e => setNewPrinterOrientation(e.target.value as any)} className={formSelectStyle}>
@@ -343,7 +379,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     )}
                     <div className="flex justify-end">
-                        <button onClick={() => { if(!newPrinterName) return; onSystemConfigChange({...config, printers: [...(config.printers || []), { id: `p_${Date.now()}`, name: newPrinterName, format: newPrinterFormat, orientation: newPrinterOrientation, isDefault: (config.printers || []).length === 0 }]}); setNewPrinterName(''); }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700">Add Printer</button>
+                        <button onClick={() => { 
+                            if(!newPrinterName) return; 
+                            const isBluetooth = newPrinterFormat === 'Bluetooth';
+                            const actualFormat = isBluetooth ? 'Thermal' : newPrinterFormat;
+                            const connectionType = isBluetooth ? 'bluetooth' : 'system';
+
+                            const newPrinter: PrinterProfile = { 
+                                id: `p_${Date.now()}`, 
+                                name: newPrinterName, 
+                                format: actualFormat as 'A4' | 'A5' | 'Thermal', 
+                                orientation: (actualFormat === 'Thermal') ? undefined : newPrinterOrientation, 
+                                isDefault: (config.printers || []).length === 0,
+                                connectionType: connectionType as any
+                            };
+
+                            onSystemConfigChange({...config, printers: [...(config.printers || []), newPrinter]}); 
+                            setNewPrinterName(''); 
+                        }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700">Add Printer</button>
                     </div>
                 </div>
                 <div className="space-y-2">
@@ -352,7 +405,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <div key={p.id} className="flex justify-between items-center p-3 bg-white dark:bg-slate-800 border rounded-lg shadow-sm">
                             <div>
                                 <p className="font-bold text-slate-800 dark:text-slate-100">{p.name} {p.isDefault && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full uppercase">Default</span>}</p>
-                                <p className="text-[11px] text-slate-500">{p.format} - {p.orientation || 'Portrait'}</p>
+                                <p className="text-[11px] text-slate-500">
+                                    {p.format} - {p.connectionType === 'bluetooth' ? 'Web Bluetooth (Direct)' : (p.orientation || 'Portrait')}
+                                </p>
                             </div>
                             <div className="flex gap-2">
                                 {!p.isDefault && (<button onClick={() => onSystemConfigChange({...config, printers: config.printers?.map(pr => ({...pr, isDefault: pr.id === p.id}))})} className="text-[10px] font-black text-indigo-600 hover:underline px-2">SET DEFAULT</button>)}

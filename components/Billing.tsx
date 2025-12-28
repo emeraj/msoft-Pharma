@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
@@ -14,6 +15,7 @@ import { db, auth } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { getTranslation } from '../utils/translationHelper';
 import { GoogleGenAI, Type } from "@google/genai";
+import { BluetoothHelper } from '../utils/BluetoothHelper';
 
 // Helper for matching technical codes (removes dashes, dots, spaces)
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -281,7 +283,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const getExpiryDate = (expiryString: string): Date => {
       if (!expiryString) return new Date('9999-12-31');
       const [year, month] = expiryString.split('-').map(Number);
-      return new Date(year, month, 0);
+      return new Date(year, month, 0); // Last day of the expiry month
   };
 
   const formatStock = (stock: number, unitsPerStrip?: number): string => {
@@ -355,7 +357,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         lastAddedBatchIdRef.current = existingItem.batchId;
     } else { 
         const unitPrice = sellingPrice / unitsPerStrip; 
-        /* Fix: Included product barcode in CartItem to fix stock analysis issues */
         const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, barcode: product.barcode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
         lastAddedBatchIdRef.current = newItem.batchId; 
         setCart(currentCart => [...currentCart, newItem]); 
@@ -502,6 +503,31 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const executePrint = useCallback(async (bill: Bill, printer: PrinterProfile, forceReset = false) => {
     const doReset = () => { if (isEditing) { if (onCancelEdit) onCancelEdit(); } else resetBillingForm(); setShouldResetAfterPrint(false); };
     const shouldReset = forceReset || shouldResetAfterPrint;
+
+    // Web Bluetooth Direct Connect Flow
+    if (printer.connectionType === 'bluetooth') {
+        const confirmPrint = window.confirm(`Print Bill ${bill.billNumber} to ${printer.name}?`);
+        if (!confirmPrint) {
+            if (shouldReset) doReset();
+            return;
+        }
+
+        try {
+            const connected = await BluetoothHelper.connect();
+            if (connected) {
+                const bytes = BluetoothHelper.generateEscPos(bill, companyProfile);
+                await BluetoothHelper.printRaw(bytes);
+                if (shouldReset) doReset();
+                return;
+            } else {
+                alert("Failed to connect to Bluetooth printer. Try scanning again in settings.");
+            }
+        } catch (e) {
+            console.error("Print Error", e);
+        }
+    }
+
+    // Standard Browser System Print
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const rootEl = document.createElement('div'); printWindow.document.body.appendChild(rootEl);

@@ -1,3 +1,4 @@
+
 export interface Batch {
   id: string;
   batchNumber: string;
@@ -169,7 +170,7 @@ export interface PrinterProfile {
   orientation?: 'Portrait' | 'Landscape';
   isDefault: boolean;
   isShared?: boolean;
-  connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt';
+  connectionType?: 'bluetooth' | 'usb' | 'network' | 'rawbt' | 'system';
 }
 
 export interface ChequeLayoutField {
