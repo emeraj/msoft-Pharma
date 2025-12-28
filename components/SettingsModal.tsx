@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
 import Card from './common/Card';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
 import { collection, getDocs } from 'firebase/firestore';
@@ -75,67 +75,6 @@ const TabButton: React.FC<{ label: string; isActive: boolean; onClick: () => voi
     </button>
 );
 
-const SubscriptionTab: React.FC<{ subscription?: SubscriptionInfo; onUpgrade: () => void }> = ({ subscription, onUpgrade }) => {
-    const isPremium = subscription?.isPremium || false;
-    const planName = subscription?.planType || 'Free';
-    const expiry = subscription?.expiryDate ? new Date(subscription.expiryDate) : null;
-    const daysLeft = expiry ? Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
-
-    const upiId = "9890072651@upi"; // M. Soft India
-    const amount = "5000";
-    const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=${amount}&cu=INR`;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
-
-    return (
-        <div className="space-y-6 animate-fade-in">
-            <div className={`p-6 rounded-2xl border-2 ${isPremium ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'} shadow-sm`}>
-                <div className="flex justify-between items-start">
-                    <div>
-                        <h4 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                            {isPremium ? <CheckCircleIcon className="h-6 w-6 text-indigo-500" /> : <InformationCircleIcon className="h-6 w-6 text-slate-400" />}
-                            Current Plan: {planName}
-                        </h4>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                            {isPremium 
-                                ? `Expires on ${expiry?.toLocaleDateString()} (${daysLeft} days remaining)`
-                                : 'You are currently using the limited free version.'}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl border dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
-                    <h5 className="font-bold text-slate-800 dark:text-slate-200 mb-3">Free Plan Includes:</h5>
-                    <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                        <li className="flex items-center gap-2">✅ Standard Billing & Inventory</li>
-                        <li className="flex items-center gap-2">✅ GST Reports</li>
-                        <li className="flex items-center gap-2">❌ Limited AI Invoice Entries</li>
-                    </ul>
-                </div>
-                <div className="p-4 rounded-xl border-2 border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 shadow-lg">
-                    <h5 className="font-bold text-indigo-600 dark:text-indigo-400 mb-3">Premium Plan Benefits:</h5>
-                    <ul className="space-y-2 text-sm text-slate-800 dark:text-slate-200">
-                        <li className="flex items-center gap-2">🚀 Unlimited AI Invoice Processing</li>
-                        <li className="flex items-center gap-2">🚀 Multi-User (Operator) Support</li>
-                    </ul>
-                </div>
-            </div>
-
-            {!isPremium && (
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border dark:border-slate-700 text-center">
-                    <h5 className="text-lg font-bold text-slate-800 dark:text-slate-200 mb-4">Activation Process</h5>
-                    <img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto mb-4 border p-2 rounded-lg bg-white" />
-                    <p className="text-xl font-bold text-indigo-600">₹5,000 / Year</p>
-                    <div className="mt-4 space-y-2 text-sm text-slate-600 dark:text-slate-400">
-                        <p>Scan to pay & send screenshot to WhatsApp: <span className="font-bold">9890072651</span></p>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -160,22 +99,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: string}>({ type: '', msg: '' });
 
-  // Restore State
-  const [restoreFile, setRestoreFile] = useState<File | null>(null);
-  const [parsedRestoreData, setParsedRestoreData] = useState<any>(null);
-  const [selectedModels, setSelectedModels] = useState<string[]>([]);
-  const [isRestoring, setIsRestoring] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
         setConfig(systemConfig);
         setPasswords({ current: '', new: '', confirm: '' });
         setPasswordStatus({ type: '', msg: '' });
-        setRestoreFile(null);
-        setParsedRestoreData(null);
-        setSelectedModels([]);
         fetchSubUsers();
     }
   }, [companyProfile, systemConfig, isOpen]);
@@ -189,21 +118,107 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       } catch (e) { console.error(e); }
   };
 
-  const handleSaveProfile = () => { onProfileChange(profile); onClose(); };
+  const handleSaveProfile = () => { 
+    // SANITIZATION: Firestore does not accept 'undefined' values.
+    // Ensure all fields are either a string or an empty string, never undefined.
+    const sanitizedProfile: CompanyProfile = {
+        name: profile.name || '',
+        address: profile.address || '',
+        gstin: profile.gstin || '',
+        phone: profile.phone || '',
+        email: profile.email || '',
+        upiId: profile.upiId || '',
+        logo: profile.logo || '' // Crucial: default to empty string if undefined/null
+    };
+    onProfileChange(sanitizedProfile); 
+    onClose(); 
+  };
+
   const handleSaveConfig = () => { onSystemConfigChange(config); onClose(); };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 800000) {
+        alert("Image too large. Please select a file smaller than 800KB.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProfile({ ...profile, logo: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const renderContent = () => {
     switch (activeTab) {
         case 'profile':
             return (
-                <div className="space-y-4 animate-fade-in">
-                    <div><label className="block text-sm font-medium">Shop Name</label><input type="text" name="name" value={profile.name || ''} onChange={(e) => setProfile({...profile, name: e.target.value})} className={formInputStyle} /></div>
-                    <div><label className="block text-sm font-medium">Address</label><textarea name="address" value={profile.address || ''} onChange={(e) => setProfile({...profile, address: e.target.value})} className={formInputStyle} rows={3} /></div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div><label className="block text-sm font-medium">Phone</label><input type="tel" name="phone" value={profile.phone || ''} onChange={(e) => setProfile({...profile, phone: e.target.value})} className={formInputStyle} /></div>
-                        <div><label className="block text-sm font-medium">GSTIN</label><input type="text" name="gstin" value={profile.gstin || ''} onChange={(e) => setProfile({...profile, gstin: e.target.value})} className={formInputStyle} /></div>
+                <div className="space-y-6 animate-fade-in pb-4">
+                    <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-700/30 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-900/50">
+                        <div className="relative">
+                            <div className="w-28 h-28 rounded-xl bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shadow-sm">
+                                {profile.logo ? (
+                                    <img src={profile.logo} alt="Business Logo" className="w-full h-full object-contain p-1" />
+                                ) : (
+                                    <div className="text-slate-300 dark:text-slate-600 text-center">
+                                        <CloudIcon className="h-12 w-12 mx-auto" />
+                                        <span className="text-[10px] font-black uppercase mt-1 block">No Logo</span>
+                                    </div>
+                                )}
+                            </div>
+                            <label htmlFor="logo-upload" className="absolute -bottom-2 -right-2 p-2 bg-indigo-600 text-white rounded-full shadow-lg cursor-pointer hover:bg-indigo-700 transition-all transform active:scale-90">
+                                <CameraIcon className="h-5 w-5" />
+                                <input type="file" id="logo-upload" accept="image/*" onChange={handleLogoChange} className="hidden" />
+                            </label>
+                        </div>
+                        <div className="flex-grow text-center sm:text-left">
+                            <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Business Logo</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">This logo will appear on all your digital and printed invoices.</p>
+                            <div className="flex gap-3 justify-center sm:justify-start">
+                                <label htmlFor="logo-upload" className="px-4 py-2 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-[11px] font-black rounded-lg cursor-pointer hover:bg-indigo-200 transition-all uppercase tracking-widest border border-indigo-200 dark:border-indigo-800">
+                                    {profile.logo ? 'Change Image' : 'Select Image'}
+                                </label>
+                                {profile.logo && (
+                                    <button 
+                                        onClick={() => setProfile({ ...profile, logo: '' })}
+                                        className="px-4 py-2 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 text-[11px] font-black rounded-lg hover:bg-rose-100 transition-all uppercase tracking-widest border border-rose-100 dark:border-rose-900/40"
+                                    >
+                                        Remove
+                                    </button>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                     <div className="flex justify-end pt-4"><button type="button" onClick={handleSaveProfile} className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow hover:bg-indigo-700"><CheckCircleIcon className="h-5 w-5" /> Save Profile</button></div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="md:col-span-2">
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Shop Name</label>
+                            <input type="text" name="name" value={profile.name || ''} onChange={(e) => setProfile({...profile, name: e.target.value})} className={formInputStyle} />
+                        </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Address</label>
+                            <textarea name="address" value={profile.address || ''} onChange={(e) => setProfile({...profile, address: e.target.value})} className={formInputStyle} rows={3} />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Phone</label>
+                            <input type="tel" name="phone" value={profile.phone || ''} onChange={(e) => setProfile({...profile, phone: e.target.value})} className={formInputStyle} />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">GSTIN</label>
+                            <input type="text" name="gstin" value={profile.gstin || ''} onChange={(e) => setProfile({...profile, gstin: e.target.value})} className={formInputStyle} />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">UPI ID (for QR Code)</label>
+                            <input type="text" name="upiId" value={profile.upiId || ''} onChange={(e) => setProfile({...profile, upiId: e.target.value})} className={formInputStyle} placeholder="example@upi" />
+                        </div>
+                    </div>
+                     <div className="flex justify-end pt-8 border-t dark:border-slate-700">
+                        <button type="button" onClick={handleSaveProfile} className="flex items-center gap-3 px-10 py-3 bg-indigo-600 text-white font-black rounded-xl shadow-xl hover:bg-indigo-700 transform active:scale-95 transition-all uppercase tracking-widest text-sm">
+                            <CheckCircleIcon className="h-6 w-6" /> Update Profile
+                        </button>
+                    </div>
                 </div>
             );
         case 'language':
@@ -231,12 +246,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <option value="kn">Kannada (ಕನ್ನಡ)</option>
                                 <option value="ml">Malayalam (മലയാളം)</option>
                                 <option value="pa">Punjabi (ਪੰਜਾਬੀ)</option>
-                                <option value="or">Oriya (ଓડ଼િଆ)</option>
+                                <option value="or">Oriya (ଓଡ଼ିଆ)</option>
                                 <option value="ur">Urdu (اردو)</option>
                             </select>
-                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700">
-                                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.707 6.586 4.293 8z"/></svg>
-                            </div>
                         </div>
                     </div>
                     <div className="flex justify-end pt-4 border-t dark:border-slate-700">
@@ -258,20 +270,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <button onClick={onBackupData} className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-green-600 text-white font-black rounded-xl shadow-lg hover:bg-green-700 transition-all"><DownloadIcon className="h-5 w-5" /> Backup Now</button>
                         </div>
                     </Card>
-
-                    {onRestoreData && (
-                        <Card title="Snapshot Restore (Last 7 Days or Older)" className="border-orange-100 bg-orange-50/20">
-                            <div className="py-10 text-center text-slate-400">Restore feature UI...</div>
-                        </Card>
-                    )}
                 </div>
             );
         case 'system':
             return (
                 <div className="space-y-8 animate-fade-in pb-10">
-                    {/* Mode Selector */}
                     <div>
-                        <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest">Select the primary mode of operation for the software.</h4>
+                        <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest">Select Software Mode</h4>
                         <div className="grid grid-cols-2 gap-4">
                             <button 
                                 onClick={() => setConfig({...config, softwareMode: 'Pharma'})}
@@ -280,9 +285,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${config.softwareMode === 'Pharma' ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
                                     {config.softwareMode === 'Pharma' && <div className="w-2 h-2 bg-white rounded-full"></div>}
                                 </div>
-                                <div className="text-left">
-                                    <span className="block font-black text-xl text-slate-800 dark:text-slate-100">Pharma</span>
-                                </div>
+                                <div className="text-left"><span className="block font-black text-xl text-slate-800 dark:text-slate-100">Pharma</span></div>
                             </button>
                             <button 
                                 onClick={() => setConfig({...config, softwareMode: 'Retail'})}
@@ -291,14 +294,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${config.softwareMode === 'Retail' ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
                                     {config.softwareMode === 'Retail' && <div className="w-2 h-2 bg-white rounded-full"></div>}
                                 </div>
-                                <div className="text-left">
-                                    <span className="block font-black text-xl text-slate-800 dark:text-slate-100">Retail</span>
-                                </div>
+                                <div className="text-left"><span className="block font-black text-xl text-slate-800 dark:text-slate-100">Retail</span></div>
                             </button>
                         </div>
                     </div>
 
-                    {/* Billing Settings */}
                     <div className="space-y-4">
                         <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Billing Settings</h4>
                         <div className="grid grid-cols-1 gap-3">
@@ -308,30 +308,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     </div>
 
-                    {/* Scanner Settings */}
-                    <div className="space-y-4">
-                        <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Scanner Settings</h4>
-                        <div className="grid grid-cols-1 gap-3">
-                            <ToggleRow label="Barcode Scanner Open (Y/N)" value={!!config.barcodeScannerOpenByDefault} onChange={(v) => setConfig({...config, barcodeScannerOpenByDefault: v})} />
-                            <p className="text-[10px] text-slate-500 dark:text-slate-400 pl-2">Only applicable in Retail mode.</p>
-                        </div>
-                    </div>
-
-                    {/* Footer Remarks */}
-                    <div className="space-y-4">
-                        <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Bill Footer Remarks</h4>
-                        <div className="space-y-4">
-                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Remark Line 1</label><input type="text" value={config.remarkLine1 || ''} onChange={(e) => setConfig({...config, remarkLine1: e.target.value})} className={formInputStyle} placeholder="Thank you for your visit!" /></div>
-                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Remark Line 2</label><input type="text" value={config.remarkLine2 || ''} onChange={(e) => setConfig({...config, remarkLine2: e.target.value})} className={formInputStyle} placeholder="Contact:9890072651" /></div>
-                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bank Detail (Line 3)</label><input type="text" value={config.bankDetails || ''} onChange={(e) => setConfig({...config, bankDetails: e.target.value})} className={formInputStyle} placeholder="SBI, A/C 10319428920, IFSC: SBIN0001922" /></div>
-                        </div>
-                    </div>
-
                     <div className="flex justify-end pt-8 border-t dark:border-slate-700">
-                        <button 
-                            onClick={handleSaveConfig} 
-                            className="w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-4 bg-indigo-600 text-white font-black rounded-xl shadow-xl hover:bg-indigo-700 transform active:scale-95 transition-all"
-                        >
+                        <button onClick={handleSaveConfig} className="w-full sm:w-auto flex items-center justify-center gap-3 px-10 py-4 bg-indigo-600 text-white font-black rounded-xl shadow-xl hover:bg-indigo-700 transform active:scale-95 transition-all">
                             <CheckCircleIcon className="h-6 w-6" /> Save Configuration
                         </button>
                     </div>
@@ -339,7 +317,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             );
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
         case 'printers': return (
-            <div className="space-y-6 animate-fade-in">
+            <div className="space-y-6 animate-fade-in pb-4">
                 <div className="flex flex-col gap-4 p-4 bg-slate-50 dark:bg-slate-700/50 rounded-lg border dark:border-slate-600">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -365,25 +343,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         </div>
                     )}
                     <div className="flex justify-end">
-                        <button 
-                            onClick={() => { 
-                                if(!newPrinterName) return; 
-                                onSystemConfigChange({
-                                    ...config, 
-                                    printers: [...(config.printers || []), { 
-                                        id: `p_${Date.now()}`, 
-                                        name: newPrinterName, 
-                                        format: newPrinterFormat, 
-                                        orientation: newPrinterOrientation,
-                                        isDefault: (config.printers || []).length === 0 
-                                    }]
-                                }); 
-                                setNewPrinterName(''); 
-                            }} 
-                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700"
-                        >
-                            Add Printer
-                        </button>
+                        <button onClick={() => { if(!newPrinterName) return; onSystemConfigChange({...config, printers: [...(config.printers || []), { id: `p_${Date.now()}`, name: newPrinterName, format: newPrinterFormat, orientation: newPrinterOrientation, isDefault: (config.printers || []).length === 0 }]}); setNewPrinterName(''); }} className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow hover:bg-indigo-700">Add Printer</button>
                     </div>
                 </div>
                 <div className="space-y-2">
@@ -395,26 +355,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 <p className="text-[11px] text-slate-500">{p.format} - {p.orientation || 'Portrait'}</p>
                             </div>
                             <div className="flex gap-2">
-                                {!p.isDefault && (
-                                    <button 
-                                        onClick={() => onSystemConfigChange({...config, printers: config.printers?.map(pr => ({...pr, isDefault: pr.id === p.id}))})} 
-                                        className="text-[10px] font-black text-indigo-600 hover:underline px-2"
-                                    >
-                                        SET DEFAULT
-                                    </button>
-                                )}
-                                <button 
-                                    onClick={() => onSystemConfigChange({...config, printers: config.printers?.filter(pr => pr.id !== p.id)})} 
-                                    className="p-1 text-rose-500 hover:bg-rose-50 rounded"
-                                >
-                                    <TrashIcon className="h-5 w-5"/>
-                                </button>
+                                {!p.isDefault && (<button onClick={() => onSystemConfigChange({...config, printers: config.printers?.map(pr => ({...pr, isDefault: pr.id === p.id}))})} className="text-[10px] font-black text-indigo-600 hover:underline px-2">SET DEFAULT</button>)}
+                                <button onClick={() => onSystemConfigChange({...config, printers: config.printers?.filter(pr => pr.id !== p.id)})} className="p-1 text-rose-500 hover:bg-rose-50 rounded"><TrashIcon className="h-5 w-5"/></button>
                             </div>
                         </div>
                     ))}
-                    {(!config.printers || config.printers.length === 0) && (
-                        <div className="py-10 text-center text-slate-400 italic">No printers configured yet.</div>
-                    )}
                 </div>
             </div>
         );
@@ -430,22 +375,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         <div className="flex border-b dark:border-slate-700 mb-6 overflow-x-auto pb-1 flex-shrink-0 gap-1">
             <TabButton label="Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
-            <TabButton label="Subscription" isActive={activeTab === 'subscription'} onClick={() => setActiveTab('subscription')} icon={<CloudIcon className="h-5 w-5" />} />
-            <TabButton label="Backup & Restore" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
+            <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
             <TabButton label="Operators" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Printers" isActive={activeTab === 'printers'} onClick={() => setActiveTab('printers')} icon={<PrinterIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />
             <TabButton label="GST" isActive={activeTab === 'gstMaster'} onClick={() => setActiveTab('gstMaster')} icon={<PercentIcon className="h-5 w-5" />} />
         </div>
         
-        <div className="flex-grow overflow-y-auto min-h-[60vh]">
+        <div className="flex-grow overflow-y-auto min-h-[60vh] px-1">
             {renderContent()}
         </div>
 
         <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700 flex-shrink-0">
-            <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-black hover:bg-slate-700 transition-all">
-                Close
-            </button>
+            <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-black hover:bg-slate-700 transition-all">Close</button>
         </div>
       </div>
     </Modal>
