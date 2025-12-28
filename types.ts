@@ -148,7 +148,9 @@ export interface GstRate {
 
 export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customerLedger' | 'salesReport' | 'companyWiseSale' | 'companyWiseBillWiseProfit' | 'salesmanReport' | 'chequePrint' | 'subscriptionAdmin';
 
-export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView;
+export type GstReportView = 'gstr3b' | 'hsnSales' | 'hsnPurchase' | 'gstWiseSales';
+
+export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView | GstReportView;
 
 export interface CompanyProfile {
   name: string;
