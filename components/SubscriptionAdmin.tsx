@@ -10,6 +10,21 @@ import { PencilIcon, CheckCircleIcon, CloudIcon, UserCircleIcon, AdjustmentsIcon
 const inputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 const selectStyle = "w-full p-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500 appearance-none";
 
+/**
+ * Removes 'undefined' properties recursively to comply with Firestore data requirements.
+ */
+const sanitizeForFirestore = (obj: any): any => {
+  if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj)
+        .filter(([_, v]) => v !== undefined)
+        .map(([k, v]) => [k, sanitizeForFirestore(v)])
+    );
+  }
+  return obj;
+};
+
 interface ManageSubModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -58,7 +73,8 @@ const ManageSubModal: React.FC<ManageSubModalProps> = ({ isOpen, onClose, mappin
         setSaving(true);
         try {
             const docRef = doc(db, `users/${mapping.ownerId}/systemConfig`, 'config');
-            await setDoc(docRef, config as any, { merge: true });
+            // FIX: Sanitize the config object before sending to Firestore
+            await setDoc(docRef, sanitizeForFirestore(config), { merge: true });
             alert("Subscription updated successfully!");
             onUpdate();
             onClose();

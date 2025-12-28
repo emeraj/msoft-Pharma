@@ -59,8 +59,13 @@ export class BluetoothHelper {
       });
 
       return true;
-    } catch (error) {
-      console.error("Bluetooth Connection Error:", error);
+    } catch (error: any) {
+      // Gracefully handle user cancellation
+      if (error.name === 'NotFoundError' || error.message?.includes('User cancelled')) {
+        console.log("Bluetooth device selection was cancelled by the user.");
+      } else {
+        console.error("Bluetooth Connection Error:", error);
+      }
       this._isConnected = false;
       return false;
     }
