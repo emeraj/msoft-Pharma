@@ -18,36 +18,54 @@ export class BluetoothHelper {
     try {
       if (this.isConnected && this.characteristic) return true;
 
-      // Standard Thermal Printer Service UUIDs
-      const serviceUuids = ['000018f0-0000-1000-8000-00805f9b34fb', '0000ff00-0000-1000-8000-00805f9b34fb'];
+      // Expanded list of standard and common proprietary Thermal Printer GATT Service UUIDs
+      const serviceUuids = [
+        '000018f0-0000-1000-8000-00805f9b34fb', // Standard
+        '0000ff00-0000-1000-8000-00805f9b34fb', // Common 1
+        '0000ae30-0000-1000-8000-00805f9b34fb', // Common 2
+        '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Microchip/Generic
+        'e7e11001-49f2-4d3d-9d33-317424647304', // Generic 2
+      ];
       
+      // Use acceptAllDevices to ensure the user can see all nearby devices.
+      // We must provide optionalServices to access them after connection.
       this.device = await (navigator as any).bluetooth.requestDevice({
-        filters: [
-          { name: 'BT-Printer' },
-          { namePrefix: 'MPT' },
-          { namePrefix: 'InnerPrinter' },
-          { services: serviceUuids }
-        ],
+        acceptAllDevices: true,
         optionalServices: serviceUuids
       });
+
+      if (!this.device) return false;
 
       const server = await this.device.gatt?.connect();
       if (!server) throw new Error("GATT Server connection failed");
 
       // Try to find the write characteristic across common services
-      for (const uuid of serviceUuids) {
+      this.characteristic = null;
+      
+      // Get all primary services to see what the device actually offers
+      const services = await server.getPrimaryServices();
+      
+      for (const service of services) {
         try {
-          const service = await server.getPrimaryService(uuid);
           const characteristics = await service.getCharacteristics();
-          const writeChar = characteristics.find((c: any) => c.properties.write || c.properties.writeWithoutResponse);
+          // Find any characteristic that supports writing
+          const writeChar = characteristics.find((c: any) => 
+            c.properties.write || c.properties.writeWithoutResponse
+          );
+          
           if (writeChar) {
             this.characteristic = writeChar;
+            console.log("Found writable characteristic in service:", service.uuid);
             break;
           }
-        } catch (e) { continue; }
+        } catch (e) { 
+          continue; 
+        }
       }
 
-      if (!this.characteristic) throw new Error("No writable characteristic found on printer");
+      if (!this.characteristic) {
+        throw new Error("Connected, but no writable characteristic found. This device might not be a compatible BLE printer.");
+      }
       
       this._isConnected = true;
 
@@ -65,6 +83,7 @@ export class BluetoothHelper {
         console.log("Bluetooth device selection was cancelled by the user.");
       } else {
         console.error("Bluetooth Connection Error:", error);
+        alert(`Bluetooth Error: ${error.message || 'Unknown error'}`);
       }
       this._isConnected = false;
       return false;
@@ -84,7 +103,12 @@ export class BluetoothHelper {
     const chunkSize = 20;
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, i + chunkSize);
-      await this.characteristic!.writeValue(chunk);
+      // Determine best write method
+      if (this.characteristic.properties.writeWithoutResponse) {
+        await this.characteristic.writeValueWithoutResponse(chunk);
+      } else {
+        await this.characteristic.writeValue(chunk);
+      }
     }
   }
 
