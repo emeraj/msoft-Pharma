@@ -99,14 +99,14 @@ const TextScannerModal: React.FC<{
     if (!isOpen) return null;
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="High-Speed ID Scanner" maxWidth="max-w-xl">
+        <Modal isOpen={isOpen} onClose={onClose} title="AI Product Details Scanner" maxWidth="max-w-xl">
             <div className="space-y-4">
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border-4 border-indigo-600 shadow-2xl">
                     <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-2/3 h-1/2 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
-                                FOCUS ON BARCODE / PART NO
+                                POINT AT MEDICINE PACK / LABEL
                             </div>
                             <div className={`w-full h-0.5 bg-red-500/50 ${isProcessing ? 'hidden' : 'animate-pulse'}`}></div>
                         </div>
@@ -114,7 +114,7 @@ const TextScannerModal: React.FC<{
                     {isProcessing && (
                         <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-white z-20">
                             <div className="animate-spin h-12 w-12 border-4 border-indigo-400 border-t-transparent rounded-full mb-3 shadow-lg"></div>
-                            <p className="font-black text-sm uppercase tracking-tighter italic">Identifying Product...</p>
+                            <p className="font-black text-sm uppercase tracking-tighter">Gemini is Gathering Details...</p>
                         </div>
                     )}
                 </div>
@@ -125,10 +125,10 @@ const TextScannerModal: React.FC<{
                         disabled={isProcessing} 
                         className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black text-lg shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                     >
-                        <CameraIcon className="h-7 w-7" /> SCAN & IDENTIFY
+                        <CameraIcon className="h-7 w-7" /> CAPTURE & IDENTIFY
                     </button>
                     <p className="text-[11px] text-center text-slate-500 dark:text-slate-400 px-4">
-                        Speed Optimization: AI is now focusing strictly on **Barcode or Technical ID** for instant billing.
+                        Point the camera at the product label. AI will try to extract **Name, Part No, Batch, and Expiry** automatically.
                     </p>
                 </div>
             </div>
@@ -419,51 +419,33 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     try {
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        
-        // OPTIMIZED PROMPT FOR SPEED: Only look for ID/Code
-        const prompt = `Identify the Barcode or SKU/Part Number from this label. Return ONLY valid JSON: { "code": "..." }. If no code is visible, use the Brand Name: { "name": "..." }.`;
-        
+        const prompt = `Strictly analyze this product label image. Extract with high precision: 1. Brand Name / Commercial Name. 2. Technical Code / SKU / Part Number / Barcode string. 3. Batch Number. 4. Expiry Date (YYYY-MM or MM/YY). Return ONLY valid JSON: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }.`;
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: base64Data } }, { text: prompt }] }],
             config: { 
                 responseMimeType: "application/json",
-                responseSchema: { 
-                    type: Type.OBJECT, 
-                    properties: { 
-                        code: { type: Type.STRING }, 
-                        name: { type: Type.STRING } 
-                    } 
-                },
-                maxOutputTokens: 50, // Limit output for speed
-                thinkingConfig: { thinkingBudget: 0 } // Disable thinking for lowest latency
+                responseSchema: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, technicalCode: { type: Type.STRING }, batch: { type: Type.STRING }, expiry: { type: Type.STRING } } }
             }
         });
-
         if (!response.text) throw new Error("No response from AI");
         const detected = JSON.parse(response.text);
-        const { code: dCode, name: dName } = detected;
-        
+        const { name: dName, technicalCode: dCode, batch: dBatch } = detected;
         if ((!dName || dName === "Unknown") && (!dCode || dCode === "Unknown")) {
-            alert("Could not identify product code.");
+            alert("Could not identify product.");
             setIsOcrProcessing(false);
             return;
         }
-
-        const normCode = dCode && dCode !== "Unknown" ? normalizeCode(dCode) : "";
-        const normName = dName && dName !== "Unknown" ? normalizeCode(dName) : "";
-        
-        // Primary Match: Barcode/Code
+        const normCode = dCode !== "Unknown" ? normalizeCode(dCode) : "";
+        const normName = dName !== "Unknown" ? normalizeCode(dName) : "";
+        const normBatch = dBatch !== "Unknown" ? normalizeCode(dBatch) : "";
         let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode) === normCode);
-        
-        // Fallback: Brand Name
         if (!bestMatch && normName !== "") {
             bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
         }
-
         if (bestMatch) {
-            // Find available batch
-            const targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
+            let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
+            if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
             if (targetBatch) {
                 await handleAddToCartLocal(bestMatch, targetBatch);
                 setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
@@ -476,7 +458,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         } else {
             setSearchTerm(dCode !== "Unknown" ? dCode : dName);
             setShowTextScanner(false);
-            alert(`ID "${dCode !== "Unknown" ? dCode : dName}" not found in inventory.`);
+            alert(`Detected "${dCode !== "Unknown" ? dCode : dName}" but not in inventory.`);
         }
     } catch (e) {
         alert("Scan failed.");
