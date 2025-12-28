@@ -17,10 +17,11 @@ import { getTranslation } from '../utils/translationHelper';
 import { GoogleGenAI, Type } from "@google/genai";
 import { BluetoothHelper } from '../utils/BluetoothHelper';
 
+// Helper for matching technical codes (removes dashes, dots, spaces)
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureName: string }> = ({ isOpen, onClose, featureName }) => {
-    const upiId = "9890072651@upi";
+    const upiId = "9890072651@upi"; // M. Soft India
     const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=5000&cu=INR`;
     const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
 
@@ -34,20 +35,24 @@ const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureNa
                 </div>
                 <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Upgrade to Cloud-TAG Pro</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 mb-6">Unlock AI Smart Scanning, Multi-Operator support, and Unlimited Cloud Sync.</p>
+                
                 <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-indigo-300 mb-6">
                     <img src={qrCodeUrl} alt="Payment QR" className="w-40 h-40 mx-auto border-4 border-white rounded-lg shadow-sm" />
                     <p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs text-slate-400 font-normal">/ Year</span></p>
                 </div>
+
                 <div className="bg-indigo-50 dark:bg-indigo-900/20 py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-4">
                     <CheckCircleIcon className="h-4 w-4 text-indigo-500" />
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp Screenshot: 9890072651</span>
                 </div>
+                
                 <button onClick={onClose} className="w-full py-2 text-slate-500 hover:text-slate-700 font-bold text-sm">Maybe Later</button>
             </div>
         </Modal>
     );
 };
 
+// OCR Scanner Component
 const TextScannerModal: React.FC<{ 
     isOpen: boolean; 
     onClose: () => void; 
@@ -153,6 +158,7 @@ const SubstituteModal: React.FC<{
                     <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Matching Composition</p>
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{target.composition}</p>
                 </div>
+
                 <div className="space-y-4">
                     {substitutes.length > 0 ? (
                         substitutes.map(p => {
@@ -169,6 +175,7 @@ const SubstituteModal: React.FC<{
                                             <p className="text-xs font-bold text-slate-700 dark:text-slate-300">1 * {p.unitsPerStrip || 1}</p>
                                         </div>
                                     </div>
+                                    
                                     <div className="space-y-2">
                                         {availableBatches.map(b => (
                                             <div key={b.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800/50 transition-colors">
@@ -251,6 +258,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastAddedBatchIdRef = useRef<string | null>(null);
   
+  // Refs for focusing cart item fields
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
@@ -275,7 +283,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const getExpiryDate = (expiryString: string): Date => {
       if (!expiryString) return new Date('9999-12-31');
       const [year, month] = expiryString.split('-').map(Number);
-      return new Date(year, month, 0);
+      return new Date(year, month, 0); // Last day of the expiry month
   };
 
   const formatStock = (stock: number, unitsPerStrip?: number): string => {
@@ -297,11 +305,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
   
+  // High-speed professional workflow: handle initial focus after adding item
   useEffect(() => {
     if (lastAddedBatchIdRef.current) {
         const newItem = cart.find(item => item.batchId === lastAddedBatchIdRef.current);
         if (newItem) {
             let inputToFocus: HTMLInputElement | null | undefined = null;
+            // Cursor goes to strip (if available) then tabs...
             if (isPharmaMode && newItem.unitsPerStrip && newItem.unitsPerStrip > 1) { 
                 inputToFocus = cartItemStripInputRefs.current.get(lastAddedBatchIdRef.current); 
             } else { 
@@ -376,53 +386,80 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const handleTextScan = async (imageData: string) => {
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
     if (isFreePlan) { setShowUpgradeModal(true); return; }
+    
     setIsOcrProcessing(true);
     try {
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Strictly analyze this product label image. Extract with high precision: 1. Brand Name / Commercial Name. 2. Technical Code / SKU / Part Number / Barcode string. 3. Batch Number. 4. Expiry Date (YYYY-MM or MM/YY). Return ONLY valid JSON: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }.`;
+        
+        const prompt = `Strictly analyze this product label image. 
+        Extract with high precision:
+        1. Brand Name / Commercial Name.
+        2. Technical Code / SKU / Part Number / Barcode string (e.g. alphanumeric strings like ABC-123 or 89012345).
+        3. Batch Number (Look for BN, B.No, Batch).
+        4. Expiry Date (EXP, E., in YYYY-MM or MM/YY).
+        
+        Return ONLY valid JSON: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }. 
+        Use "Unknown" if a field is not found.`;
+
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: base64Data } }, { text: prompt }] }],
             config: { 
                 responseMimeType: "application/json",
-                responseSchema: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, technicalCode: { type: Type.STRING }, batch: { type: Type.STRING }, expiry: { type: Type.STRING } } }
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        name: { type: Type.STRING },
+                        technicalCode: { type: Type.STRING },
+                        batch: { type: Type.STRING },
+                        expiry: { type: Type.STRING }
+                    }
+                }
             }
         });
+
         if (!response.text) throw new Error("No response from AI");
         const detected = JSON.parse(response.text);
         const { name: dName, technicalCode: dCode, batch: dBatch } = detected;
+
         if ((!dName || dName === "Unknown") && (!dCode || dCode === "Unknown")) {
-            alert("Could not identify product.");
+            alert("Could not identify the product details. Ensure the label is clear.");
             setIsOcrProcessing(false);
             return;
         }
+
         const normCode = dCode !== "Unknown" ? normalizeCode(dCode) : "";
         const normName = dName !== "Unknown" ? normalizeCode(dName) : "";
         const normBatch = dBatch !== "Unknown" ? normalizeCode(dBatch) : "";
+
         let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode) === normCode);
+        
         if (!bestMatch && normName !== "") {
             bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
         }
+
         if (bestMatch) {
             let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
             if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
+            
             if (targetBatch) {
                 handleAddToCart(bestMatch, targetBatch);
                 setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
                 setTimeout(() => setScanResultFeedback(null), 3000);
                 setShowTextScanner(false);
             } else {
-                alert(`Found ${bestMatch.name} but out of stock.`);
+                alert(`Found ${bestMatch.name} but it is currently out of stock.`);
                 setShowTextScanner(false);
             }
         } else {
             setSearchTerm(dCode !== "Unknown" ? dCode : dName);
             setShowTextScanner(false);
-            alert(`Detected "${dCode !== "Unknown" ? dCode : dName}" but not in inventory.`);
+            alert(`Detected "${dCode !== "Unknown" ? dCode : dName}" but not found in your inventory.`);
         }
     } catch (e) {
-        alert("Scan failed.");
+        console.error("AI Scan Error:", e);
+        alert("Scan failed. Please check internet connection.");
     } finally {
         setIsOcrProcessing(false);
     }
@@ -467,38 +504,53 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const doReset = () => { if (isEditing) { if (onCancelEdit) onCancelEdit(); } else resetBillingForm(); setShouldResetAfterPrint(false); };
     const shouldReset = forceReset || shouldResetAfterPrint;
 
+    // Web Bluetooth Direct Connect Flow
     if (printer.connectionType === 'bluetooth') {
+        const confirmPrint = window.confirm(`Print Bill ${bill.billNumber} to ${printer.name}?`);
+        if (!confirmPrint) {
+            if (shouldReset) doReset();
+            return;
+        }
+
         try {
             const connected = await BluetoothHelper.connect();
             if (connected) {
-                // Pass Pharma Mode to generator to include batch details
-                const bytes = BluetoothHelper.generateEscPos(bill, companyProfile, isPharmaMode);
+                const bytes = BluetoothHelper.generateEscPos(bill, companyProfile);
                 await BluetoothHelper.printRaw(bytes);
                 if (shouldReset) doReset();
                 return;
             } else {
-                alert("Direct connect failed.");
+                alert("Failed to connect to Bluetooth printer. Try scanning again in settings.");
             }
         } catch (e) {
             console.error("Print Error", e);
         }
     }
 
+    // Standard Browser System Print
     const printWindow = window.open('', '_blank');
     if (printWindow) {
         const rootEl = document.createElement('div'); printWindow.document.body.appendChild(rootEl);
         const root = ReactDOM.createRoot(rootEl);
-        if (printer.format === 'Thermal') root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-        else if (printer.format === 'A5') {
-            if (printer.orientation === 'Landscape') root.render(<PrintableA5LandscapeBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-            else root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
-        } else root.render(<PrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        
+        if (printer.format === 'Thermal') {
+            root.render(<ThermalPrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        } else if (printer.format === 'A5') {
+            if (printer.orientation === 'Landscape') {
+                root.render(<PrintableA5LandscapeBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            } else {
+                root.render(<PrintableA5Bill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            }
+        } else {
+            root.render(<PrintableBill bill={bill} companyProfile={companyProfile} systemConfig={systemConfig} />);
+        }
+        
         setTimeout(() => { printWindow.print(); printWindow.close(); if (shouldReset) doReset(); }, 500);
     }
-  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit, isPharmaMode]);
+  }, [companyProfile, systemConfig, shouldResetAfterPrint, isEditing, onCancelEdit]);
 
   const handleSaveBill = useCallback(async (shouldPrint: boolean) => {
-    if (isSubscriptionExpired) { alert("Subscription expired."); return; }
+    if (isSubscriptionExpired) { alert("Your subscription has expired. Please renew to continue billing."); return; }
     if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
     let savedBill: Bill | null = null;
     const isUpdate = isEditing && editingBill;
@@ -519,6 +571,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) handleAddToCart(product, batch); } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
   };
 
+  // Add ALT+P Shortcut
   useEffect(() => {
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
         if (e.altKey && (e.key === 'p' || e.key === 'P')) {
@@ -533,7 +586,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const substitutes = useMemo(() => {
       if (!substituteTarget || !substituteTarget.composition) return [];
       const targetComp = substituteTarget.composition.toLowerCase().trim();
-      return products.filter(p => p.id !== substituteTarget.id && p.composition && p.composition.toLowerCase().trim() === targetComp);
+      return products.filter(p => 
+          p.id !== substituteTarget.id && 
+          p.composition && 
+          p.composition.toLowerCase().trim() === targetComp
+      );
   }, [substituteTarget, products]);
 
   return (
@@ -542,10 +599,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
           <div className="fixed top-20 right-4 z-[100] animate-bounce">
               <div className="bg-emerald-600 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 border-2 border-emerald-400">
                   <CheckCircleIcon className="h-6 w-6" />
-                  <div><p className="font-black text-sm uppercase tracking-tighter">Identified & Added</p><p className="text-xs opacity-90">{scanResultFeedback.name}</p></div>
+                  <div>
+                      <p className="font-black text-sm uppercase tracking-tighter">Identified & Added</p>
+                      <p className="text-xs opacity-90">{scanResultFeedback.name} (B: {scanResultFeedback.batch})</p>
+                  </div>
               </div>
           </div>
       )}
+
       <div className="lg:col-span-2">
         <Card title={isEditing ? `${t.billing.editBill}` : t.billing.createBill}>
           <div className="flex flex-col gap-2 mb-4">
@@ -559,19 +620,46 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                             return (
                                 <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                                     <div className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
-                                        <div className="flex flex-col"><span className={isOutOfStock ? 'text-rose-500' : ''}>{product.name} {isOutOfStock && '(Out of Stock)'}</span>{isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase mt-0.5 tracking-tight">{product.composition}</span>}</div>
-                                        {isPharmaMode && product.composition && (<button onClick={(e) => { e.stopPropagation(); setSubstituteTarget(product); }} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-lg text-[10px] font-black uppercase tracking-tighter hover:bg-indigo-200 transition-all flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 shadow-sm"><SwitchHorizontalIcon className="h-3 w-3" />Alternatives</button>)}
+                                        <div className="flex flex-col">
+                                            <span className={isOutOfStock ? 'text-rose-500' : ''}>{product.name} {isOutOfStock && '(Out of Stock)'}</span>
+                                            {isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase mt-0.5 tracking-tight">{product.composition}</span>}
+                                        </div>
+                                        {isPharmaMode && product.composition && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); setSubstituteTarget(product); }}
+                                                className="px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-lg text-[10px] font-black uppercase tracking-tighter hover:bg-indigo-200 transition-all flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 shadow-sm"
+                                            >
+                                                <SwitchHorizontalIcon className="h-3 w-3" />
+                                                Alternatives
+                                            </button>
+                                        )}
                                     </div>
                                     <ul className="pl-4 pb-2">
                                         {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { 
                                             const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; 
                                             const expiryDate = getExpiryDate(batch.expiryDate);
-                                            const today = new Date(); today.setHours(0,0,0,0);
+                                            const today = new Date();
+                                            today.setHours(0,0,0,0);
                                             const isExpired = expiryDate < today;
+
                                             return (
-                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired ? 'opacity-70' : ''}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
-                                                    <div>{isPharmaMode && (<><span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span><span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>Exp: {batch.expiryDate}</span></>)}</div>
-                                                    <div className="flex items-center gap-3"><span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30'}`}>Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock}`}</span></div>
+                                                <li key={batch.id} 
+                                                    className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired ? 'opacity-70' : ''}`} 
+                                                    onClick={() => handleAddToCart(product, batch)} 
+                                                    onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}
+                                                >
+                                                    <div>{isPharmaMode && (<>
+                                                        <span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span>
+                                                        <span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>
+                                                            Exp: {batch.expiryDate} {isExpired && '(EXPIRED)'}
+                                                        </span>
+                                                    </>)}</div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span>
+                                                        <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400'}`}>
+                                                            Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock}`}
+                                                        </span>
+                                                    </div>
                                                 </li>
                                             ); 
                                         })}
@@ -581,28 +669,45 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                         })}</ul></div>)}
                 </div>
                 <div className="flex gap-1">
-                    <button onClick={() => setShowScanner(true)} className="p-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex flex-col items-center justify-center min-w-[80px]"><BarcodeIcon className="h-6 w-6" /><span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">BARCODE</span></button>
-                    <button onClick={handleAiScanClick} className={`p-3 rounded-lg flex flex-col items-center justify-center min-w-[80px] transition-colors ${isFreePlan ? 'bg-slate-100 text-slate-400 grayscale' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}><CameraIcon className="h-6 w-6" /><span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">AI SCAN</span></button>
+                    <button onClick={() => setShowScanner(true)} className="p-3 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 flex flex-col items-center justify-center min-w-[80px]" title="Barcode Scan">
+                        <BarcodeIcon className="h-6 w-6" />
+                        <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">BARCODE</span>
+                    </button>
+                    <button onClick={handleAiScanClick} className={`p-3 rounded-lg flex flex-col items-center justify-center min-w-[80px] transition-colors ${isFreePlan ? 'bg-slate-100 text-slate-400 grayscale' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`} title="AI Scan">
+                        <CameraIcon className="h-6 w-6" />
+                        <span className="text-[10px] font-extrabold mt-1 uppercase tracking-tighter">AI SCAN</span>
+                    </button>
                 </div>
             </div>
           </div>
-          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
+          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700" title="Remove Item"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
         </Card>
       </div>
+
       <div className="lg:col-span-1">
         <Card title="Bill Summary" className="sticky top-20">
             {isSubscriptionExpired ? (
                 <div className="bg-rose-50 dark:bg-rose-900/20 border-2 border-rose-500 rounded-xl p-6 text-center animate-pulse-subtle">
-                    <div className="flex justify-center mb-3"><div className="p-3 bg-rose-100 dark:bg-rose-900/40 rounded-full"><CloudIcon className="h-10 w-10 text-rose-600" /></div></div>
+                    <div className="flex justify-center mb-3">
+                        <div className="p-3 bg-rose-100 dark:bg-rose-900/40 rounded-full">
+                            <CloudIcon className="h-10 w-10 text-rose-600" />
+                        </div>
+                    </div>
                     <h3 className="text-lg font-black text-rose-600 dark:text-rose-400 uppercase tracking-tighter">Billing Disabled</h3>
-                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">Your subscription has expired. Please renew.</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400 mt-2 leading-relaxed">
+                        Your subscription has expired. Please renew your premium membership to continue generating invoices.
+                    </p>
+                    <div className="mt-6 p-4 bg-white dark:bg-slate-800 rounded-lg shadow-inner border border-rose-100 dark:border-rose-900/40">
+                         <p className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Contact Support</p>
+                         <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">9890072651</p>
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-4">
-                    <div className="relative"><label className="block text-sm font-medium text-slate-800 dark:text-slate-200">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label><div className="flex gap-2"><div className="relative flex-grow"><input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); }} onFocus={() => setShowCustomerSuggestions(true)} onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} autoComplete="off" />{showCustomerSuggestions && customerSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">{customerSuggestions.map(customer => (<li key={customer.id} onClick={() => handleSelectCustomer(customer)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200">{customer.name}</li>))}</ul>)}</div><button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"><PlusIcon className="h-5 w-5" /></button></div></div>
-                    {isPharmaMode && (<div><label className="block text-sm font-medium text-slate-800 dark:text-slate-200">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="e.g. Dr. Name" className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} /></div>)}
+                    <div className="relative"><label htmlFor="customerName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label><div className="flex gap-2"><div className="relative flex-grow"><input type="text" id="customerName" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); }} onFocus={() => setShowCustomerSuggestions(true)} onBlur={() => setTimeout(() => setShowCustomerSuggestions(false), 200)} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} autoComplete="off" />{showCustomerSuggestions && customerSuggestions.length > 0 && (<ul className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">{customerSuggestions.map(customer => (<li key={customer.id} onClick={() => handleSelectCustomer(customer)} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-slate-600 cursor-pointer text-sm text-slate-800 dark:text-slate-200">{customer.name} <span className="text-xs text-slate-500">({customer.phone || 'No Phone'})</span></li>))}</ul>)}</div><button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors" title="Add New Customer"><PlusIcon className="h-5 w-5" /></button></div></div>
+                    {isPharmaMode && (<div><label htmlFor="doctorName" className="block text-sm font-medium text-slate-800 dark:text-slate-200">{t.billing.doctorName}</label><input type="text" id="doctorName" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="e.g. Dr. Name" className={`mt-1 block w-full px-3 py-2 ${inputStyle}`} /></div>)}
                     <div className="border-t dark:border-slate-700 pt-4 space-y-2 text-slate-700 dark:text-slate-300"><div className="flex justify-between"><span>{t.billing.subtotal}</span><span>₹{subTotal.toFixed(2)}</span></div><div className="flex justify-between"><span>{t.billing.totalGst}</span><span>₹{totalGst.toFixed(2)}</span></div><div className="flex justify-between text-2xl font-bold text-slate-800 dark:text-slate-100 pt-2 border-t dark:border-slate-600 mt-2"><span>{t.billing.grandTotal}</span><span>₹{grandTotal.toFixed(2)}</span></div></div>
-                    <div className="pt-2 flex gap-2"><button onClick={() => handleSaveBill(true)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`}><PrinterIcon className="h-5 w-5" /> {isEditing ? "Update & Print" : t.billing.saveAndPrint}</button><button onClick={() => handleSaveBill(false)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{isEditing ? "Update Only" : "Save Only"}</button></div>
+                    <div className="pt-2 flex gap-2"><button onClick={() => handleSaveBill(true)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'}`} title="Save and Print (Alt+P)"><PrinterIcon className="h-5 w-5" /> {isEditing ? "Update & Print" : t.billing.saveAndPrint} (Alt+P)</button><button onClick={() => handleSaveBill(false)} disabled={cart.length === 0} className={`flex-1 text-white py-3 rounded-lg text-sm font-semibold shadow-md transition-colors duration-200 disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center gap-1 ${isEditing ? 'bg-slate-600 hover:bg-slate-700' : 'bg-blue-600 hover:bg-blue-700'}`} title="Save Only">{isEditing ? "Update Only" : "Save Only"}</button></div>
                 </div>
             )}
         </Card>

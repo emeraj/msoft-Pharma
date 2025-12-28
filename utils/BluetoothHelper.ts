@@ -18,14 +18,17 @@ export class BluetoothHelper {
     try {
       if (this.isConnected && this.characteristic) return true;
 
+      // Expanded list of standard and common proprietary Thermal Printer GATT Service UUIDs
       const serviceUuids = [
-        '000018f0-0000-1000-8000-00805f9b34fb',
-        '0000ff00-0000-1000-8000-00805f9b34fb',
-        '0000ae30-0000-1000-8000-00805f9b34fb',
-        '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-        'e7e11001-49f2-4d3d-9d33-317424647304',
+        '000018f0-0000-1000-8000-00805f9b34fb', // Standard
+        '0000ff00-0000-1000-8000-00805f9b34fb', // Common 1
+        '0000ae30-0000-1000-8000-00805f9b34fb', // Common 2
+        '49535343-fe7d-4ae5-8fa9-9fafd205e455', // Microchip/Generic
+        'e7e11001-49f2-4d3d-9d33-317424647304', // Generic 2
       ];
       
+      // Use acceptAllDevices to ensure the user can see all nearby devices.
+      // We must provide optionalServices to access them after connection.
       this.device = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: serviceUuids
@@ -36,39 +39,50 @@ export class BluetoothHelper {
       const server = await this.device.gatt?.connect();
       if (!server) throw new Error("GATT Server connection failed");
 
+      // Try to find the write characteristic across common services
       this.characteristic = null;
+      
+      // Get all primary services to see what the device actually offers
       const services = await server.getPrimaryServices();
       
       for (const service of services) {
         try {
           const characteristics = await service.getCharacteristics();
+          // Find any characteristic that supports writing
           const writeChar = characteristics.find((c: any) => 
             c.properties.write || c.properties.writeWithoutResponse
           );
           
           if (writeChar) {
             this.characteristic = writeChar;
+            console.log("Found writable characteristic in service:", service.uuid);
             break;
           }
-        } catch (e) { continue; }
+        } catch (e) { 
+          continue; 
+        }
       }
 
       if (!this.characteristic) {
-        throw new Error("No writable characteristic found.");
+        throw new Error("Connected, but no writable characteristic found. This device might not be a compatible BLE printer.");
       }
       
       this._isConnected = true;
 
+      // Listen for disconnection
       this.device.addEventListener('gattserverdisconnected', () => {
         this.characteristic = null;
         this._isConnected = false;
+        console.log("Printer disconnected");
       });
 
       return true;
     } catch (error: any) {
+      // Gracefully handle user cancellation
       if (error.name === 'NotFoundError' || error.message?.includes('User cancelled')) {
-        console.log("Cancelled");
+        console.log("Bluetooth device selection was cancelled by the user.");
       } else {
+        console.error("Bluetooth Connection Error:", error);
         alert(`Bluetooth Error: ${error.message || 'Unknown error'}`);
       }
       this._isConnected = false;
@@ -76,15 +90,20 @@ export class BluetoothHelper {
     }
   }
 
+  /**
+   * Send ESC/POS bytes to the printer
+   */
   static async printRaw(data: Uint8Array) {
     if (!this.characteristic) {
       const connected = await this.connect();
       if (!connected) throw new Error("Printer not connected");
     }
 
+    // BLE MTU is usually small (~20 bytes). We chunk the data to ensure reliable delivery.
     const chunkSize = 20;
     for (let i = 0; i < data.length; i += chunkSize) {
       const chunk = data.slice(i, i + chunkSize);
+      // Determine best write method
       if (this.characteristic.properties.writeWithoutResponse) {
         await this.characteristic.writeValueWithoutResponse(chunk);
       } else {
@@ -93,138 +112,55 @@ export class BluetoothHelper {
     }
   }
 
+  /**
+   * Convert text to ESC/POS bytes (supports basic ASCII)
+   */
   static encodeText(text: string): Uint8Array {
     const encoder = new TextEncoder();
     return encoder.encode(text);
   }
 
   /**
-   * Generate enhanced ESC/POS receipt bytes matching Thermal Bill UI
+   * Generate simple ESC/POS receipt bytes
    */
-  static generateEscPos(bill: any, company: any, isPharma: boolean = false): Uint8Array {
-    const lineChar = "-";
-    const width = 32; // Standard 58mm printer char width
-    const line = lineChar.repeat(width) + "\n";
-    
+  static generateEscPos(bill: any, company: any): Uint8Array {
+    const line = "--------------------------------\n";
     let cmds: number[] = [
       0x1B, 0x40, // Initialize
+      0x1B, 0x61, 0x01, // Center align
     ];
 
     const addText = (t: string) => Array.from(this.encodeText(t)).forEach(b => cmds.push(b));
-    const setCenter = () => cmds.push(0x1B, 0x61, 0x01);
-    const setLeft = () => cmds.push(0x1B, 0x61, 0x00);
-    const setRight = () => cmds.push(0x1B, 0x61, 0x02);
-    const setBold = (on: boolean) => cmds.push(0x1B, 0x45, on ? 0x01 : 0x00);
-    const setBig = (on: boolean) => cmds.push(0x1D, 0x21, on ? 0x11 : 0x00); // Double width/height
-
-    // 1. Header Section
-    setCenter();
-    setBold(true);
-    setBig(true);
+    
     addText(`${company.name}\n`);
-    setBig(false);
-    setBold(false);
-    addText(`${company.address?.substring(0, 64)}\n`);
+    addText(`${company.address?.substring(0, 32)}\n`);
     addText(`GST: ${company.gstin}\n`);
     addText(line);
-    setBold(true);
-    addText("TAX INVOICE\n");
-    setBold(false);
+    addText(`INVOICE: ${bill.billNumber}\n`);
+    addText(`Date: ${new Date(bill.date).toLocaleDateString()}\n`);
     addText(line);
-
-    // 2. Metadata Section
-    setLeft();
-    const dateStr = new Date(bill.date).toLocaleDateString();
-    addText(`Bill No: ${bill.billNumber}\n`);
-    addText(`Date: ${dateStr}\n`);
-    addText(`Customer: ${bill.customerName}\n`);
-    if (isPharma && bill.doctorName) {
-        addText(`Doctor: ${bill.doctorName}\n`);
-    }
-    addText(line);
-
-    // 3. Items Table Header
-    // Column map: Item (16), Qty (4), Rate (6), Amt (6)
-    addText("Item            Qty   Rate   Amt\n");
-    addText(line);
-
-    // 4. Items List
-    bill.items.forEach((item: any, idx: number) => {
-        setLeft();
-        setBold(true);
-        // Product Name (can wrap or be truncated)
-        const displayName = `${idx + 1}. ${item.productName.substring(0, 28)}`;
-        addText(`${displayName}\n`);
-        setBold(false);
-        
-        // Pharma specific batch/expiry info
-        if (isPharma) {
-            addText(`  B:${item.batchNumber} E:${item.expiryDate}\n`);
-        }
-
-        // Quantities and Price Line
-        const qty = item.quantity.toString().padStart(3);
-        const rate = item.mrp.toFixed(1).padStart(6);
-        const amt = item.total.toFixed(1).padStart(7);
-        // Position: Empty(16) + Qty(3) + Space(1) + Rate(6) + Space(1) + Amt(7) = 32
-        addText(`${" ".repeat(13)}${qty} ${rate} ${amt}\n`);
-    });
-
-    addText(line);
-
-    // 5. Totals Section
-    setRight();
-    const subTotal = (bill.subTotal || 0).toFixed(2);
-    const totalGst = (bill.totalGst || 0).toFixed(2);
-    const roundOff = (bill.roundOff || 0).toFixed(2);
-    const grandTotal = (bill.grandTotal || 0).toFixed(2);
-
-    addText(`SUBTOTAL: ${subTotal}\n`);
-    addText(`TOTAL GST: ${totalGst}\n`);
-    if (Math.abs(bill.roundOff) > 0.01) {
-        addText(`ROUND OFF: ${roundOff}\n`);
-    }
-    setBold(true);
-    addText(`GRAND TOTAL: Rs.${grandTotal}\n`);
-    setBold(false);
-    addText(line);
-
-    // 6. GST Breakdown Table
-    setCenter();
-    setBold(true);
-    addText("GST Summary\n");
-    setBold(false);
-    addText("Rate    Taxable    CGST    SGST\n");
     
-    // Group items by GST for the summary
-    const summary = new Map<number, { taxable: number; gst: number }>();
+    cmds.push(0x1B, 0x61, 0x00); // Left align
+    addText("Item            Qty      Amt\n");
+    addText(line);
+
     bill.items.forEach((item: any) => {
-        const taxable = item.total / (1 + item.gst / 100);
-        const gst = item.total - taxable;
-        const current = summary.get(item.gst) || { taxable: 0, gst: 0 };
-        current.taxable += taxable;
-        current.gst += gst;
-        summary.set(item.gst, current);
+        const name = item.productName.substring(0, 15).padEnd(16);
+        const qty = item.quantity.toString().padStart(4);
+        const amt = item.total.toFixed(2).padStart(10);
+        addText(`${name}${qty}${amt}\n`);
     });
 
-    summary.forEach((val, rate) => {
-        const rStr = `${rate}%`.padEnd(6);
-        const tStr = val.taxable.toFixed(1).padStart(8);
-        const cStr = (val.gst / 2).toFixed(1).padStart(8);
-        const sStr = (val.gst / 2).toFixed(1).padStart(8);
-        // Summary lines are tight, we use slightly different spacing if needed
-        addText(`${rate}%  ${val.taxable.toFixed(1).padStart(7)}  ${(val.gst/2).toFixed(1).padStart(7)}  ${(val.gst/2).toFixed(1).padStart(7)}\n`);
-    });
-    
     addText(line);
-
-    // 7. Footer
-    setCenter();
-    addText("Thank You! Visit Again\n");
-    if (company.remarkLine1) addText(`${company.remarkLine1}\n`);
+    cmds.push(0x1B, 0x61, 0x02); // Right align
+    addText(`SUBTOTAL: ${bill.subTotal.toFixed(2)}\n`);
+    addText(`GST: ${bill.totalGst.toFixed(2)}\n`);
+    addText(`TOTAL: ${bill.grandTotal.toFixed(2)}\n`);
     
-    addText("\n\n\n\n"); // Feed
-    cmds.push(0x1D, 0x56, 0x41, 0x03); // Cut paper (if supported)
+    cmds.push(0x1B, 0x61, 0x01); // Center
+    addText("\nThank You! Visit Again\n");
+    addText("\n\n\n"); // Feed
+    cmds.push(0x1D, 0x56, 0x41, 0x03); // Cut paper
 
     return new Uint8Array(cmds);
   }
