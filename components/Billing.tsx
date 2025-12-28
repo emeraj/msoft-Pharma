@@ -227,11 +227,17 @@ interface BillingProps {
   onAddSalesman?: (salesman: Omit<Salesman, 'id'>) => Promise<Salesman | null>;
   onUpdateConfig: (config: SystemConfig) => void;
   isSubscriptionExpired?: boolean;
+  
+  // Cloud Cart Sync Props
+  cart: CartItem[];
+  onAddToCart: (item: CartItem) => Promise<void>;
+  onRemoveFromCart: (batchId: string) => Promise<void>;
+  onUpdateCartItem: (batchId: string, updates: Partial<CartItem>) => Promise<void>;
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 
-const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, onUpdateConfig, isSubscriptionExpired }) => {
+const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, onUpdateConfig, isSubscriptionExpired, cart, onAddToCart, onRemoveFromCart, onUpdateCartItem }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; 
@@ -239,7 +245,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const isFreePlan = (systemConfig.subscription?.planType || 'Free') === 'Free';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
@@ -318,7 +323,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   useEffect(() => {
     if (editingBill) {
-      setCart(editingBill.items);
       setCustomerName(editingBill.customerName);
       const existingCust = customers.find(c => c.id === editingBill.customerId || c.name === editingBill.customerName);
       setSelectedCustomer(existingCust || null);
@@ -326,11 +330,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       if (editingBill.paymentMode) { setPaymentMode(editingBill.paymentMode); }
       if (editingBill.salesmanId) { setSelectedSalesmanId(editingBill.salesmanId); } else { setSelectedSalesmanId(''); }
     } else {
-      setCart([]); setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId('');
+      setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId('');
     }
   }, [editingBill, customers]);
 
-  const handleAddToCart = (product: Product, batch: Batch) => { 
+  const handleAddToCartLocal = async (product: Product, batch: Batch) => { 
     if (isSubscriptionExpired) { alert("Subscription Expired! Cannot add items to cart. Please renew."); return; }
     if (isPharmaMode) { 
         const expiry = getExpiryDate(batch.expiryDate); 
@@ -342,14 +346,49 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const sellingPrice = batch.saleRate || batch.mrp;
     
     if (existingItem) { 
-        if (unitsPerStrip <= 1) { updateCartItem(existingItem.batchId, 0, existingItem.looseQty + 1); } 
-        else { const newTotalUnits = existingItem.quantity + 1; const newStripQty = Math.floor(newTotalUnits / unitsPerStrip); const newLooseQty = newTotalUnits % unitsPerStrip; updateCartItem(existingItem.batchId, newStripQty, newLooseQty); } 
+        if (unitsPerStrip <= 1) { 
+            const newLQty = existingItem.looseQty + 1;
+            await onUpdateCartItem(existingItem.batchId, { 
+                looseQty: newLQty, 
+                quantity: newLQty, 
+                total: newLQty * (existingItem.mrp) 
+            }); 
+        } 
+        else { 
+            const newTotalUnits = existingItem.quantity + 1; 
+            const newStripQty = Math.floor(newTotalUnits / unitsPerStrip); 
+            const newLooseQty = newTotalUnits % unitsPerStrip; 
+            await onUpdateCartItem(existingItem.batchId, { 
+                stripQty: newStripQty, 
+                looseQty: newLooseQty, 
+                quantity: newTotalUnits, 
+                total: newTotalUnits * (existingItem.mrp / unitsPerStrip) 
+            }); 
+        } 
         lastAddedBatchIdRef.current = existingItem.batchId;
     } else { 
         const unitPrice = sellingPrice / unitsPerStrip; 
-        const newItem: CartItem = { productId: product.id, productName: product.name, batchId: batch.id, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, hsnCode: product.hsnCode, barcode: product.barcode, stripQty: 0, looseQty: 1, quantity: 1, mrp: sellingPrice, gst: product.gst, total: unitPrice, ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), ...(isPharmaMode && product.composition && { composition: product.composition }), ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), }; 
+        const newItem: CartItem = { 
+            productId: product.id, 
+            productName: product.name, 
+            batchId: batch.id, 
+            batchNumber: batch.batchNumber, 
+            expiryDate: batch.expiryDate, 
+            hsnCode: product.hsnCode, 
+            barcode: product.barcode, 
+            stripQty: 0, 
+            looseQty: 1, 
+            quantity: 1, 
+            mrp: sellingPrice, 
+            gst: product.gst, 
+            total: unitPrice, 
+            addedAt: Date.now(), // Client-side timestamp for instant sorting
+            ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), 
+            ...(isPharmaMode && product.composition && { composition: product.composition }), 
+            ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), 
+        }; 
         lastAddedBatchIdRef.current = newItem.batchId; 
-        setCart(currentCart => [...currentCart, newItem]); 
+        await onAddToCart(newItem); 
     } 
     setSearchTerm(''); 
     setSubstituteTarget(null);
@@ -360,7 +399,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     const product = products.find(p => p.barcode === code);
     if (product) {
         const batch = product.batches.find(b => b.stock > 0);
-        if (batch) handleAddToCart(product, batch);
+        if (batch) handleAddToCartLocal(product, batch);
         else alert("Out of stock.");
     } else alert(`Product with barcode ${code} not found.`);
   };
@@ -408,7 +447,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
             let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
             if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
             if (targetBatch) {
-                handleAddToCart(bestMatch, targetBatch);
+                await handleAddToCartLocal(bestMatch, targetBatch);
                 setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
                 setTimeout(() => setScanResultFeedback(null), 3000);
                 setShowTextScanner(false);
@@ -458,8 +497,40 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
 
   useEffect(() => { if (searchTerm && searchResults.length > 0) { const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); if (firstProductIndex !== -1) { setActiveIndices({ product: firstProductIndex, batch: 0 }); } else { setActiveIndices({ product: 0, batch: -1 }); } } else { setActiveIndices({ product: -1, batch: -1 }); } }, [searchTerm, searchResults, navigableBatchesByProduct]);
   
-  const updateCartItem = (batchId: string, stripQty: number, looseQty: number) => { setCart(currentCart => currentCart.map(item => { if (item.batchId === batchId) { const product = products.find(p => p.id === item.productId); const batch = product?.batches.find(b => b.id === batchId); if (!product || !batch) return item; const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; let sQty = isPharmaMode && unitsPerStrip > 1 ? Math.max(0, stripQty) : 0; let lQty = Math.max(0, looseQty); if (isPharmaMode && unitsPerStrip > 1 && lQty >= unitsPerStrip) { sQty += Math.floor(lQty / unitsPerStrip); lQty = lQty % unitsPerStrip; } const totalUnits = (sQty * unitsPerStrip) + lQty; if (totalUnits > 0 && totalUnits <= batch.stock) { const unitPrice = item.mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); return { ...item, stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice }; } else if (totalUnits === 0) return { ...item, stripQty: 0, looseQty: 0, quantity: 0, total: 0 }; } return item; })); };
-  const updateCartItemDetails = (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => { setCart(currentCart => currentCart.map(item => { if (item.batchId === batchId) { const { mrp, stripQty, looseQty } = updates; const unitsPerStrip = item.unitsPerStrip || 1; const totalUnits = (stripQty * unitsPerStrip) + looseQty; const unitPrice = mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); return { ...item, mrp, stripQty, looseQty, quantity: totalUnits, total: totalUnits * unitPrice }; } return item; })); };
+  const handleUpdateItemQty = async (batchId: string, stripQty: number, looseQty: number) => { 
+      const item = cart.find(i => i.batchId === batchId);
+      if (!item) return;
+      const product = products.find(p => p.id === item.productId);
+      const batch = product?.batches.find(b => b.id === batchId);
+      if (!product || !batch) return;
+
+      const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; 
+      let sQty = isPharmaMode && unitsPerStrip > 1 ? Math.max(0, stripQty) : 0; 
+      let lQty = Math.max(0, looseQty); 
+
+      if (isPharmaMode && unitsPerStrip > 1 && lQty >= unitsPerStrip) { 
+          sQty += Math.floor(lQty / unitsPerStrip); 
+          lQty = lQty % unitsPerStrip; 
+      } 
+      const totalUnits = (sQty * unitsPerStrip) + lQty; 
+
+      if (totalUnits > 0 && totalUnits <= batch.stock) { 
+          const unitPrice = item.mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); 
+          await onUpdateCartItem(batchId, { stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice }); 
+      } else if (totalUnits === 0) {
+          await onRemoveFromCart(batchId);
+      }
+  };
+
+  const updateCartItemMrp = async (batchId: string, updates: { mrp: number, stripQty: number, looseQty: number }) => { 
+      const item = cart.find(i => i.batchId === batchId);
+      if (!item) return;
+      const { mrp, stripQty, looseQty } = updates; 
+      const unitsPerStrip = item.unitsPerStrip || 1; 
+      const totalUnits = (stripQty * unitsPerStrip) + looseQty; 
+      const unitPrice = mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); 
+      await onUpdateCartItem(batchId, { mrp, stripQty, looseQty, quantity: totalUnits, total: totalUnits * unitPrice }); 
+  };
   
   const { subTotal, totalGst, grandTotal, roundOff } = useMemo(() => { let subTotal = 0; let totalGst = 0; cart.forEach(item => { const basePrice = item.total / (1 + item.gst / 100); subTotal += basePrice; totalGst += item.total - basePrice; }); const totalAmount = subTotal + totalGst; const grandTotal = Math.round(totalAmount); return { subTotal, totalGst, grandTotal, roundOff: grandTotal - totalAmount }; }, [cart]);
 
@@ -471,7 +542,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         try {
             const connected = await BluetoothHelper.connect();
             if (connected) {
-                // Pass Pharma flag to Bluetooth helper for consistent formatting
                 const bytes = BluetoothHelper.generateEscPos(bill, companyProfile, isPharmaMode);
                 await BluetoothHelper.printRaw(bytes);
                 if (shouldReset) doReset();
@@ -510,13 +580,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     }
   }, [cart, isEditing, editingBill, onUpdateBill, customerName, selectedCustomer, doctorName, subTotal, totalGst, grandTotal, roundOff, onGenerateBill, systemConfig, executePrint, t, paymentMode, selectedSalesmanId, isSubscriptionExpired]);
   
-  const resetBillingForm = () => { setCart([]); setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId(''); startTimeRef.current = null; setOrderSeconds(0); };
+  const resetBillingForm = () => { setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId(''); startTimeRef.current = null; setOrderSeconds(0); };
   
   const handleKeyDown = (e: React.KeyboardEvent) => { 
     if (searchResults.length === 0) return; 
     const findNext = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) return { product: 0, batch: navigableBatchesByProduct[0].length > 0 ? 0 : -1 }; const currentProductBatches = navigableBatchesByProduct[product]; if (batch < currentProductBatches.length - 1) return { product, batch: batch + 1 }; let nextProductIndex = product + 1; while (nextProductIndex < navigableBatchesByProduct.length && navigableBatchesByProduct[nextProductIndex].length === 0) nextProductIndex++; if (nextProductIndex < navigableBatchesByProduct.length) return { product: nextProductIndex, batch: 0 }; return current; }; 
     const findPrev = (current: { product: number; batch: number }) => { let { product, batch } = current; if (product === -1) return current; if (batch > 0) return { product, batch: batch - 1 }; let prevProductIndex = product - 1; while (prevProductIndex >= 0 && navigableBatchesByProduct[prevProductIndex].length === 0) prevProductIndex--; if (prevProductIndex >= 0) return { product: prevProductIndex, batch: navigableBatchesByProduct[prevProductIndex].length - 1 }; return current; }; 
-    switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) handleAddToCart(product, batch); } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
+    switch (e.key) { case 'ArrowDown': e.preventDefault(); setActiveIndices(findNext); break; case 'ArrowUp': e.preventDefault(); setActiveIndices(findPrev); break; case 'Enter': e.preventDefault(); if (activeIndices.product !== -1 && activeIndices.batch !== -1) { const product = searchResults[activeIndices.product]; const batch = navigableBatchesByProduct[activeIndices.product][activeIndices.batch]; if (product && batch) handleAddToCartLocal(product, batch); } break; case 'Escape': e.preventDefault(); setSearchTerm(''); break; default: break; } 
   };
 
   useEffect(() => {
@@ -547,7 +617,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
           </div>
       )}
       <div className="lg:col-span-2">
-        <Card title={isEditing ? `${t.billing.editBill}` : t.billing.createBill}>
+        <Card title={
+            <div className="flex justify-between items-center w-full">
+                <span>{isEditing ? `${t.billing.editBill}` : t.billing.createBill}</span>
+                <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full border border-emerald-100 dark:border-emerald-800 animate-pulse">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                    <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Cloud Sync Active</span>
+                </div>
+            </div>
+        }>
           <div className="flex flex-col gap-2 mb-4">
             <div className="flex gap-2">
                 <div className="relative flex-grow">
@@ -569,7 +647,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                                             const today = new Date(); today.setHours(0,0,0,0);
                                             const isExpired = expiryDate < today;
                                             return (
-                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired ? 'opacity-70' : ''}`} onClick={() => handleAddToCart(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
+                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired ? 'opacity-70' : ''}`} onClick={() => handleAddToCartLocal(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
                                                     <div>{isPharmaMode && (<><span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span><span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>Exp: {batch.expiryDate}</span></>)}</div>
                                                     <div className="flex items-center gap-3"><span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30'}`}>Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock}`}</span></div>
                                                 </li>
@@ -586,7 +664,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                 </div>
             </div>
           </div>
-          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => updateCartItem(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => updateCartItem(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemDetails(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => setCart(cart.filter(i => i.batchId !== item.batchId))} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
+          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => handleUpdateItemQty(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => handleUpdateItemQty(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemMrp(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => onRemoveFromCart(item.batchId)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
         </Card>
       </div>
       <div className="lg:col-span-1">
@@ -608,7 +686,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         </Card>
       </div>
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
-      <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCart} formatStock={formatStock} />
+      <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCartLocal} formatStock={formatStock} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={onUpdateConfig} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
       <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="Smart AI Bill Entry" />

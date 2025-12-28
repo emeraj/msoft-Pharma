@@ -32,16 +32,16 @@ export interface CartItem {
   batchNumber: string;
   expiryDate: string;
   hsnCode: string;
-  /* Fix: Added barcode property to CartItem to support stock tracking by barcode */
   barcode?: string;
   unitsPerStrip?: number;
   isScheduleH?: boolean;
   stripQty: number;
   looseQty: number;
-  quantity: number; // Total quantity in base units (stripQty * unitsPerStrip + looseQty)
+  quantity: number; // Total quantity in base units
   mrp: number; // MRP per strip
   gst: number;
   total: number;
+  addedAt?: number; // Timestamp for cloud sorting
 }
 
 export interface Bill {
