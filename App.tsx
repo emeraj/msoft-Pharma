@@ -31,9 +31,25 @@ import type {
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
+/**
+ * Robust sanitizer for Firestore data.
+ * Prevents "invalid nested entity" errors by:
+ * 1. Filtering out 'undefined' properties.
+ * 2. Filtering out 'undefined' items from arrays.
+ * 3. Skipping recursion for Firestore Sentinels (increment, serverTimestamp).
+ */
 const sanitizeForFirestore = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+  if (obj === undefined) return null; 
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(v => v !== undefined)
+      .map(v => sanitizeForFirestore(v));
+  }
   if (obj !== null && typeof obj === 'object') {
+    // Return Firestore sentinels and other non-plain objects as-is
+    if (obj.constructor !== Object && obj.constructor !== undefined) {
+      return obj;
+    }
     return Object.fromEntries(
       Object.entries(obj)
         .filter(([_, v]) => v !== undefined)
@@ -88,7 +104,6 @@ function App() {
   const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
   const [currentLedgerSupplierId, setCurrentLedgerSupplierId] = useState<string | null>(null);
   
-  // Cloud-Synced Cart State
   const [cloudCart, setCloudCart] = useState<CartItem[]>([]);
 
   useEffect(() => {
@@ -155,7 +170,7 @@ function App() {
         const batch = writeBatch(db); const billsRef = collection(db, `users/${dataOwnerId}/bills`); const billNumber = `INV-${Date.now().toString().slice(-6)}`; const newBillRef = doc(billsRef); const newBill: Bill = { ...billData, id: newBillRef.id, billNumber }; batch.set(newBillRef, sanitizeForFirestore(newBill));
         const productUpdates = new Map<string, any[]>(); const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
         for (const item of billData.items) { const product = currentProducts.find(p => p.id === item.productId); if (product) { const bIdx = product.batches.findIndex(b => b.id === item.batchId); if (bIdx !== -1) { product.batches[bIdx].stock -= item.quantity; productUpdates.set(product.id, product.batches); } } }
-        productUpdates.forEach((batches, productId) => batch.update(doc(db, `users/${dataOwnerId}/products`, productId), { batches }));
+        productUpdates.forEach((batches, productId) => batch.update(doc(db, `users/${dataOwnerId}/products`, productId), sanitizeForFirestore({ batches })));
         if (billData.paymentMode === 'Credit' && billData.customerId) batch.update(doc(db, `users/${dataOwnerId}/customers`, billData.customerId), { balance: increment(billData.grandTotal) });
         cloudCart.forEach(item => batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)));
         await batch.commit(); return newBill;
@@ -165,20 +180,21 @@ function App() {
   const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => {
       if (!dataOwnerId) return;
       try {
-          const batch = writeBatch(db); const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`)); let totalAmount = 0;
-          const itemsWithIds = purchaseData.items.map(item => { const itTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0)/100); totalAmount += itTotal + (itTotal * item.gst/100); return { ...item }; });
-          totalAmount += (purchaseData.roundOff || 0); const newPurchase: Purchase = { ...purchaseData, items: itemsWithIds, totalAmount, id: purchaseRef.id }; batch.set(purchaseRef, sanitizeForFirestore(newPurchase));
+          const batch = writeBatch(db); const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`)); 
           const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
-          for (const item of itemsWithIds) {
+          
+          const processedItems = purchaseData.items.map(item => {
               const iBarcode = normalizeCode(item.barcode);
               const iName = item.productName.toLowerCase().trim();
               const iCompany = item.company.toLowerCase().trim();
+              
               let product = item.productId ? currentProducts.find(p => p.id === item.productId) : currentProducts.find(p => {
-                    const pBarcode = normalizeCode(p.barcode);
-                    if (iBarcode !== "" && pBarcode !== "") return pBarcode === iBarcode;
-                    if (iBarcode === "" && pBarcode === "") return p.name.toLowerCase().trim() === iName && p.company.toLowerCase().trim() === iCompany;
-                    return false;
-                  });
+                  const pBarcode = normalizeCode(p.barcode);
+                  if (iBarcode !== "" && pBarcode !== "") return pBarcode === iBarcode;
+                  if (iBarcode === "" && pBarcode === "") return p.name.toLowerCase().trim() === iName && p.company.toLowerCase().trim() === iCompany;
+                  return false;
+              });
+
               if (product) {
                   const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
                   const existingBatchIndex = product.batches.findIndex(b => Math.abs(b.mrp - item.mrp) < 0.01);
@@ -189,21 +205,53 @@ function App() {
                       product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
                       product.batches[existingBatchIndex].batchNumber = item.batchNumber;
                       product.batches[existingBatchIndex].expiryDate = item.expiryDate;
-                  } else { product.batches.push({ id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: quantityToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 }); }
-                  batch.update(productRef, { batches: product.batches });
+                  } else { 
+                      product.batches.push({ id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: quantityToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 }); 
+                  }
+                  batch.update(productRef, sanitizeForFirestore({ batches: product.batches }));
+                  return { ...item, productId: product.id };
               } else {
                   const productRef = doc(collection(db, `users/${dataOwnerId}/products`));
                   const newBatch = { id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: item.quantity * (item.unitsPerStrip || 1), mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 };
                   const newProduct: Product = { id: productRef.id, name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst, batches: [newBatch], barcode: item.barcode || '', ...(item.composition && { composition: item.composition }), ...(item.unitsPerStrip && { unitsPerStrip: item.unitsPerStrip }), ...(item.isScheduleH !== undefined && { isScheduleH: item.isScheduleH }) };
                   batch.set(productRef, sanitizeForFirestore(newProduct));
+                  return { ...item, productId: productRef.id };
               }
-          }
+          });
+
+          let totalAmount = processedItems.reduce((sum, item) => {
+              const itTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0)/100);
+              return sum + itTotal + (itTotal * item.gst/100);
+          }, 0);
+          
+          totalAmount += (purchaseData.roundOff || 0);
+          const newPurchase: Purchase = { ...purchaseData, items: processedItems, totalAmount, id: purchaseRef.id }; 
+          batch.set(purchaseRef, sanitizeForFirestore(newPurchase));
+          
           await batch.commit();
-      } catch(e) { alert("Error"); }
+      } catch(e) { console.error(e); alert("Error saving purchase"); }
   };
 
   const handleEditBill = (bill: Bill) => { setCloudCart([]); bill.items.forEach(item => handleAddToCartCloud(item)); setEditingBill(bill); setActiveView('billing'); };
-  const handleDeleteBill = async (bill: Bill) => { if (!dataOwnerId || !window.confirm("Delete?")) return; const batch = writeBatch(db); batch.delete(doc(db, `users/${dataOwnerId}/bills`, bill.id)); const currentProducts = JSON.parse(JSON.stringify(products)) as Product[]; for (const item of bill.items) { const p = currentProducts.find(pr => pr.id === item.productId); if (p) { const bIdx = p.batches.findIndex(b => b.id === item.batchId); if (bIdx !== -1) { p.batches[bIdx].stock += item.quantity; batch.update(doc(db, `users/${dataOwnerId}/products`, p.id), { batches: p.batches }); } } } if (bill.paymentMode === 'Credit' && bill.customerId) batch.update(doc(db, `users/${dataOwnerId}/customers`, bill.customerId), { balance: increment(-bill.grandTotal) }); await batch.commit(); };
+  const handleDeleteBill = async (bill: Bill) => { 
+    if (!dataOwnerId || !window.confirm("Delete?")) return; 
+    const batch = writeBatch(db); 
+    batch.delete(doc(db, `users/${dataOwnerId}/bills`, bill.id)); 
+    const currentProducts = JSON.parse(JSON.stringify(products)) as Product[]; 
+    for (const item of bill.items) { 
+        const p = currentProducts.find(pr => pr.id === item.productId); 
+        if (p) { 
+            const bIdx = p.batches.findIndex(b => b.id === item.batchId); 
+            if (bIdx !== -1) { 
+                p.batches[bIdx].stock += item.quantity; 
+                batch.update(doc(db, `users/${dataOwnerId}/products`, p.id), sanitizeForFirestore({ batches: p.batches })); 
+            } 
+        } 
+    } 
+    if (bill.paymentMode === 'Credit' && bill.customerId) batch.update(doc(db, `users/${dataOwnerId}/customers`, bill.customerId), { balance: increment(-bill.grandTotal) }); 
+    await batch.commit(); 
+  };
+  
   const handleUpdateConfig = (config: SystemConfig) => { if (dataOwnerId) setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), sanitizeForFirestore(config)); };
   
   const isGstView = (view: AppView): view is GstReportView => ['gstr3b', 'hsnSales', 'hsnPurchase', 'gstWiseSales'].includes(view);

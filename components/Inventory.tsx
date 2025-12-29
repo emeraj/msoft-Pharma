@@ -9,7 +9,11 @@ import BarcodeScannerModal from './BarcodeScannerModal';
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
-type InventoryTab = 'productMaster' | 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearExpiry';
+export type InventoryTab = 'productMaster' | 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearExpiry';
+
+export interface InventoryRef {
+  setTab: (tab: InventoryTab) => void;
+}
 
 interface InventoryProps {
   products: Product[];
@@ -78,60 +82,14 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     if (strips > 0) result += `${strips} S`;
     if (looseUnits > 0) result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`;
     
-    return isNegative ? `-${result}` : result;
+    return isNegative ? `-${result}` : (result || '0 U');
 };
 
-const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]) => {
-    const unitsPerStrip = product.unitsPerStrip || 1;
-    let totalIn = (product.openingStock || 0);
-    let totalOut = 0;
-    const batchStockMap = new Map<string, number>();
-    const pName = product.name.toLowerCase().trim();
-    const pCompany = product.company.toLowerCase().trim();
-    const pBarcode = normalizeCode(product.barcode);
-
-    (product.batches || []).forEach(b => {
-        let initialBatchStock = b.openingStock || 0;
-        if (b.batchNumber === 'OPENING' || (b.batchNumber === 'DEFAULT' && (product.batches || []).length === 1)) {
-            initialBatchStock += (product.openingStock || 0);
-        }
-        batchStockMap.set(b.id, initialBatchStock);
-        if (b.openingStock) totalIn += b.openingStock;
-    });
-
-    purchases.forEach(pur => {
-        pur.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode);
-            const iName = item.productName.toLowerCase().trim();
-            const iCompany = item.company.toLowerCase().trim();
-            const isMatch = item.productId === product.id || (pBarcode !== "" && iBarcode === pBarcode) || (pBarcode === "" && iBarcode === "" && iName === pName && iCompany === pCompany);
-            if (isMatch) {
-                const qtyUnits = item.quantity * unitsPerStrip;
-                totalIn += qtyUnits;
-                const targetBatch = product.batches.find(b => b.batchNumber === item.batchNumber && Math.abs(b.mrp - item.mrp) < 0.1) || product.batches.find(b => Math.abs(b.mrp - item.mrp) < 0.1);
-                if (targetBatch) batchStockMap.set(targetBatch.id, (batchStockMap.get(targetBatch.id) || 0) + qtyUnits);
-                else if (product.batches.length > 0) batchStockMap.set(product.batches[0].id, (batchStockMap.get(product.batches[0].id) || 0) + qtyUnits);
-            }
-        });
-    });
-
-    bills.forEach(bill => {
-        bill.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode || "");
-            const isMatch = item.productId === product.id || (pBarcode !== "" && iBarcode === pBarcode);
-            if (isMatch) {
-                totalOut += item.quantity;
-                if (batchStockMap.has(item.batchId)) batchStockMap.set(item.batchId, (batchStockMap.get(item.batchId) || 0) - item.quantity);
-                else if (product.batches.length > 0) {
-                    const matchedBatch = product.batches.find(b => b.batchNumber === item.batchNumber);
-                    const fallbackId = matchedBatch ? matchedBatch.id : product.batches[0].id;
-                    batchStockMap.set(fallbackId, (batchStockMap.get(fallbackId) || 0) - item.quantity);
-                }
-            }
-        });
-    });
-
-    return { total: totalIn - totalOut, totalIn, totalOut, batchStocks: batchStockMap };
+const getLiveStockData = (product: Product) => {
+    const total = (product.batches || []).reduce((sum, b) => sum + (b.stock || 0), 0);
+    const batchStocks = new Map<string, number>();
+    (product.batches || []).forEach(b => batchStocks.set(b.id, b.stock || 0));
+    return { total, batchStocks };
 };
 
 const PrintLabelModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product | null; onPrint: (quantity: number) => void; }> = ({ isOpen, onClose, product, onPrint }) => {
@@ -275,7 +233,7 @@ const ProductMasterView: React.FC<{
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                         {filtered.map(p => {
                             if (!p) return null;
-                            const liveStock = getLiveStockData(p, purchases, bills);
+                            const liveStock = getLiveStockData(p);
                             const isLowStock = liveStock.total <= (p.unitsPerStrip || 1);
                             return (
                                 <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
@@ -306,77 +264,33 @@ const ProductMasterView: React.FC<{
 
 const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], t: any }> = ({ products, purchases, bills, t }) => {
     const [selectedCompany, setSelectedCompany] = useState('All');
-    const [fromDate, setFromDate] = useState('');
-    const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const companies = useMemo(() => ['All', ...new Set(products.filter(p => p !== null).map(p => p.company))].sort(), [products]);
     const detailedStockData = useMemo(() => {
-        const start = fromDate ? new Date(fromDate) : null; if (start) start.setHours(0, 0, 0, 0);
-        const end = toDate ? new Date(toDate) : new Date(); end.setHours(23, 59, 59, 999);
         const rows: any[] = [];
         products.forEach(p => {
             if (!p || (selectedCompany !== 'All' && p.company !== selectedCompany)) return;
             const unitsPerStrip = p.unitsPerStrip || 1;
-            const pBarcode = normalizeCode(p.barcode);
-            const batchMap = new Map<string, { batchNumber: string; expiryDate: string; opening: number; purchased: number; sold: number; purchasePrice: number; batchIds: Set<string>; }>();
             (p.batches || []).forEach(b => {
-                const existing = batchMap.get(b.batchNumber) || { batchNumber: b.batchNumber, expiryDate: b.expiryDate, opening: 0, purchased: 0, sold: 0, purchasePrice: b.purchasePrice, batchIds: new Set<string>() };
-                existing.batchIds.add(b.id);
-                existing.opening += (b.openingStock || 0);
-                batchMap.set(b.batchNumber, existing);
+                const valuation = b.stock * (b.purchasePrice / unitsPerStrip);
+                rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: b.batchNumber, expiryDate: b.expiryDate, opening: b.openingStock || 0, closing: b.stock, valuation, unitsPerStrip });
             });
-            const baseOpening = p.openingStock || 0;
-            batchMap.forEach((agg, bName) => {
-                let transOpening = 0, purchased = 0, sold = 0;
-                purchases.forEach(pur => {
-                    const purDate = new Date(pur.invoiceDate);
-                    pur.items.forEach(item => {
-                        const iBarcode = normalizeCode(item.barcode);
-                        const isMatch = item.productId === p.id || (pBarcode !== "" && iBarcode === pBarcode) || (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === p.name.toLowerCase().trim() && item.company.toLowerCase().trim() === p.company.toLowerCase().trim());
-                        if (!isMatch || item.batchNumber !== bName) return;
-                        const qtyInUnits = item.quantity * unitsPerStrip;
-                        if (purDate < (start || new Date(0))) transOpening += qtyInUnits;
-                        else if (purDate <= end) purchased += qtyInUnits;
-                    });
-                });
-                bills.forEach(bill => {
-                    const billDate = new Date(bill.date);
-                    bill.items.forEach(item => {
-                        const iBarcode = normalizeCode(item.barcode);
-                        const isMatch = item.productId === p.id || (pBarcode !== "" && iBarcode === pBarcode);
-                        if (!isMatch || !agg.batchIds.has(item.batchId)) return;
-                        if (billDate < (start || new Date(0))) transOpening -= item.quantity;
-                        else if (billDate <= end) sold += item.quantity;
-                    });
-                });
-                const totalOpening = agg.opening + transOpening + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0);
-                const closing = totalOpening + purchased - sold;
-                const valuation = closing * (agg.purchasePrice / unitsPerStrip);
-                if (purchased !== 0 || sold !== 0 || closing !== 0 || totalOpening !== 0) {
-                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening: totalOpening, purchased, sold, closing, valuation, unitsPerStrip });
-                }
-            });
-            if (batchMap.size === 0 && baseOpening > 0) rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: 'OPENING', expiryDate: '-', opening: baseOpening, purchased: 0, sold: 0, closing: baseOpening, valuation: 0, unitsPerStrip });
         });
         return rows.sort((a, b) => a.productName.localeCompare(b.productName));
-    }, [products, purchases, bills, fromDate, toDate, selectedCompany]);
+    }, [products, selectedCompany]);
 
     return (
         <Card title="Company Stock Ledger">
             <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
                 <div className="w-full md:w-1/3"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Select Company</label><select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className={inputStyle}>{companies.map(c => <option key={c} value={c}>{c === 'All' ? 'All Companies' : c}</option>)}</select></div>
-                <div className="flex gap-2 w-full md:w-auto">
-                    <div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div>
-                    <div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div>
-                </div>
                 <button onClick={() => exportToCsv('company_wise_stock', detailedStockData)} className="w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded-lg font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-md transition-all"><DownloadIcon className="h-5 w-5" /> Export Excel</button>
             </div>
             <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
                 <table className="w-full text-[13px] text-left border-collapse">
                     <thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider">
-                        <tr><th className="px-4 py-4">PRODUCT / COMPANY</th><th className="px-4 py-4">BATCH / EXPIRY</th><th className="px-4 py-4 text-center">OPENING</th><th className="px-4 py-4 text-center">INWARD</th><th className="px-4 py-4 text-center">OUTWARD</th><th className="px-4 py-4 text-center">CLOSING</th><th className="px-4 py-4 text-right">VALUE</th></tr>
+                        <tr><th className="px-4 py-4">PRODUCT / COMPANY</th><th className="px-4 py-4">BATCH / EXPIRY</th><th className="px-4 py-4 text-center">OPENING</th><th className="px-4 py-4 text-center">CLOSING</th><th className="px-4 py-4 text-right">VALUE</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
-                        {detailedStockData.map((row, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-4 py-3"><div className="font-bold text-slate-800 dark:text-slate-200">{row.productName}</div><div className="text-[10px] text-slate-400 uppercase">{row.company}</div></td><td className="px-4 py-3"><div className="font-mono text-slate-700 dark:text-slate-300">{row.batchNumber}</div><div className="text-[10px] text-slate-500 italic">{row.expiryDate}</div></td><td className="px-4 py-3 text-center font-medium text-slate-500">{formatStock(row.opening, row.unitsPerStrip)}</td><td className="px-4 py-3 text-center text-teal-600 dark:text-teal-400 font-bold">{row.purchased > 0 ? formatStock(row.purchased, row.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-center text-rose-500 font-bold">{row.sold > 0 ? formatStock(row.sold, row.unitsPerStrip) : '-'}</td><td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/40">{formatStock(row.closing, row.unitsPerStrip)}</td><td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">₹{row.valuation.toFixed(2)}</td></tr>))}
+                        {detailedStockData.map((row, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-4 py-3"><div className="font-bold text-slate-800 dark:text-slate-200">{row.productName}</div><div className="text-[10px] text-slate-400 uppercase">{row.company}</div></td><td className="px-4 py-3"><div className="font-mono text-slate-700 dark:text-slate-300">{row.batchNumber}</div><div className="text-[10px] text-slate-500 italic">{row.expiryDate}</div></td><td className="px-4 py-3 text-center font-medium text-slate-500">{formatStock(row.opening, row.unitsPerStrip)}</td><td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/40">{formatStock(row.closing, row.unitsPerStrip)}</td><td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">₹{row.valuation.toFixed(2)}</td></tr>))}
                     </tbody>
                 </table>
             </div>
@@ -388,15 +302,14 @@ const AllItemStockView: React.FC<{ products: Product[], purchases: Purchase[], b
     const [searchTerm, setSearchTerm] = useState('');
     const stockData = useMemo(() => {
         return products.filter(p => !!p).map(p => {
-            const liveStock = getLiveStockData(p, purchases, bills);
+            const liveStock = getLiveStockData(p);
             const unitsPerStrip = p.unitsPerStrip || 1;
             const totalValuation = (p.batches || []).reduce((sum, b) => {
-                const batchStock = liveStock.batchStocks.get(b.id) || 0;
-                return sum + (batchStock * (b.purchasePrice / unitsPerStrip));
+                return sum + (b.stock * (b.purchasePrice / unitsPerStrip));
             }, 0);
             return { id: p.id, name: p.name, company: p.company, unitsPerStrip, totalStock: liveStock.total, totalValue: totalValuation };
         }).filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()) || item.company.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name));
-    }, [products, purchases, bills, searchTerm]);
+    }, [products, searchTerm]);
     const totalValuation = useMemo(() => stockData.reduce((sum, item) => sum + item.totalValue, 0), [stockData]);
     return (
         <Card title={t.inventory.allStock}>
@@ -415,60 +328,110 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+    
+    const isPharma = systemConfig.softwareMode === 'Pharma';
     const selectedProduct = useMemo(() => selectedProductId ? products.find(p => p.id === selectedProductId) || null : null, [selectedProductId, products]);
     const productSuggestions = useMemo(() => searchTerm ? products.filter(p => p && p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 10) : [], [searchTerm, products]);
+    
     const handleSelectProduct = (p: Product) => { setSelectedProductId(p.id); setSearchTerm(p.name); setIsSuggestionsOpen(false); };
+    
     const transactions = useMemo(() => {
         if (!selectedProduct) return [];
         const txs: any[] = [];
         const unitsPerStrip = selectedProduct.unitsPerStrip || 1;
-        const pBarcode = normalizeCode(selectedProduct.barcode);
+        const pBarcode = normalizeCode(selectedProduct.barcode || "");
+        const pName = selectedProduct.name.toLowerCase().trim();
+        const pCompany = selectedProduct.company.toLowerCase().trim();
+
         purchases?.forEach(pur => pur.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode);
-            const isMatch = item.productId === selectedProduct.id || (pBarcode !== "" && iBarcode === pBarcode);
-            if (isMatch) txs.push({ date: new Date(pur.invoiceDate), type: 'Purchase', particulars: `Inv: ${pur.invoiceNumber} (${pur.supplier})`, inQty: item.quantity * (item.unitsPerStrip || unitsPerStrip), outQty: 0 });
+            const iBarcode = normalizeCode(item.barcode || "");
+            const isMatch = item.productId === selectedProduct.id || 
+                           (pBarcode !== "" && iBarcode === pBarcode) ||
+                           (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
+            
+            if (isMatch) {
+                txs.push({ 
+                    id: pur.id + '_' + Math.random(),
+                    date: new Date(pur.invoiceDate), 
+                    type: 'Purchase', 
+                    particulars: `Inv: ${pur.invoiceNumber} (${pur.supplier})`, 
+                    batch: item.batchNumber,
+                    inQty: item.quantity * (item.unitsPerStrip || unitsPerStrip), 
+                    outQty: 0 
+                });
+            }
         }));
+
         bills?.forEach(bill => bill.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode);
+            const iBarcode = normalizeCode(item.barcode || "");
             const isMatch = item.productId === selectedProduct.id || (pBarcode !== "" && iBarcode === pBarcode);
-            if (isMatch) txs.push({ date: new Date(bill.date), type: 'Sale', particulars: `Bill: ${bill.billNumber} (${bill.customerName})`, inQty: 0, outQty: item.quantity });
+            
+            if (isMatch) {
+                txs.push({ 
+                    id: bill.id + '_' + Math.random(),
+                    date: new Date(bill.date), 
+                    type: 'Sale', 
+                    particulars: `Bill: ${bill.billNumber} (${bill.customerName})`, 
+                    batch: item.batchNumber,
+                    inQty: 0, 
+                    outQty: item.quantity 
+                });
+            }
         }));
+
         return txs.sort((a, b) => a.date.getTime() - b.date.getTime());
     }, [selectedProduct, purchases, bills]);
+
     const filteredResults = useMemo(() => {
-        let opening = (selectedProduct?.openingStock || 0);
-        selectedProduct?.batches?.forEach(b => { opening += (b.openingStock || 0); });
+        if (!selectedProduct) return { opening: 0, rows: [], closing: 0 };
+
+        let opening = (selectedProduct.openingStock || 0);
+        selectedProduct.batches?.forEach(b => { 
+            opening += (b.openingStock || 0); 
+        });
+
         const start = fromDate ? new Date(fromDate) : null; if (start) start.setHours(0,0,0,0);
         const end = toDate ? new Date(toDate) : new Date(); end.setHours(23,59,59,999);
-        if (start) transactions.forEach(tx => { if (tx.date < start) opening += (tx.inQty - tx.outQty); });
+        
+        if (start) {
+            transactions.forEach(tx => { 
+                if (tx.date < start) opening += (tx.inQty - tx.outQty); 
+            });
+        }
+
         let running = opening;
-        const rows = transactions.filter(tx => (!start || tx.date >= start) && tx.date <= end).map(tx => { running += (tx.inQty - tx.outQty); return { ...tx, balance: running }; });
+        const rows = transactions.filter(tx => (!start || tx.date >= start) && tx.date <= end).map(tx => { 
+            running += (tx.inQty - tx.outQty); 
+            return { ...tx, balance: running }; 
+        });
+
         return { opening, rows, closing: running };
     }, [transactions, fromDate, toDate, selectedProduct]);
+
     return (
         <Card title={t.inventory.selectedStock}>
             <div className="mb-6 relative"><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search Product</label><div className="relative"><input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={inputStyle} placeholder="Type product name..." /><SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" /></div>{isSuggestionsOpen && productSuggestions.length > 0 && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">{productSuggestions.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-600"><div className="font-bold">{p.name}</div><div className="text-[10px] text-slate-500 uppercase">{p.company}</div></li>))}</ul>)}</div>
-            {selectedProduct && (<div className="space-y-6 animate-fade-in"><div className="bg-[#1e293b] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl border border-slate-700"><div><h2 className="text-2xl font-black tracking-tight">{selectedProduct.name}</h2><p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p></div><div className="text-right"><p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Current Stock</p><p className="text-3xl font-black">{formatStock(filteredResults.closing, selectedProduct.unitsPerStrip)}</p></div></div><div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700"><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div><div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Particulars</th><th className="px-6 py-4 text-right">IN (Qty)</th><th className="px-6 py-4 text-right">OUT (Qty)</th><th className="px-6 py-4 text-right">Balance</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"><tr className="bg-slate-50 dark:bg-slate-900/40 font-bold"><td colSpan={5} className="px-6 py-4 text-right text-slate-500 uppercase text-[10px] tracking-widest">Opening Balance:</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td></tr>{filteredResults.rows.map((row, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 whitespace-nowrap">{row.date.toLocaleDateString()}</td><td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${row.type === 'Sale' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>{row.type}</span></td><td className="px-6 py-4 text-slate-500 dark:text-slate-400">{row.particulars}</td><td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{row.inQty > 0 ? row.inQty : '-'}</td><td className="px-6 py-4 text-right font-bold text-rose-600 dark:text-rose-400">{row.outQty > 0 ? row.outQty : '-'}</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td></tr>))}</tbody></table></div></div>)}
+            {selectedProduct && (<div className="space-y-6 animate-fade-in"><div className="bg-[#1e293b] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl border border-slate-700"><div><h2 className="text-2xl font-black tracking-tight">{selectedProduct.name}</h2><p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p></div><div className="text-right"><p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Master Ledger Stock</p><p className="text-3xl font-black">{formatStock(filteredResults.closing, selectedProduct.unitsPerStrip)}</p></div></div><div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700"><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div><div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Particulars</th>{isPharma && <th className="px-6 py-4">Batch</th>}<th className="px-6 py-4 text-right">IN (Qty)</th><th className="px-6 py-4 text-right">OUT (Qty)</th><th className="px-6 py-4 text-right">Balance</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"><tr className="bg-slate-50 dark:bg-slate-800/30 font-bold"><td colSpan={isPharma ? 6 : 5} className="px-6 py-4 text-right text-slate-500 uppercase text-[10px] tracking-widest">Opening Balance:</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td></tr>{filteredResults.rows.map((row) => (<tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 whitespace-nowrap">{row.date.toLocaleDateString()}</td><td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${row.type === 'Sale' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>{row.type}</span></td><td className="px-6 py-4 text-slate-500 dark:text-slate-400">{row.particulars}</td>{isPharma && <td className="px-6 py-4 font-mono text-xs">{row.batch || '-'}</td>}<td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{row.inQty > 0 ? row.inQty : '-'}</td><td className="px-6 py-4 text-right font-bold text-rose-600 dark:text-rose-400">{row.outQty > 0 ? row.outQty : '-'}</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td></tr>))}</tbody></table></div></div>)}
         </Card>
     );
 };
 
 const ExpiredStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], t: any }> = ({ products, purchases, bills, t }) => {
     const today = new Date(); today.setHours(0,0,0,0);
-    const expiredBatches = useMemo(() => products.filter(p => !!p).flatMap(p => { const liveData = getLiveStockData(p, purchases, bills); return (p.batches || []).map(b => ({ ...b, product: p, liveStock: liveData.batchStocks.get(b.id) || 0 })); }).filter(item => item && getExpiryDate(item.expiryDate) < today && item.liveStock > 0), [products, purchases, bills]);
+    const expiredBatches = useMemo(() => products.filter(p => !!p).flatMap(p => { return (p.batches || []).map(b => ({ ...b, product: p })); }).filter(item => item && getExpiryDate(item.expiryDate) < today && item.stock > 0), [products]);
     return (
         <Card title="Expired Stock (Loss Analysis)">
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expired On</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">Remaining Stock</th><th className="px-6 py-4 text-right">Loss Value</th></tr></thead><tbody className="bg-white dark:bg-slate-800">{expiredBatches.map((item, idx) => (<tr key={idx} className="border-b border-rose-100 dark:border-rose-900/20 bg-rose-50/20 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td><td className="px-6 py-4 text-rose-600 dark:text-rose-400 font-black">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-bold">{formatStock(item.liveStock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-right font-black text-rose-600 dark:text-rose-400">₹{(item.liveStock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expired On</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">Remaining Stock</th><th className="px-6 py-4 text-right">Loss Value</th></tr></thead><tbody className="bg-white dark:bg-slate-800">{expiredBatches.map((item, idx) => (<tr key={idx} className="border-b border-rose-100 dark:border-rose-900/20 bg-rose-50/20 dark:bg-rose-900/10 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td><td className="px-6 py-4 text-rose-600 dark:text-rose-400 font-black">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-right font-black text-rose-600 dark:text-rose-400">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td></tr>))}</tbody></table></div>
         </Card>
     );
 };
 
 const NearExpiryView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], t: any }> = ({ products, purchases, bills, t }) => {
     const today = new Date(); today.setHours(0,0,0,0); const thirtyDaysLater = new Date(); thirtyDaysLater.setDate(today.getDate() + 30);
-    const nearExpiryBatches = useMemo(() => products.filter(p => !!p).flatMap(p => { const liveData = getLiveStockData(p, purchases, bills); return (p.batches || []).map(b => ({ ...b, product: p, liveStock: liveData.batchStocks.get(b.id) || 0 })); }).filter(item => { if (!item) return false; const exp = getExpiryDate(item.expiryDate); return exp >= today && exp <= thirtyDaysLater && item.liveStock > 0; }), [products, purchases, bills]);
+    const nearExpiryBatches = useMemo(() => products.filter(p => !!p).flatMap(p => { return (p.batches || []).map(b => ({ ...b, product: p })); }).filter(item => { if (!item) return false; const exp = getExpiryDate(item.expiryDate); return exp >= today && exp <= thirtyDaysLater && item.stock > 0; }), [products]);
     return (
         <Card title="Expiring in Next 30 Days">
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expiry Date</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">In Stock</th><th className="px-6 py-4 text-right">Stock Valuation</th></tr></thead><tbody className="bg-white dark:bg-slate-800">{nearExpiryBatches.map((item, idx) => (<tr key={idx} className="border-b border-orange-100 dark:border-orange-900/20 bg-orange-50/20 dark:bg-orange-900/10 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td><td className="px-6 py-4 text-orange-600 dark:text-orange-400 font-black">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-bold">{formatStock(item.liveStock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-right font-black text-slate-700 dark:text-slate-300">₹{(item.liveStock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expiry Date</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">In Stock</th><th className="px-6 py-4 text-right">Stock Valuation</th></tr></thead><tbody className="bg-white dark:bg-slate-800">{nearExpiryBatches.map((item, idx) => (<tr key={idx} className="border-b border-orange-100 dark:border-orange-900/20 bg-orange-50/20 dark:bg-orange-900/10 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs">{item.batchNumber}</td><td className="px-6 py-4 text-orange-600 dark:text-orange-400 font-black">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-bold">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-right font-black text-slate-700 dark:text-slate-300">₹{(item.stock * (item.purchasePrice / (item.product.unitsPerStrip || 1))).toFixed(2)}</td></tr>))}</tbody></table></div>
         </Card>
     );
 };
@@ -486,7 +449,7 @@ const EditBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: 
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={e => setFormData({...formData, saleRate: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label><input type="number" name="openingStock" value={formData.openingStock || 0} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)</label><input type="number" name="stock" value={formData.stock || 0} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
                 </div>
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE CHANGES</button></div>
             </form>
@@ -494,15 +457,64 @@ const EditBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: 
     );
 };
 
-const BatchWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], onDeleteBatch: (pid: string, bid: string) => void, onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>, systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
-    const [searchTerm, setSearchTerm] = useState(''); const [editingBatchData, setEditingBatchData] = useState<{ product: Product, batch: Batch } | null>(null);
-    const allBatches = useMemo(() => products.filter(p => !!p).flatMap(p => { const liveData = getLiveStockData(p, purchases, bills); return (p.batches || []).map(b => ({ ...b, product: p, liveStock: liveData.batchStocks.get(b.id) || 0 })); }).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }), [products, purchases, bills, searchTerm]);
-    const handleUpdateBatch = (pid: string, updatedBatch: Batch) => { const product = products.find(p => p.id === pid); if (product) { const updatedBatches = (product.batches || []).map(b => b.id === updatedBatch.id ? updatedBatch : b); onUpdateProduct(pid, { batches: updatedBatches }); } };
+const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; products: Product[]; onSave: (pid: string, newBatch: Batch) => void; }> = ({ isOpen, onClose, products, onSave }) => {
+    const [selectedPid, setSelectedPid] = useState('');
+    const [formData, setFormData] = useState<Omit<Batch, 'id'>>({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0, openingStock: 0 });
+    const productList = useMemo(() => [...products].sort((a,b) => a.name.localeCompare(b.name)), [products]);
+    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!selectedPid) return; onSave(selectedPid, { ...formData, id: `batch_${Date.now()}` }); reset(); onClose(); };
+    const reset = () => { setSelectedPid(''); setFormData({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0, openingStock: 0 }); };
+    if (!isOpen) return null;
     return (
-        <Card title={t.inventory.batchStock}>
+        <Modal isOpen={isOpen} onClose={onClose} title="Initialize Manual Batch">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Product*</label>
+                <select value={selectedPid} onChange={e => setSelectedPid(e.target.value)} className={inputStyle} required><option value="">-- Choose --</option>{productList.map(p => <option key={p.id} value={p.id}>{p.name} ({p.company})</option>)}</select></div>
+                <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Batch No*</label><input value={formData.batchNumber} onChange={e => setFormData({...formData, batchNumber: e.target.value})} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expiry (YYYY-MM)*</label><input value={formData.expiryDate} onChange={e => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} placeholder="YYYY-MM" required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP*</label><input type="number" step="0.01" value={formData.mrp || ''} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0, saleRate: formData.saleRate || parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" step="0.01" value={formData.purchasePrice || ''} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)*</label><input type="number" value={formData.stock || ''} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                </div>
+                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700">ADD BATCH</button></div>
+            </form>
+        </Modal>
+    );
+};
+
+const BatchWiseStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], onDeleteBatch: (pid: string, bid: string) => void, onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>, systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, onDeleteBatch, onUpdateProduct, systemConfig, t }) => {
+    const [searchTerm, setSearchTerm] = useState(''); 
+    const [editingBatchData, setEditingBatchData] = useState<{ product: Product, batch: Batch } | null>(null);
+    const [isAddBatchModalOpen, setIsAddBatchModalOpen] = useState(false);
+    
+    const allBatches = useMemo(() => products.filter(p => !!p).flatMap(p => { return (p.batches || []).map(b => ({ ...b, product: p })); }).filter(item => { const term = searchTerm.toLowerCase(); return item.product.name.toLowerCase().includes(term) || item.batchNumber.toLowerCase().includes(term); }), [products, searchTerm]);
+    
+    const handleUpdateBatch = (pid: string, updatedBatch: Batch) => { 
+        const product = products.find(p => p.id === pid); 
+        if (product) { 
+            const updatedBatches = (product.batches || []).map(b => b.id === updatedBatch.id ? updatedBatch : b); 
+            onUpdateProduct(pid, { batches: updatedBatches }); 
+        } 
+    };
+
+    const handleAddBatch = (pid: string, newBatch: Batch) => {
+        const product = products.find(p => p.id === pid);
+        if (product) {
+            onUpdateProduct(pid, { batches: [...(product.batches || []), newBatch] });
+        }
+    };
+
+    return (
+        <Card title={
+            <div className="flex justify-between items-center w-full">
+                <span>{t.inventory.batchStock}</span>
+                <button onClick={() => setIsAddBatchModalOpen(true)} className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-4 py-2 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800"><PlusIcon className="h-4 w-4" /> Manual Batch Entry</button>
+            </div>
+        }>
             <div className="mb-6 relative"><input type="text" placeholder="Search product or batch number..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} /><SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" /></div>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expiry Date</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">Live Stock</th><th className="px-6 py-4 text-center">Actions</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">{allBatches.map((item, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs text-slate-500">{item.batchNumber}</td><td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.liveStock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-center"><div className="flex justify-center gap-3"><button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit Batch"><PencilIcon className="h-5 w-5" /></button><button onClick={() => onDeleteBatch(item.product.id, item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="Delete Batch"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expiry Date</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">Live Stock</th><th className="px-6 py-4 text-center">Actions</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">{allBatches.map((item, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs text-slate-500">{item.batchNumber}</td><td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-center"><div className="flex justify-center gap-3"><button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit Batch"><PencilIcon className="h-5 w-5" /></button><button onClick={() => onDeleteBatch(item.product.id, item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="Delete Batch"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table></div>
             {editingBatchData && <EditBatchModal isOpen={!!editingBatchData} onClose={() => setEditingBatchData(null)} product={editingBatchData.product} batch={editingBatchData.batch} onSave={handleUpdateBatch} />}
+            <AddBatchModal isOpen={isAddBatchModalOpen} onClose={() => setIsAddBatchModalOpen(false)} products={products} onSave={handleAddBatch} />
         </Card>
     );
 };
@@ -519,85 +531,119 @@ const AddEditProductModal: React.FC<{
     onAddCompany: (company: Omit<Company, 'id'>) => Promise<Company | null>;
     systemConfig: SystemConfig;
 }> = ({ isOpen, onClose, product, products, companies, gstRates, onSave, onUpdate, onAddCompany, systemConfig }) => {
-    const isPharma = systemConfig.softwareMode === 'Pharma';
-    const [formData, setFormData] = useState({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', openingStock: 0, isScheduleH: false, purchasePrice: '', saleRate: '', mrp: '' });
-    const [showCompanySuggestions, setShowCompanySuggestions] = useState(false);
-    const [isAddCompanyModalOpen, setAddCompanyModalOpen] = useState(false);
-    const [activeCompanyIndex, setActiveCompanyIndex] = useState(-1);
-    const [isScannerOpen, setScannerOpen] = useState(false);
-
-    const filteredCompanySuggestions = useMemo(() => formData.company && showCompanySuggestions ? companies.filter(c => c && c.name && c.name.toLowerCase().includes(formData.company.toLowerCase())).slice(0, 5) : [], [formData.company, showCompanySuggestions, companies]);
+    const isRetail = systemConfig.softwareMode === 'Retail';
+    const initialFormState = {
+        name: '',
+        company: '',
+        hsnCode: '',
+        gst: 12,
+        barcode: '',
+        openingStock: 0,
+        composition: '',
+        unitsPerStrip: 1,
+        isScheduleH: false,
+    };
+    const [formData, setFormData] = useState(initialFormState);
+    const [isAddingCompany, setIsAddingCompany] = useState(false);
 
     useEffect(() => {
-        if (product) setFormData({ name: product.name || '', company: product.company || '', hsnCode: product.hsnCode || '', gst: product.gst !== undefined ? product.gst : 12, composition: product.composition || '', unitsPerStrip: product.unitsPerStrip || 1, barcode: product.barcode || '', openingStock: product.openingStock || 0, isScheduleH: !!product.isScheduleH, purchasePrice: '', saleRate: '', mrp: '' });
-        else setFormData({ name: '', company: '', hsnCode: '', gst: 12, composition: '', unitsPerStrip: 1, barcode: '', openingStock: 0, isScheduleH: false, purchasePrice: '', saleRate: '', mrp: '' });
-        setActiveCompanyIndex(-1);
+        if (product) {
+            setFormData({
+                name: product.name,
+                company: product.company,
+                hsnCode: product.hsnCode,
+                gst: product.gst,
+                barcode: product.barcode || '',
+                openingStock: product.openingStock || 0,
+                composition: product.composition || '',
+                unitsPerStrip: product.unitsPerStrip || 1,
+                isScheduleH: !!product.isScheduleH,
+            });
+        } else {
+            setFormData(initialFormState);
+        }
     }, [product, isOpen]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!product && formData.barcode) {
-            const exists = products.find(p => p.barcode && normalizeCode(p.barcode) === normalizeCode(formData.barcode));
-            if (exists) { alert(`Product with barcode "${formData.barcode}" already exists in Master List as "${exists.name}". Please edit the existing product or use a unique barcode.`); return; }
-        }
-        if (product) { const { purchasePrice, saleRate, mrp, ...cleanData } = formData; onUpdate(product.id, cleanData); }
-        else {
-            const { purchasePrice, saleRate, mrp, ...cleanData } = formData;
-            const newProduct: Omit<Product, 'id'> = { ...cleanData, batches: [] };
-            if (formData.mrp || formData.purchasePrice) {
-                newProduct.batches = [{ id: `batch_${Date.now()}`, batchNumber: 'DEFAULT', expiryDate: '9999-12', stock: 0, mrp: parseFloat(formData.mrp) || 0, saleRate: parseFloat(formData.saleRate) || parseFloat(formData.mrp) || 0, purchasePrice: parseFloat(formData.purchasePrice) || 0 }];
-            }
-            onSave(newProduct);
+        if (product) {
+            onUpdate(product.id, formData);
+        } else {
+            onSave({ ...formData, batches: [] });
         }
         onClose();
     };
 
-    const handleCompanyKeyDown = (e: React.KeyboardEvent) => {
-        const totalItems = filteredCompanySuggestions.length + 1; 
-        if (e.key === 'ArrowDown') { e.preventDefault(); setActiveCompanyIndex(prev => (prev < totalItems - 1 ? prev + 1 : prev)); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveCompanyIndex(prev => (prev > 0 ? prev - 1 : prev)); }
-        else if (e.key === 'Enter') { e.preventDefault(); if (activeCompanyIndex >= 0 && activeCompanyIndex < filteredCompanySuggestions.length) { setFormData({...formData, company: filteredCompanySuggestions[activeCompanyIndex].name}); setShowCompanySuggestions(false); setActiveCompanyIndex(-1); } else if (activeCompanyIndex === filteredCompanySuggestions.length || (formData.company && filteredCompanySuggestions.length === 0)) { setAddCompanyModalOpen(true); setShowCompanySuggestions(false); setActiveCompanyIndex(-1); } }
-        else if (e.key === 'Escape') { setShowCompanySuggestions(false); setActiveCompanyIndex(-1); }
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product Master' : 'Create New Product'}>
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Product Name*</label><input autoFocus value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required /></div></div>
-                <div className="relative"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Company*</label><div className="relative flex gap-2"><div className="relative flex-grow"><input value={formData.company} onChange={e => { setFormData({...formData, company: e.target.value}); setShowCompanySuggestions(true); }} onFocus={() => setShowCompanySuggestions(true)} onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)} onKeyDown={handleCompanyKeyDown} className={inputStyle} required autoComplete="off" placeholder="Select or Add Company" />{showCompanySuggestions && (formData.company || filteredCompanySuggestions.length > 0) && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border rounded shadow-lg max-h-48 overflow-y-auto">{filteredCompanySuggestions.map((c, idx) => (<li key={c.id} onClick={() => setFormData({...formData, company: c.name})} className={`p-2 cursor-pointer text-slate-800 dark:text-slate-200 transition-colors ${idx === activeCompanyIndex ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-indigo-50 dark:hover:bg-slate-600'}`}>{c.name}</li>))}<li onClick={() => setAddCompanyModalOpen(true)} className={`p-2 text-indigo-600 font-bold border-t cursor-pointer transition-colors ${activeCompanyIndex === filteredCompanySuggestions.length ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-600'}`}>+ Add New Company</li></ul>)}</div><button type="button" onClick={() => setAddCompanyModalOpen(true)} className="p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors" title="Add New Company"><PlusIcon className="h-5 w-5" /></button></div></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="relative"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Barcode</label><div className="flex gap-2"><input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Scan or type barcode..." /><button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button></div></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Opening Stock (U)</label><input type="number" value={formData.openingStock} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} placeholder="Stock from prev years" /></div></div>
-                {!product && (<div className="p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700"><p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-3">Initial Pricing (Optional Quick Setup)</p><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Rate</label><input type="number" step="0.01" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: e.target.value})} className={inputStyle} placeholder="₹ 0.00" /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" step="0.01" value={formData.saleRate} onChange={e => setFormData({...formData, saleRate: e.target.value})} className={inputStyle} placeholder="₹ 0.00" /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP*</label><input type="number" step="0.01" value={formData.mrp} onChange={e => setFormData({...formData, mrp: e.target.value})} className={inputStyle} placeholder="₹ 0.00" /></div></div></div>)}
-                {isPharma && (<div className="grid grid-cols-1 gap-4"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" /></div>)}
-                <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">HSN Code</label><input value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">GST Rate (%)</label><select value={formData.gst} onChange={e => setFormData({...formData, gst: Number(e.target.value)})} className={inputStyle}>{gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}</select></div></div>
-                {isPharma && (<div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Units per Pack</label><input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({...formData, unitsPerStrip: parseInt(e.target.value) || 1})} className={inputStyle} /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Scheduled Drug?</label><select value={formData.isScheduleH ? 'Yes' : 'No'} onChange={e => setFormData({...formData, isScheduleH: e.target.value === 'Yes'})} className={inputStyle}><option value="No">NO</option><option value="Yes">YES (Sch. H)</option></select></div></div>)}
-                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">{product ? 'UPDATE PRODUCT' : 'CREATE PRODUCT'}</button></div>
-            </form>
-            <AddCompanyModal isOpen={isAddCompanyModalOpen} onClose={() => setAddCompanyModalOpen(false)} onAdd={async (name) => { const c = await onAddCompany({ name }); if (c) setFormData({...formData, company: c.name}); }} />
-            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={(code) => { setFormData({...formData, barcode: code}); setScannerOpen(false); }} />
-        </Modal>
-    );
-};
-
-const ProductImportModal: React.FC<{ isOpen: boolean; onClose: () => void; onImport: (event: React.ChangeEvent<HTMLInputElement>) => void; onDownloadTemplate: () => void; }> = ({ isOpen, onClose, onImport, onDownloadTemplate }) => {
     if (!isOpen) return null;
+
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Import Product Database">
-            <div className="space-y-6"><div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800"><h4 className="text-sm font-black text-indigo-800 dark:text-indigo-300 mb-2 uppercase tracking-widest">Instructions</h4><ul className="text-xs text-indigo-700 dark:text-indigo-400 space-y-2 list-disc pl-4"><li>Use the CSV template for column mapping.</li><li>Company name is required for sorting reports.</li></ul></div><div className="flex flex-col gap-4"><button onClick={onDownloadTemplate} className="flex items-center justify-center gap-2 w-full py-4 bg-white dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl hover:border-indigo-400 transition-colors"><DownloadIcon className="h-5 w-5 text-indigo-500" /><span className="font-bold text-slate-700 dark:text-slate-300">Download Template</span></button><div className="relative"><input type="file" accept=".csv" onChange={onImport} className="hidden" id="csv-import-input" /><label htmlFor="csv-import-input" className="flex items-center justify-center gap-2 w-full py-4 bg-indigo-600 text-white rounded-xl font-black cursor-pointer hover:bg-indigo-700 shadow-xl transition-all uppercase text-sm"><UploadIcon className="h-5 w-5" /> Select File & Upload</label></div></div><div className="flex justify-end pt-4 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-6 py-2 bg-slate-200 dark:bg-slate-700 rounded-lg font-bold">Close</button></div></div>
+        <Modal isOpen={isOpen} onClose={onClose} title={product ? 'Edit Product Master' : 'Add New Product Master'} maxWidth="max-w-2xl">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Product Name*</label>
+                        <input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className={inputStyle} required />
+                    </div>
+                    <div>
+                        <div className="flex justify-between items-end mb-1">
+                            <label className="block text-xs font-bold text-slate-500 uppercase">Company*</label>
+                            <button type="button" onClick={() => setIsAddingCompany(true)} className="text-[10px] text-indigo-600 font-bold hover:underline">+ NEW COMPANY</button>
+                        </div>
+                        <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })} className={inputStyle} required>
+                            <option value="">-- Select Company --</option>
+                            {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">HSN Code</label>
+                        <input value={formData.hsnCode} onChange={e => setFormData({ ...formData, hsnCode: e.target.value })} className={inputStyle} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">GST Rate (%)</label>
+                        <select value={formData.gst} onChange={e => setFormData({ ...formData, gst: parseFloat(e.target.value) })} className={inputStyle}>
+                            {gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode / SKU</label>
+                        <input value={formData.barcode} onChange={e => setFormData({ ...formData, barcode: e.target.value })} className={inputStyle} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label>
+                        <input type="number" value={formData.openingStock} onChange={e => setFormData({ ...formData, openingStock: parseInt(e.target.value) || 0 })} className={inputStyle} />
+                    </div>
+                    {!isRetail && (
+                        <>
+                            <div className="md:col-span-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Composition</label>
+                                <input value={formData.composition} onChange={e => setFormData({ ...formData, composition: e.target.value })} className={inputStyle} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Units per Pack</label>
+                                <input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({ ...formData, unitsPerStrip: parseInt(e.target.value) || 1 })} className={inputStyle} />
+                            </div>
+                            <div className="flex items-center gap-2 pt-6">
+                                <input type="checkbox" id="isScheduleH" checked={formData.isScheduleH} onChange={e => setFormData({ ...formData, iScheduleH: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />
+                                <label htmlFor="isScheduleH" className="text-xs font-bold text-slate-500 uppercase">Is Schedule H?</label>
+                            </div>
+                        </>
+                    )}
+                </div>
+                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700">
+                    <button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold">Cancel</button>
+                    <button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE PRODUCT</button>
+                </div>
+            </form>
+            <AddCompanyModal isOpen={isAddingCompany} onClose={() => setIsAddingCompany(false)} onAdd={(name) => onAddCompany({ name })} />
         </Modal>
     );
 };
 
-export interface InventoryRef {
-    setTab: (tab: InventoryTab) => void;
-}
-
-const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companies, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany, initialTab = 'productMaster' }, ref) => {
-    const t = getTranslation(systemConfig.language); 
-    const isPharma = systemConfig.softwareMode === 'Pharma'; 
-    const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab); 
-    const [isImportModalOpen, setImportModalOpen] = useState(false); 
-    const [isProductModalOpen, setProductModalOpen] = useState(false); 
+const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companies, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany, initialTab = 'company' }, ref) => {
+    const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
+    const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+    const t = getTranslation(systemConfig.language);
 
     useImperativeHandle(ref, () => ({
         setTab: (tab: InventoryTab) => setActiveTab(tab)
@@ -607,16 +653,74 @@ const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companie
         setActiveTab(initialTab);
     }, [initialTab]);
 
-    const handleDeleteBatch = (pid: string, bid: string) => { if (!window.confirm("Delete batch?")) return; const product = products.find(p => p && p.id === pid); if (product) { const updatedBatches = (product.batches || []).filter(b => b.id !== bid); onUpdateProduct(pid, { batches: updatedBatches }); } };
-    const TabButton: React.FC<{ tab: InventoryTab, label: string }> = ({ tab, label }) => (<button onClick={() => setActiveTab(tab)} className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-500/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-700'}`}>{label}</button>);
-    
+    const handleEditProduct = (product: Product) => {
+        setEditingProduct(product);
+        setIsAddEditModalOpen(true);
+    };
+
+    const handleDeleteBatch = async (pid: string, bid: string) => {
+        const product = products.find(p => p.id === pid);
+        if (product && window.confirm("Delete this batch?")) {
+            const updatedBatches = (product.batches || []).filter(b => b.id !== bid);
+            await onUpdateProduct(pid, { batches: updatedBatches });
+        }
+    };
+
+    const TabButton: React.FC<{ id: InventoryTab, label: string, icon: React.ReactNode }> = ({ id, label, icon }) => (
+        <button
+            onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-2 px-6 py-4 text-sm font-bold whitespace-nowrap transition-all border-b-2 ${activeTab === id
+                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/20'
+                    : 'border-transparent text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                }`}
+        >
+            {icon}
+            {label}
+        </button>
+    );
+
+    const tabs: { id: InventoryTab; label: string; icon: React.ReactNode }[] = [
+        { id: 'company', label: t.inventory.companyStock, icon: <PrinterIcon className="h-4 w-4" /> },
+        { id: 'all', label: t.inventory.allStock, icon: <ArchiveIcon className="h-4 w-4" /> },
+        { id: 'selected', label: t.inventory.selectedStock, icon: <SearchIcon className="h-4 w-4" /> },
+        { id: 'batch', label: t.inventory.batchStock, icon: <BarcodeIcon className="h-4 w-4" /> },
+        { id: 'productMaster', label: 'Product Master', icon: <PlusIcon className="h-4 w-4" /> },
+        { id: 'expired', label: t.inventory.expiredStock, icon: <TrashIcon className="h-4 w-4" /> },
+        { id: 'nearExpiry', label: t.inventory.nearExpiry, icon: <InformationCircleIcon className="h-4 w-4" /> },
+    ];
+
     return (
         <div className="p-4 sm:p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-end gap-4 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700"><div><h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3"><ArchiveIcon className="h-8 w-8 text-indigo-600" />Inventory Reports</h1><p className="text-slate-500 dark:text-slate-400 font-medium mt-1 uppercase text-[10px] tracking-widest">Real-time Batch, Expiry & Stock Tracking</p></div><div className="flex gap-3 w-full sm:w-auto"><button onClick={() => setImportModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800"><UploadIcon className="h-5 w-5" /> Bulk Import</button></div></div>
-            <div className="flex overflow-x-auto gap-3 pb-2 scrollbar-hide"><TabButton tab="productMaster" label="Product Master" /><TabButton tab="company" label="Company Stock" /><TabButton tab="all" label="Stock Summary" /><TabButton tab="selected" label="Item Ledger" /><TabButton tab="batch" label="Batch Status" />{isPharma && <><TabButton tab="expired" label="Expired" /><TabButton tab="nearExpiry" label="Expiring Soon" /></>}</div>
-            <div className="mt-2 transition-all duration-300">{activeTab === 'productMaster' && <ProductMasterView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} onEdit={(p) => { setEditingProduct(p); setProductModalOpen(true); }} onDelete={onDeleteProduct} t={t} />}{activeTab === 'all' && <AllItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}{activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}{activeTab === 'batch' && <BatchWiseStockView products={products} purchases={purchases} bills={bills} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}{activeTab === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} t={t} />}{activeTab === 'expired' && <ExpiredStockView products={products} purchases={purchases} bills={bills} t={t} />}{activeTab === 'nearExpiry' && <NearExpiryView products={products} purchases={purchases} bills={bills} t={t} />}</div>
-            <ProductImportModal isOpen={isImportModalOpen} onClose={() => setImportModalOpen(false)} onImport={() => {}} onDownloadTemplate={() => {}} />
-            <AddEditProductModal isOpen={isProductModalOpen} onClose={() => setProductModalOpen(false)} product={editingProduct} products={products} companies={companies} gstRates={gstRates} onSave={onAddProduct} onUpdate={onUpdateProduct} onAddCompany={onAddCompany} systemConfig={systemConfig} />
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-md border dark:border-slate-700 overflow-hidden">
+                <div className="flex border-b dark:border-slate-700 overflow-x-auto no-scrollbar">
+                    {tabs.map(tab => (
+                        <TabButton key={tab.id} id={tab.id} label={tab.label} icon={tab.icon} />
+                    ))}
+                </div>
+            </div>
+
+            <div className="animate-fade-in">
+                {activeTab === 'productMaster' && <ProductMasterView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} onEdit={handleEditProduct} onDelete={onDeleteProduct} t={t} />}
+                {activeTab === 'all' && <AllItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'batch' && <BatchWiseStockView products={products} purchases={purchases} bills={bills} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} t={t} />}
+                {activeTab === 'expired' && <ExpiredStockView products={products} purchases={purchases} bills={bills} t={t} />}
+                {activeTab === 'nearExpiry' && <NearExpiryView products={products} purchases={purchases} bills={bills} t={t} />}
+            </div>
+
+            <AddEditProductModal
+                isOpen={isAddEditModalOpen}
+                onClose={() => setIsAddEditModalOpen(false)}
+                product={editingProduct}
+                products={products}
+                companies={companies}
+                gstRates={gstRates}
+                onSave={onAddProduct}
+                onUpdate={onUpdateProduct}
+                onAddCompany={onAddCompany}
+                systemConfig={systemConfig}
+            />
         </div>
     );
 });

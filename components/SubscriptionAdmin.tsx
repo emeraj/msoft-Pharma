@@ -11,11 +11,19 @@ const inputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-50
 const selectStyle = "w-full p-2 bg-yellow-100 text-slate-900 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500 appearance-none";
 
 /**
- * Removes 'undefined' properties recursively to comply with Firestore data requirements.
+ * Robust sanitizer for Firestore data.
  */
 const sanitizeForFirestore = (obj: any): any => {
-  if (Array.isArray(obj)) return obj.map(sanitizeForFirestore);
+  if (obj === undefined) return null; 
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(v => v !== undefined)
+      .map(v => sanitizeForFirestore(v));
+  }
   if (obj !== null && typeof obj === 'object') {
+    if (obj.constructor !== Object && obj.constructor !== undefined) {
+      return obj;
+    }
     return Object.fromEntries(
       Object.entries(obj)
         .filter(([_, v]) => v !== undefined)
@@ -51,7 +59,6 @@ const ManageSubModal: React.FC<ManageSubModalProps> = ({ isOpen, onClose, mappin
             if (snap.exists()) {
                 setConfig(snap.data() as SystemConfig);
             } else {
-                // If config doesn't exist, provide a default template
                 setConfig({
                     softwareMode: 'Retail',
                     invoicePrintingFormat: 'Thermal',
@@ -73,7 +80,6 @@ const ManageSubModal: React.FC<ManageSubModalProps> = ({ isOpen, onClose, mappin
         setSaving(true);
         try {
             const docRef = doc(db, `users/${mapping.ownerId}/systemConfig`, 'config');
-            // FIX: Sanitize the config object before sending to Firestore
             await setDoc(docRef, sanitizeForFirestore(config), { merge: true });
             alert("Subscription updated successfully!");
             onUpdate();

@@ -46,7 +46,7 @@ const MasterDataDropdown: React.FC<{
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    const masterDataViews: MasterDataView[] = ['ledgerMaster', 'productMaster', 'supplierMaster', 'batchMaster'];
+    const masterDataViews: MasterDataView[] = ['ledgerMaster', 'productMaster', 'batchMaster'];
     const isMasterActive = masterDataViews.includes(activeView as MasterDataView);
 
     useEffect(() => {
@@ -62,7 +62,6 @@ const MasterDataDropdown: React.FC<{
     const labels: Record<MasterDataView, string> = {
         ledgerMaster: 'Ledger Master',
         productMaster: 'Product Master',
-        supplierMaster: 'Suppliers',
         batchMaster: 'Batch Master'
     };
 
@@ -275,9 +274,9 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
              <nav className="hidden sm:flex space-x-2">
+              {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
               {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
               {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
-              {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
               {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
               {hasPermission('canPayment') && <GstReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
               {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
@@ -312,9 +311,9 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           </div>
         </div>
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
+            {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
             {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
             {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
-            {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
             {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
             {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
         </nav>

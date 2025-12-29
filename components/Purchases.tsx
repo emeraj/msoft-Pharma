@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
@@ -600,7 +601,21 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
         setLocalEditingPurchase(null); setFormState(initialFormState);
     };
 
-    const onImportData = (data: any) => {
+    const onImportData = async (data: any) => {
+        // Ensure AI Auto-Fill adds the supplier if it doesn't exist
+        const nameToSearch = (data.supplierName || '').trim();
+        const existingSupplier = suppliers.find(s => s.name.toLowerCase().trim() === nameToSearch.toLowerCase());
+        
+        if (!existingSupplier && nameToSearch) {
+            await onAddSupplier({
+                name: nameToSearch,
+                gstin: data.supplierGstin || '',
+                address: data.supplierAddress || '',
+                phone: '',
+                openingBalance: 0
+            });
+        }
+
         const newItems = [...formState.currentItems, ...data.items];
         const tempTotal = newItems.reduce((sum, item) => {
             const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0) / 100);
@@ -608,6 +623,7 @@ const Purchases: React.FC<PurchasesProps> = ({ products, purchases, companies, s
             return sum + itemTotal + tax;
         }, 0);
         const autoRound = Math.round(tempTotal) - tempTotal;
+        
         setFormState(prev => ({
             ...prev,
             supplierName: data.supplierName || prev.supplierName,

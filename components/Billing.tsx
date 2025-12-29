@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman, Purchase } from '../types';
@@ -275,67 +276,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   /**
-   * CORRECT LEDGER STOCK CALCULATION (Real-time Closing Stock)
-   * Refined to ensure Opening Stock (like the 10 units mentioned) is always counted.
+   * CORRECT LEDGER STOCK CALCULATION
+   * Uses static stock from database minus current session cart quantity.
    */
   const getLiveBatchStock = useCallback((product: Product, batch: Batch): number => {
-    const unitsPerStrip = product.unitsPerStrip || 1;
-    const pBarcode = normalizeCode(product.barcode);
-    const pName = product.name.toLowerCase().trim();
-    const pCompany = product.company.toLowerCase().trim();
-
-    // 1. Initial Inward Base
-    // Always include batch-specific opening stock
-    let totalIn = (batch.openingStock || 0);
-    
-    // Distribute product-level opening stock correctly
-    // It's usually attributed to the 'Primary' or 'First' batch of the product
-    const isPrimary = batch.batchNumber === 'OPENING' || 
-                      batch.batchNumber === 'DEFAULT' || 
-                      batch.id.includes('opening') ||
-                      (product.batches && product.batches.length > 0 && product.batches[0].id === batch.id);
-    
-    if (isPrimary) {
-        totalIn += (product.openingStock || 0);
-    }
-
-    // 2. Add all Inward Transactions (Purchases)
-    // Matches by Product identity AND (Batch Number OR MRP fallback)
-    purchases.forEach(pur => {
-        pur.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode);
-            const isProductMatch = item.productId === product.id || 
-                                 (pBarcode !== "" && iBarcode === pBarcode) ||
-                                 (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
-            
-            if (isProductMatch) {
-                // If batch number matches EXACTLY
-                if (item.batchNumber === batch.batchNumber) {
-                    totalIn += (item.quantity * unitsPerStrip);
-                } 
-                // FALLBACK: If batch number is missing or "DEFAULT" in master but specific in purchase, 
-                // and the MRP matches, we attribute it to this ledger line.
-                else if (Math.abs(item.mrp - batch.mrp) < 0.1 && (batch.batchNumber === 'DEFAULT' || batch.batchNumber === 'OPENING')) {
-                    totalIn += (item.quantity * unitsPerStrip);
-                }
-            }
-        });
-    });
-
-    // 3. Subtract all Outward Transactions (Sales)
-    let totalOut = 0;
-    bills.forEach(bill => {
-        bill.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode || "");
-            const isProductMatch = item.productId === product.id || (pBarcode !== "" && iBarcode === pBarcode);
-            if (isProductMatch && item.batchId === batch.id) {
-                totalOut += item.quantity;
-            }
-        });
-    });
-    
-    return totalIn - totalOut;
-  }, [bills, purchases]);
+    const dbStock = batch.stock || 0;
+    const inCart = cart.filter(i => i.batchId === batch.id).reduce((sum, i) => sum + i.quantity, 0);
+    return dbStock - inCart;
+  }, [cart]);
 
   const getExpiryDate = (expiryString: string): Date => {
       if (!expiryString) return new Date('9999-12-31');
@@ -544,11 +492,21 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     const parts = lowerSearchTerm.split(/\s+/);
     const mainTerm = parts[0];
     const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
-    return products.filter(p => {
+
+    const filtered = products.filter(p => {
         const nameMatch = p.name.toLowerCase().includes(mainTerm) || (!isPharmaMode && p.barcode && p.barcode.toLowerCase().includes(mainTerm));
         if (!nameMatch) return false;
         if (maybeMRP !== null) return p.batches.some(b => Math.abs((b.saleRate || b.mrp) - maybeMRP) < 5);
         return true; 
+    });
+
+    // Rank results: Items with stock first
+    return filtered.sort((a, b) => {
+        const aStock = a.batches.reduce((sum, bt) => sum + (bt.stock || 0), 0);
+        const bStock = b.batches.reduce((sum, bt) => sum + (bt.stock || 0), 0);
+        if (aStock > 0 && bStock <= 0) return -1;
+        if (aStock <= 0 && bStock > 0) return 1;
+        return a.name.localeCompare(b.name);
     }).slice(0, 10); 
   }, [searchTerm, products, isPharmaMode]);
 
@@ -709,7 +667,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                     {searchResults.length > 0 && searchTerm && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
                         <ul>{searchResults.map((product, productIndex) => {
-                            const totalProductStock = navigableBatchesByProduct[productIndex].reduce((sum, b) => sum + (b as any).liveStock, 0);
+                            const batches = navigableBatchesByProduct[productIndex] || [];
+                            const totalProductStock = batches.reduce((sum, b) => sum + (b as any).liveStock, 0);
                             const isOutOfStock = totalProductStock <= 0;
                             return (
                                 <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
@@ -717,7 +676,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                         <div className="flex flex-col">
                                             <span className={isOutOfStock ? 'text-rose-500' : ''}>
                                                 {product.name} 
-                                                <span className="ml-2 px-2 py-0.5 bg-slate-100 dark:bg-slate-900/50 rounded-full text-[10px] font-black uppercase tracking-tighter text-indigo-600">
+                                                <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-tighter ${isOutOfStock ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-indigo-600 dark:bg-slate-900/50'}`}>
                                                     Stock: {isPharmaMode ? formatStock(totalProductStock, product.unitsPerStrip) : `${totalProductStock} U`}
                                                 </span>
                                             </span>
@@ -726,19 +685,25 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                         {isPharmaMode && product.composition && (<button onClick={(e) => { e.stopPropagation(); setSubstituteTarget(product); }} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-lg text-[10px] font-black uppercase tracking-tighter hover:bg-indigo-200 transition-all flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 shadow-sm"><SwitchHorizontalIcon className="h-3 w-3" />Alternatives</button>)}
                                     </div>
                                     <ul className="pl-4 pb-2">
-                                        {navigableBatchesByProduct[productIndex]?.map((batch, batchIndex) => { 
-                                            const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; 
-                                            const expiryDate = getExpiryDate(batch.expiryDate);
-                                            const today = new Date(); today.setHours(0,0,0,0);
-                                            const isExpired = expiryDate < today;
-                                            const liveStock = (batch as any).liveStock || 0;
-                                            return (
-                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired || liveStock <= 0 ? 'opacity-70' : ''}`} onClick={() => handleAddToCartLocal(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
-                                                    <div>{isPharmaMode && (<><span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span><span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>Exp: {batch.expiryDate}</span></>)}</div>
-                                                    <div className="flex items-center gap-3"><span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${liveStock > 0 ? (isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30') : 'bg-slate-100 text-slate-500'}`}>Stock: {isPharmaMode ? formatStock(liveStock, product.unitsPerStrip) : `${liveStock} U`}</span></div>
-                                                </li>
-                                            ); 
-                                        })}
+                                        {batches.length > 0 ? (
+                                            batches.map((batch, batchIndex) => { 
+                                                const isActive = productIndex === activeIndices.product && batchIndex === activeIndices.batch; 
+                                                const expiryDate = getExpiryDate(batch.expiryDate);
+                                                const today = new Date(); today.setHours(0,0,0,0);
+                                                const isExpired = expiryDate < today;
+                                                const liveStock = (batch as any).liveStock || 0;
+                                                return (
+                                                    <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired || liveStock <= 0 ? 'opacity-70' : ''}`} onClick={() => handleAddToCartLocal(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
+                                                        <div>{isPharmaMode && (<><span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span><span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>Exp: {batch.expiryDate}</span></>)}</div>
+                                                        <div className="flex items-center gap-3"><span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${liveStock > 0 ? (isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30') : 'bg-slate-100 text-slate-500'}`}>Stock: {isPharmaMode ? formatStock(liveStock, product.unitsPerStrip) : `${liveStock} U`}</span></div>
+                                                    </li>
+                                                ); 
+                                            })
+                                        ) : (
+                                            <li className="px-6 py-2 text-[10px] text-rose-500 italic font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 rounded mx-2 my-1">
+                                                Zero Stock - Out of inventory
+                                            </li>
+                                        )}
                                     </ul>
                                 </li>
                             );
@@ -750,7 +715,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                 </div>
             </div>
           </div>
-          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => handleUpdateItemQty(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => handleUpdateItemQty(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemMrp(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => onRemoveFromCart(item.batchId)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
+          <div className="mt-6"><h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 mb-2">{t.billing.cartItems}</h3><div className="overflow-x-auto max-h-[calc(100vh-380px)]">{cart.length > 0 ? (<table className="w-full text-sm text-left text-slate-800 dark:text-slate-300"><thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-50 dark:bg-slate-700 sticky top-0"><tr><th scope="col" className="px-2 py-3">{t.billing.product}</th>{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.pack}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.batch}</th>}{isPharmaMode && <th scope="col" className="px-2 py-3">{t.billing.strip}</th>}<th scope="col" className="px-2 py-3">{isPharmaMode ? t.billing.tabs : t.billing.qty}</th><th scope="col" className="px-2 py-3">{t.billing.mrp}</th><th scope="col" className="px-2 py-3">{t.billing.amount}</th><th scope="col" className="px-2 py-3">{t.billing.action}</th></tr></thead><tbody>{cart.map(item => (<tr key={item.batchId} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"><td className="px-2 py-3 font-medium text-slate-900 dark:text-white">{item.productName}{isPharmaMode && item.isScheduleH && <span className="ml-1 text-xs font-semibold text-orange-600 dark:text-orange-500">(Sch. H)</span>}</td>{isPharmaMode && <td className="px-2 py-3">{item.unitsPerStrip ? `1*${item.unitsPerStrip}`: '-'}</td>}{isPharmaMode && <td className="px-2 py-3">{item.batchNumber}</td>}{isPharmaMode && (<td className="px-2 py-3"><input ref={(el) => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="text" inputMode="numeric" value={item.stripQty} onChange={e => handleUpdateItemQty(item.batchId, parseInt(e.target.value) || 0, item.looseQty)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); cartItemTabInputRefs.current.get(item.batchId)?.focus(); cartItemTabInputRefs.current.get(item.batchId)?.select(); } }} className={`w-14 p-1 text-center ${inputStyle}`} disabled={!item.unitsPerStrip || item.unitsPerStrip <= 1} /></td>)}<td className="px-2 py-3"><input ref={(el) => { cartItemTabInputRefs.current.get(item.batchId, el); }} type="text" inputMode="numeric" value={item.looseQty} onChange={e => handleUpdateItemQty(item.batchId, item.stripQty, parseInt(e.target.value) || 0)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (isMrpEditable) { cartItemMrpInputRefs.current.get(item.batchId)?.focus(); cartItemMrpInputRefs.current.get(item.batchId)?.select(); } else { searchInputRef.current?.focus(); searchInputRef.current?.select(); } } }} className={`w-14 p-1 text-center ${inputStyle}`} /></td><td className="px-2 py-3">{isMrpEditable ? (<input ref={(el) => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.mrp} onChange={(e) => updateCartItemMrp(item.batchId, { mrp: parseFloat(e.target.value) || 0, stripQty: item.stripQty, looseQty: item.looseQty })} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchInputRef.current?.focus(); searchInputRef.current?.select(); } }} className={`w-20 p-1 text-center ${inputStyle}`} />) : (<span>₹{item.mrp.toFixed(2)}</span>)}</td><td className="px-2 py-3 font-semibold">₹{item.total.toFixed(2)}</td><td className="px-2 py-3"><div className="flex items-center gap-2"><button onClick={() => onRemoveFromCart(item.batchId)} className="text-red-500 hover:text-red-700"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table>) : (<div className="text-center py-10 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-lg"><p>{t.billing.cartEmpty}</p></div>)}</div></div>
         </Card>
       </div>
       <div className="lg:col-span-1">
