@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment, serverTimestamp } from 'firebase/firestore';
@@ -258,8 +259,6 @@ function App() {
             <Billing 
               products={products} 
               bills={bills} 
-              // Fix: Added missing 'purchases' prop required by BillingProps
-              purchases={purchases}
               customers={customers} 
               salesmen={salesmen} 
               companyProfile={companyProfile} 
