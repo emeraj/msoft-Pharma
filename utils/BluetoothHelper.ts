@@ -128,11 +128,11 @@ export class BluetoothHelper {
    * Generate professional ESC/POS receipt bytes for thermal printers
    */
   static generateEscPos(bill: any, company: any, isPharma: boolean = false): Uint8Array {
-    const width = 32; // Standard width for 58mm
+    const width = 32; // Total character width for 58mm printers
     const line = "-".repeat(width) + "\n";
     
     let cmds: number[] = [
-      0x1B, 0x40, // Initialize
+      0x1B, 0x40, // Initialize printer
     ];
 
     const addText = (t: string) => Array.from(this.encodeText(t)).forEach(b => cmds.push(b));
@@ -140,6 +140,14 @@ export class BluetoothHelper {
     const setLeft = () => cmds.push(0x1B, 0x61, 0x00);
     const setRight = () => cmds.push(0x1B, 0x61, 0x02);
     const setBold = (on: boolean) => cmds.push(0x1B, 0x45, on ? 0x01 : 0x00);
+    
+    // Column Definitions: Item (12), Qty (4), Rate (8), Amt (8) = 32
+    const formatRow = (col1: string, col2: string, col3: string, col4: string) => {
+        return col1.padEnd(12).substring(0, 12) + 
+               col2.padStart(4) + 
+               col3.padStart(8) + 
+               col4.padStart(8) + "\n";
+    };
 
     // 1. Header Section
     setCenter();
@@ -159,39 +167,37 @@ export class BluetoothHelper {
     const dateStr = new Date(bill.date).toLocaleDateString();
     addText(`Bill: ${bill.billNumber}\n`);
     addText(`Date: ${dateStr}\n`);
-    addText(`Cust: ${bill.customerName.substring(0, 20)}\n`);
+    addText(`Cust: ${bill.customerName.substring(0, 26)}\n`);
     if (isPharma && bill.doctorName) {
-        addText(`Doc : ${bill.doctorName.substring(0, 20)}\n`);
+        addText(`Doc : ${bill.doctorName.substring(0, 26)}\n`);
     }
     addText(line);
 
-    // 3. Items Table Header (Item: 14, Qty: 4, Rate: 6, Amt: 8)
+    // 3. Items Table Header
     setLeft();
-    const hName = "Item".padEnd(14);
-    const hQty = "Qty".padStart(4);
-    const hRate = "Rate".padStart(6);
-    const hAmt = "Amt".padStart(8);
-    addText(`${hName}${hQty}${hRate}${hAmt}\n`);
+    addText(formatRow("Item", "Qty", "Rate", "Amt"));
     addText(line);
 
     // 4. Items List
     bill.items.forEach((item: any, idx: number) => {
         setLeft();
-        setBold(true);
-        // Multiline name if needed
         const fullName = `${idx + 1}.${item.productName.toUpperCase()}`;
-        const namePart = fullName.substring(0, 14).padEnd(14);
-        const qtyPart = item.quantity.toString().padStart(4);
-        const ratePart = Math.round(item.mrp).toString().padStart(6);
-        const amtPart = Math.round(item.total).toString().padStart(8);
-        addText(`${namePart}${qtyPart}${ratePart}${amtPart}\n`);
         
-        // If name was truncated, print the rest on next line
-        if (fullName.length > 14) {
-            addText(`  ${fullName.substring(14, 30)}\n`);
+        // Print name and basic values
+        // If name > 11 chars, it might wrap. Let's handle it manually for better control.
+        if (fullName.length <= 11) {
+            addText(formatRow(fullName, item.quantity.toString(), Math.round(item.mrp).toString(), Math.round(item.total).toString()));
+        } else {
+            // First line has the start of the name and the numeric values
+            addText(formatRow(fullName.substring(0, 11), item.quantity.toString(), Math.round(item.mrp).toString(), Math.round(item.total).toString()));
+            // Subsequent lines have just the rest of the name
+            let remaining = fullName.substring(11);
+            while (remaining.length > 0) {
+                addText(remaining.substring(0, 32) + "\n");
+                remaining = remaining.substring(32);
+            }
         }
         
-        setBold(false);
         if (isPharma) {
             addText(`  B:${item.batchNumber} E:${item.expiryDate}\n`);
         }
@@ -214,10 +220,10 @@ export class BluetoothHelper {
     // 6. GST Summary
     setCenter();
     setBold(true);
-    addText("GST Summary\n");
+    addText("GST SUMMARY\n");
     setBold(false);
-    // Rate (5), Taxable (9), CGST (9), SGST (9) - Total 32
-    addText("Rate% Taxable  CGST   SGST\n");
+    // Rate (6), Taxable (12), GST (14) = 32
+    addText("Rate%    Taxable     GST(C+S) \n");
     
     const summary = new Map<number, { taxable: number; gst: number }>();
     bill.items.forEach((item: any) => {
@@ -230,11 +236,10 @@ export class BluetoothHelper {
     });
 
     summary.forEach((val, rate) => {
-        const rStr = `${rate}%`.padEnd(5);
-        const tStr = Math.round(val.taxable).toString().padStart(8);
-        const cStr = Math.round(val.gst/2).toString().padStart(7);
-        const sStr = Math.round(val.gst/2).toString().padStart(7);
-        addText(`${rStr}${tStr} ${cStr} ${sStr}\n`);
+        const rStr = `${rate}%`.padEnd(6);
+        const tStr = Math.round(val.taxable).toString().padStart(12);
+        const gStr = Math.round(val.gst).toString().padStart(14);
+        addText(`${rStr}${tStr}${gStr}\n`);
     });
     addText(line);
 
@@ -247,7 +252,7 @@ export class BluetoothHelper {
         const upiUrl = `upi://pay?pa=${company.upiId}&pn=${encodeURIComponent(company.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`;
         const qrCmds = this.generateQrCode(upiUrl);
         qrCmds.forEach(c => cmds.push(c));
-        addText("\n");
+        addText("\n\n");
     }
 
     // 8. Footer
@@ -257,9 +262,10 @@ export class BluetoothHelper {
     setBold(false);
     if (company.remarkLine1) addText(`${company.remarkLine1.substring(0, 32)}\n`);
     
-    addText("\n\n\n\n"); // Feed paper
-    cmds.push(0x1B, 0x69); // Partial cut (some printers)
-    cmds.push(0x1D, 0x56, 0x01); // Feed and cut
+    // Add extra feeds for manual tearing
+    addText("\n\n\n\n"); 
+    cmds.push(0x1B, 0x69); // Partial cut command
+    cmds.push(0x1D, 0x56, 0x01); // Full cut command (ignored by many portable BT printers but standard)
 
     return new Uint8Array(cmds);
   }
