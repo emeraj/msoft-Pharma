@@ -259,6 +259,7 @@ function App() {
             <Billing 
               products={products} 
               bills={bills} 
+              purchases={purchases} // Passed purchases for Live Stock calculation
               customers={customers} 
               salesmen={salesmen} 
               companyProfile={companyProfile} 
