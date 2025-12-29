@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company } from '../types';
 import Card from './common/Card';
@@ -95,9 +94,8 @@ const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]
 
     // Initialize with existing batch info
     (product.batches || []).forEach(b => {
-        batchStockMap.set(b.id, b.openingStock || 0);
-        // Fallback for old default batches
-        if (b.batchNumber === 'OPENING' || (b.batchNumber === 'DEFAULT' && (product.batches || []).length === 1 && !b.openingStock)) {
+        batchStockMap.set(b.id, 0);
+        if (b.batchNumber === 'OPENING' || (b.batchNumber === 'DEFAULT' && (product.batches || []).length === 1)) {
             batchStockMap.set(b.id, product.openingStock || 0);
         }
     });
@@ -348,14 +346,13 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
             const pBarcode = normalizeCode(p.barcode);
             const batchMap = new Map<string, { batchNumber: string; expiryDate: string; opening: number; purchased: number; sold: number; purchasePrice: number; batchIds: Set<string>; }>();
             (p.batches || []).forEach(b => {
-                const existing = batchMap.get(b.batchNumber) || { batchNumber: b.batchNumber, expiryDate: b.expiryDate, opening: b.openingStock || 0, purchased: 0, sold: 0, purchasePrice: b.purchasePrice, batchIds: new Set<string>() };
+                const existing = batchMap.get(b.batchNumber) || { batchNumber: b.batchNumber, expiryDate: b.expiryDate, opening: 0, purchased: 0, sold: 0, purchasePrice: b.purchasePrice, batchIds: new Set<string>() };
                 existing.batchIds.add(b.id);
                 batchMap.set(b.batchNumber, existing);
             });
             const baseOpening = p.openingStock || 0;
             batchMap.forEach((agg, bName) => {
-                let opening = agg.opening;
-                let purchased = 0, sold = 0;
+                let opening = 0, purchased = 0, sold = 0;
                 purchases.forEach(pur => {
                     const purDate = new Date(pur.invoiceDate);
                     pur.items.forEach(item => {
@@ -377,10 +374,10 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                         else if (billDate <= end) sold += item.quantity;
                     });
                 });
-                const closing = opening + purchased - sold + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1 && !agg.opening) ? baseOpening : 0);
+                const closing = opening + purchased - sold + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0);
                 const valuation = closing * (agg.purchasePrice / unitsPerStrip);
                 if (purchased !== 0 || sold !== 0 || closing !== 0 || opening !== 0) {
-                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening: opening + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1 && !agg.opening) ? baseOpening : 0), purchased, sold, closing, valuation, unitsPerStrip });
+                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening: opening + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0), purchased, sold, closing, valuation, unitsPerStrip });
                 }
             });
             if (batchMap.size === 0 && baseOpening > 0) rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: 'OPENING', expiryDate: '-', opening: baseOpening, purchased: 0, sold: 0, closing: baseOpening, valuation: 0, unitsPerStrip });
@@ -513,7 +510,6 @@ const EditBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: 
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={e => setFormData({...formData, saleRate: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label><input type="number" name="openingStock" value={formData.openingStock || 0} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Internal Reference Stock (U)</label><input type="number" name="stock" value={formData.stock} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
                 </div>
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE CHANGES</button></div>
@@ -573,7 +569,7 @@ const AddEditProductModal: React.FC<{
             const { purchasePrice, saleRate, mrp, ...cleanData } = formData;
             const newProduct: Omit<Product, 'id'> = { ...cleanData, batches: [] };
             if (formData.mrp || formData.purchasePrice) {
-                newProduct.batches = [{ id: `batch_${Date.now()}`, batchNumber: 'DEFAULT', expiryDate: '9999-12', stock: 0, openingStock: 0, mrp: parseFloat(formData.mrp) || 0, saleRate: parseFloat(formData.saleRate) || parseFloat(formData.mrp) || 0, purchasePrice: parseFloat(formData.purchasePrice) || 0 }];
+                newProduct.batches = [{ id: `batch_${Date.now()}`, batchNumber: 'DEFAULT', expiryDate: '9999-12', stock: 0, mrp: parseFloat(formData.mrp) || 0, saleRate: parseFloat(formData.saleRate) || parseFloat(formData.mrp) || 0, purchasePrice: parseFloat(formData.purchasePrice) || 0 }];
             }
             onSave(newProduct);
         }
@@ -593,7 +589,7 @@ const AddEditProductModal: React.FC<{
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="md:col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Product Name*</label><input autoFocus value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={inputStyle} required /></div></div>
                 <div className="relative"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Company*</label><div className="relative flex gap-2"><div className="relative flex-grow"><input value={formData.company} onChange={e => { setFormData({...formData, company: e.target.value}); setShowCompanySuggestions(true); }} onFocus={() => setShowCompanySuggestions(true)} onBlur={() => setTimeout(() => setShowCompanySuggestions(false), 200)} onKeyDown={handleCompanyKeyDown} className={inputStyle} required autoComplete="off" placeholder="Select or Add Company" />{showCompanySuggestions && (formData.company || filteredCompanySuggestions.length > 0) && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border rounded shadow-lg max-h-48 overflow-y-auto">{filteredCompanySuggestions.map((c, idx) => (<li key={c.id} onClick={() => setFormData({...formData, company: c.name})} className={`p-2 cursor-pointer text-slate-800 dark:text-slate-200 transition-colors ${idx === activeCompanyIndex ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-indigo-50 dark:hover:bg-slate-600'}`}>{c.name}</li>))}<li onClick={() => setAddCompanyModalOpen(true)} className={`p-2 text-indigo-600 font-bold border-t cursor-pointer transition-colors ${activeCompanyIndex === filteredCompanySuggestions.length ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-slate-100 dark:hover:bg-slate-600'}`}>+ Add New Company</li></ul>)}</div><button type="button" onClick={() => setAddCompanyModalOpen(true)} className="p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors" title="Add New Company"><PlusIcon className="h-5 w-5" /></button></div></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="relative"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Barcode</label><div className="flex gap-2"><input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Scan or type barcode..." /><button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button></div></div></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div className="relative"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Barcode</label><div className="flex gap-2"><input value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} className={inputStyle} placeholder="Scan or type barcode..." /><button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button></div></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Opening Stock (U)</label><input type="number" value={formData.openingStock} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} placeholder="Stock from prev years" /></div></div>
                 {!product && (<div className="p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700"><p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-3">Initial Pricing (Optional Quick Setup)</p><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Rate</label><input type="number" step="0.01" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: e.target.value})} className={inputStyle} placeholder="₹ 0.00" /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" step="0.01" value={formData.saleRate} onChange={e => setFormData({...formData, saleRate: e.target.value})} className={inputStyle} placeholder="₹ 0.00" /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP*</label><input type="number" step="0.01" value={formData.mrp} onChange={e => setFormData({...formData, mrp: e.target.value})} className={inputStyle} placeholder="₹ 0.00" /></div></div></div>)}
                 {isPharma && (<div className="grid grid-cols-1 gap-4"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Composition</label><input value={formData.composition} onChange={e => setFormData({...formData, composition: e.target.value})} className={inputStyle} placeholder="e.g. Paracetamol 500mg" /></div>)}
                 <div className="grid grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">HSN Code</label><input value={formData.hsnCode} onChange={e => setFormData({...formData, hsnCode: e.target.value})} className={inputStyle} /></div><div><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">GST Rate (%)</label><select value={formData.gst} onChange={e => setFormData({...formData, gst: Number(e.target.value)})} className={inputStyle}>{gstRates.map(r => <option key={r.id} value={r.rate}>{r.rate}%</option>)}</select></div></div>

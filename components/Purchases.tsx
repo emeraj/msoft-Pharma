@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
@@ -312,21 +311,11 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         if (e) e.preventDefault();
         const { isNewProduct, selectedProduct, productName, company, hsnCode, gst, batchNumber, expiryDate, quantity, mrp, purchasePrice, discount, tax, barcode } = formState;
         
-        // Validation: Prevent duplicates when marking as 'New'
-        if (isNewProduct) {
-            if (barcode) {
-                const existsByBarcode = products.find(p => p.barcode && normalizeCode(p.barcode) === normalizeCode(barcode));
-                if (existsByBarcode) {
-                    alert(`Product with barcode "${barcode}" already exists as "${existsByBarcode.name}". Please search and select it instead.`);
-                    return;
-                }
-            }
-            const existsByName = products.find(p => 
-                p.name.toLowerCase().trim() === productName.toLowerCase().trim() && 
-                p.company.toLowerCase().trim() === company.toLowerCase().trim()
-            );
-            if (existsByName) {
-                alert(`Product "${productName}" by "${company}" already exists. Please select it from the search instead of creating a new entry.`);
+        // Validation: Alert if barcode already exists when creating a 'New' product
+        if (isNewProduct && barcode) {
+            const exists = products.find(p => p.barcode && p.barcode.toLowerCase().trim() === barcode.toLowerCase().trim());
+            if (exists) {
+                alert(`Product with barcode "${barcode}" already exists as "${exists.name}". Please search and select the existing product instead of creating a new one.`);
                 return;
             }
         }

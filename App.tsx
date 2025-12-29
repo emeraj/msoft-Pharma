@@ -197,91 +197,39 @@ function App() {
           const itemsWithIds = purchaseData.items.map(item => { const itTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0)/100); totalAmount += itTotal + (itTotal * item.gst/100); return { ...item }; });
           totalAmount += (purchaseData.roundOff || 0); const newPurchase: Purchase = { ...purchaseData, items: itemsWithIds, totalAmount, id: purchaseRef.id }; batch.set(purchaseRef, sanitizeForFirestore(newPurchase));
           const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
-          
           for (const item of itemsWithIds) {
               const iBarcode = normalizeCode(item.barcode);
               const iName = item.productName.toLowerCase().trim();
               const iCompany = item.company.toLowerCase().trim();
-              
-              // Robust Product Matching: Priority 1: ID, Priority 2: Barcode, Priority 3: Name + Company
               let product = item.productId 
                 ? currentProducts.find(p => p.id === item.productId) 
                 : currentProducts.find(p => {
                     const pBarcode = normalizeCode(p.barcode);
                     if (iBarcode !== "" && pBarcode !== "") return pBarcode === iBarcode;
-                    // Strict fall-through for name match only if barcode is missing on both ends
                     if (iBarcode === "" && pBarcode === "") return p.name.toLowerCase().trim() === iName && p.company.toLowerCase().trim() === iCompany;
                     return false;
                   });
-
               if (product) {
                   const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
-                  
-                  /**
-                   * USER REQUESTED LOGIC: same barcode, same MRP, Same Item Name, Expiry then no need to create new batch.
-                   * We match existing batches by MRP and Expiry Date.
-                   */
-                  const existingBatchIndex = product.batches.findIndex(b => 
-                    Math.abs(b.mrp - item.mrp) < 0.01 && 
-                    b.expiryDate === item.expiryDate
-                  );
-                  
+                  const existingBatchIndex = product.batches.findIndex(b => Math.abs(b.mrp - item.mrp) < 0.01);
                   const units = item.unitsPerStrip || product.unitsPerStrip || 1;
                   const quantityToAdd = item.quantity * units;
-
                   if (existingBatchIndex >= 0) {
-                      // Update existing batch
                       product.batches[existingBatchIndex].stock += quantityToAdd;
                       product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
-                      // If a new batch number is provided, update it to the latest one entered
-                      if (item.batchNumber) {
-                          product.batches[existingBatchIndex].batchNumber = item.batchNumber;
-                      }
-                  } else { 
-                      // Create new batch if MRP or Expiry differs
-                      product.batches.push({ 
-                        id: `batch_${Date.now()}_${Math.random()}`, 
-                        batchNumber: item.batchNumber || 'DEFAULT', 
-                        expiryDate: item.expiryDate || '9999-12', 
-                        stock: quantityToAdd, 
-                        mrp: item.mrp, 
-                        purchasePrice: item.purchasePrice, 
-                        openingStock: 0 
-                      }); 
-                  }
+                      product.batches[existingBatchIndex].batchNumber = item.batchNumber;
+                      product.batches[existingBatchIndex].expiryDate = item.expiryDate;
+                  } else { product.batches.push({ id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: quantityToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 }); }
                   batch.update(productRef, { batches: product.batches });
               } else {
-                  // Product doesn't exist, create it
                   const productRef = doc(collection(db, `users/${dataOwnerId}/products`));
-                  const newBatch = { 
-                    id: `batch_${Date.now()}_${Math.random()}`, 
-                    batchNumber: item.batchNumber || 'DEFAULT', 
-                    expiryDate: item.expiryDate || '9999-12', 
-                    stock: item.quantity * (item.unitsPerStrip || 1), 
-                    mrp: item.mrp, 
-                    purchasePrice: item.purchasePrice, 
-                    openingStock: 0 
-                  };
-                  const newProduct: Product = { 
-                    id: productRef.id, 
-                    name: item.productName, 
-                    company: item.company, 
-                    hsnCode: item.hsnCode, 
-                    gst: item.gst, 
-                    batches: [newBatch], 
-                    barcode: item.barcode || '', 
-                    ...(item.composition && { composition: item.composition }), 
-                    ...(item.unitsPerStrip && { unitsPerStrip: item.unitsPerStrip }), 
-                    ...(item.isScheduleH !== undefined && { isScheduleH: item.isScheduleH }) 
-                  };
+                  const newBatch = { id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: item.quantity * (item.unitsPerStrip || 1), mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 };
+                  const newProduct: Product = { id: productRef.id, name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst, batches: [newBatch], barcode: item.barcode || '', ...(item.composition && { composition: item.composition }), ...(item.unitsPerStrip && { unitsPerStrip: item.unitsPerStrip }), ...(item.isScheduleH !== undefined && { isScheduleH: item.isScheduleH }) };
                   batch.set(productRef, sanitizeForFirestore(newProduct));
               }
           }
           await batch.commit();
-      } catch(e) { 
-          console.error("Purchase save error", e);
-          alert("Error saving purchase ledger."); 
-      }
+      } catch(e) { alert("Error"); }
   };
 
   const handleEditBill = (bill: Bill) => { 
@@ -311,7 +259,6 @@ function App() {
             <Billing 
               products={products} 
               bills={bills} 
-              purchases={purchases} // Passed purchases for Live Stock calculation
               customers={customers} 
               salesmen={salesmen} 
               companyProfile={companyProfile} 
