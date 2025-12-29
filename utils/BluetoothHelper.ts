@@ -212,6 +212,8 @@ export class BluetoothHelper {
         }
     });
 
+    // Leave blank line after item details
+    addText("\n");
     addText(line);
 
     // 5. Totals Section
@@ -221,11 +223,10 @@ export class BluetoothHelper {
     if (bill.roundOff && Math.abs(bill.roundOff) > 0.01) {
         addText(`RoundOff : ${bill.roundOff.toFixed(2)}\n`);
     }
+    
+    // Total line - normal bold font (smaller than double-width)
     setBold(true);
-    // Double width for Grand Total
-    cmds.push(0x1D, 0x21, 0x10); 
-    addText(`TOTAL: Rs. ${bill.grandTotal.toFixed(2)}\n`);
-    cmds.push(0x1D, 0x21, 0x00);
+    addText(`Total Rs : ${bill.grandTotal.toFixed(2)}\n`);
     setBold(false);
     addText(line);
 
