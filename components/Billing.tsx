@@ -23,16 +23,10 @@ const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]
  */
 const extractProductCode = (rawScan: string): string => {
     let cleaned = rawScan.trim();
-
-    // 1. Handle GS1 Datamatrix (Pharma Standard)
-    // Often looks like: (01)0890123456789(17)251231(10)BATCH123
     if (cleaned.includes('(01)') || cleaned.startsWith('01')) {
         const gtinMatch = cleaned.match(/(?:\(01\)|01)(\d{13,14})/);
         if (gtinMatch) return gtinMatch[1];
     }
-
-    // 2. Handle URL wrappers
-    // e.g. https://msoftindia.com/p/890123456789 or ...?id=890123456789
     try {
         if (cleaned.startsWith('http')) {
             const url = new URL(cleaned);
@@ -42,39 +36,26 @@ const extractProductCode = (rawScan: string): string => {
             if (segments.length > 0) return segments[segments.length - 1];
         }
     } catch (e) {}
-
-    // 3. Handle Labelled Strings
-    // e.g. "Part No: 12345", "Item ID: ABC-999", "Barcode: 890..."
     const labelPatterns = [
         /(?:part\s*no|sku|id|item|barcode|gtin|code)[:\s-]+([a-z0-9-]+)/i,
-        /([0-9]{8,14})/ // Long numeric strings (GTINs)
+        /([0-9]{8,14})/ 
     ];
-
     for (const pattern of labelPatterns) {
         const match = cleaned.match(pattern);
         if (match && match[1]) return match[1];
     }
-
-    // 4. Default: Return normalized version of whatever was scanned
     return cleaned.replace(/[^a-z0-9-]/gi, '');
 };
 
-/**
- * HELPER: Calculate live stock by aggregating historical transactions.
- */
 const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]) => {
     const unitsPerStrip = Number(product.unitsPerStrip) || 1;
     const pOpening = Number(product.openingStock) || 0;
-    
     let totalIn = pOpening;
     let totalOut = 0;
-
     const batchStockMap = new Map<string, number>();
-    
     const pName = product.name.toLowerCase().trim();
     const pCompany = product.company.toLowerCase().trim();
     const pBarcode = normalizeCode(product.barcode);
-
     const batches = product.batches || [];
     batches.forEach(b => {
         const bOp = Number(b.openingStock) || 0;
@@ -83,7 +64,6 @@ const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]
             batchStockMap.set(b.id, pOpening);
         }
     });
-
     purchases.forEach(pur => {
         pur.items.forEach(item => {
             const iBarcode = normalizeCode(item.barcode);
@@ -106,7 +86,6 @@ const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]
             }
         });
     });
-
     bills.forEach(bill => {
         bill.items.forEach(item => {
             const iBarcode = normalizeCode(item.barcode || "");
@@ -125,35 +104,7 @@ const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]
             }
         });
     });
-
     return { total: totalIn - totalOut, batchStocks: batchStockMap };
-};
-
-const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureName: string }> = ({ isOpen, onClose, featureName }) => {
-    const upiId = "9890072651@upi";
-    const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=5000&cu=INR`;
-    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
-    if (!isOpen) return null;
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Premium Feature" maxWidth="max-w-md">
-            <div className="text-center p-2">
-                <div className="bg-indigo-100 dark:bg-indigo-900/30 p-4 rounded-xl mb-6 flex flex-col items-center gap-2">
-                    <CloudIcon className="h-10 w-10 text-indigo-600" />
-                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{featureName} is for Premium Users</p>
-                </div>
-                <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Upgrade to Cloud-TAG Pro</h3>
-                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-indigo-300 mb-6">
-                    <img src={qrCodeUrl} alt="Payment QR" className="w-40 h-40 mx-auto border-4 border-white rounded-lg shadow-sm" />
-                    <p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs text-slate-400 font-normal">/ Year</span></p>
-                </div>
-                <div className="bg-indigo-50 dark:bg-indigo-900/20 py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-4">
-                    <CheckCircleIcon className="h-4 w-4 text-indigo-500" />
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp Screenshot: 9890072651</span>
-                </div>
-                <button onClick={onClose} className="w-full py-2 text-slate-500 hover:text-slate-700 font-bold text-sm">Maybe Later</button>
-            </div>
-        </Modal>
-    );
 };
 
 const TextScannerModal: React.FC<{ 
@@ -181,9 +132,12 @@ const TextScannerModal: React.FC<{
             const context = canvasRef.current.getContext('2d');
             if (context) {
                 const video = videoRef.current; const canvas = canvasRef.current;
-                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+                // Scale down for faster AI processing
+                const scale = Math.min(1, 1024 / Math.max(video.videoWidth, video.videoHeight));
+                canvas.width = video.videoWidth * scale; canvas.height = video.videoHeight * scale;
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                onScan(canvas.toDataURL('image/png', 0.95));
+                // Use JPEG with 0.7 quality for speed
+                onScan(canvas.toDataURL('image/jpeg', 0.7));
             }
         }
     };
@@ -274,13 +228,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
   const [isAddCustomerModalOpen, setAddCustomerModalOpen] = useState(false);
   const [selectedSalesmanId, setSelectedSalesmanId] = useState<string>('');
   const [doctorName, setDoctorName] = useState('');
-  
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastAddedBatchIdRef = useRef<string | null>(null);
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
-
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Credit'>('Cash');
   const [showScanner, setShowScanner] = useState(!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false);
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
@@ -289,7 +241,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
   const [showOrderSuccessModal, setShowOrderSuccessModal] = useState(false);
   const [lastSavedBill, setLastSavedBill] = useState<Bill | null>(null);
   const startTimeRef = useRef<number | null>(null);
-
   const [showTextScanner, setShowTextScanner] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [substituteTarget, setSubstituteTarget] = useState<Product | null>(null);
@@ -299,7 +250,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
   const getExpiryDate = (expiryString: string): Date => { if (!expiryString) return new Date('9999-12-31'); const [year, month] = expiryString.split('-').map(Number); return new Date(year, month, 0); };
   const formatStock = (stock: number, unitsPerStrip?: number): string => { if (stock === 0) return '0 U'; if (!unitsPerStrip || unitsPerStrip <= 1) return `${stock} U`; const strips = Math.floor(stock / unitsPerStrip); const looseUnits = stock % unitsPerStrip; let result = ''; if (strips > 0) result += `${strips} S`; if (looseUnits > 0) result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`; return result || '0 U'; };
 
-  // Fix: Added logic to find alternative products (substitutes) by composition in Pharma mode
   const substitutes = useMemo(() => {
     if (!substituteTarget || !isPharmaMode) return [];
     return products.filter(p => 
@@ -352,7 +302,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id); 
     const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; 
     const sellingPrice = batch.saleRate || batch.mrp;
-    
     if (existingItem) { 
         const newTotalUnits = existingItem.quantity + 1; 
         const newStripQty = Math.floor(newTotalUnits / unitsPerStrip); const newLooseQty = newTotalUnits % unitsPerStrip; 
@@ -371,22 +320,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
     setSearchTerm(''); setSubstituteTarget(null);
   };
 
-  /**
-   * REFINED SCAN SUCCESS HANDLER: Uses Smart Data Extractor
-   */
   const handleBarcodeScan = (rawCode: string) => {
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
-    
-    // Step 1: Extract only the product code from the complex scanned string
     const targetCode = extractProductCode(rawCode);
     const normalizedTarget = normalizeCode(targetCode);
-
-    // Step 2: Search by Barcode or Part Number/SKU Match
     const product = products.find(p => {
         const pCode = normalizeCode(p.barcode || "");
         return pCode !== "" && (pCode === normalizedTarget || pCode.includes(normalizedTarget) || normalizedTarget.includes(pCode));
     });
-
     if (product) {
         const liveStock = getLiveStockData(product, purchases, bills);
         const batch = product.batches.find(b => (liveStock.batchStocks.get(b.id) || 0) > 0);
@@ -394,10 +335,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
             handleAddToCartLocal(product, batch);
             setScanResultFeedback({ name: product.name, batch: batch.batchNumber });
             setTimeout(() => setScanResultFeedback(null), 2500);
-        } else alert(`Found ${product.name} but No Stock in any batch.`);
+        } else alert(`Found ${product.name} but No Stock.`);
     } else {
         setSearchTerm(targetCode);
-        alert(`Product with code "${targetCode}" not found in inventory. Searching Master List...`);
+        alert(`Product with code "${targetCode}" not found.`);
     }
   };
 
@@ -407,10 +348,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
     setIsOcrProcessing(true);
     try {
         const base64Data = imageData.split(',')[1]; const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Analyze this product label image. Extract ONLY valid JSON: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }.`;
+        const prompt = `Strictly return JSON only: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }.`;
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview', contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: base64Data } }, { text: prompt }] }],
-            config: { responseMimeType: "application/json", responseSchema: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, technicalCode: { type: Type.STRING }, batch: { type: Type.STRING }, expiry: { type: Type.STRING } } } }
+            model: 'gemini-3-flash-preview', 
+            contents: [{ parts: [{ inlineData: { mimeType: 'image/jpeg', data: base64Data } }, { text: prompt }] }],
+            config: { 
+                thinkingConfig: { thinkingBudget: 0 }, // Optimized for latency
+                responseMimeType: "application/json", 
+                responseSchema: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, technicalCode: { type: Type.STRING }, batch: { type: Type.STRING }, expiry: { type: Type.STRING } } } 
+            }
         });
         const detected = JSON.parse(response.text || '{}');
         const dCode = detected.technicalCode !== "Unknown" ? detected.technicalCode : "";
@@ -421,7 +367,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
 
   const customerSuggestions = useMemo(() => { if (!customerName) return []; return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5); }, [customerName, customers]);
   const handleSelectCustomer = (customer: Customer) => { setCustomerName(customer.name); setSelectedCustomer(customer); setShowCustomerSuggestions(false); };
-  
   const searchResults = useMemo(() => { 
     if (!searchTerm) return []; const parts = searchTerm.toLowerCase().split(/\s+/); const mainTerm = parts[0]; const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
     return products.filter(p => {
@@ -557,9 +502,43 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases, customers
       <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCartLocal} formatStock={formatStock} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={onUpdateConfig} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
+      {/* Fix: UpgradeAiModal was used but not defined. Added definition at the end of the file. */}
       <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="Smart AI Bill Entry" />
     </div>
   );
 };
+
+// Fix: Added UpgradeAiModal component definition to handle premium upgrade prompts.
+const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureName: string }> = ({ isOpen, onClose, featureName }) => (
+    <Modal isOpen={isOpen} onClose={onClose} title="Premium Feature Required">
+        <div className="text-center p-4">
+            <div className="flex justify-center mb-6">
+                <div className="p-4 bg-indigo-100 dark:bg-indigo-900/30 rounded-full animate-bounce">
+                    <CloudIcon className="h-12 w-12 text-indigo-600" />
+                </div>
+            </div>
+            <h3 className="text-xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter mb-2">{featureName}</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-6">
+                This intelligent AI-powered feature is only available for 
+                <span className="mx-1 font-bold text-indigo-600">Premium Plan</span> 
+                users. Tag your business to the cloud to unlock advanced automation.
+            </p>
+            <div className="flex flex-col gap-3">
+                <a 
+                  href="tel:9890072651"
+                  className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs text-center"
+                >
+                  Contact for Upgrade
+                </a>
+                <button 
+                  onClick={onClose}
+                  className="w-full py-3 bg-slate-100 dark:bg-slate-700 text-slate-500 font-bold rounded-xl hover:bg-slate-200 transition-all uppercase tracking-widest text-xs"
+                >
+                  Maybe Later
+                </button>
+            </div>
+        </div>
+    </Modal>
+);
 
 export default Billing;
