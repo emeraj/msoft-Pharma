@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Product, Purchase, PurchaseLineItem, Company, Supplier, SystemConfig, GstRate, Batch } from '../types';
 import Card from './common/Card';
@@ -5,6 +6,7 @@ import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon, AdjustmentsIcon, XIcon, CloudIcon, InformationCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import { GoogleGenAI, Type } from "@google/genai";
+import { extractProductCode } from '../utils/scannerHelper';
 
 // Helper for matching technical codes (removes dashes, dots, spaces)
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -392,10 +394,12 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             {(formState.selectedProduct || formState.isNewProduct) && (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
                     <div className="flex gap-1 md:col-span-2">
-                        <input name="barcode" value={formState.barcode} onChange={e => setFormState({...formState, barcode: e.target.value})} placeholder="Barcode" className={formInputStyle} />
+                        <input name="barcode" value={formState.barcode} onChange={e => setFormState({...formState, barcode: e.target.value})} placeholder="Barcode / Part No" className={formInputStyle} />
                         <button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button>
                     </div>
+                    {/* Fix: Changed incorrectly named setter setFormData to setFormState for batchNumber */}
                     {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={e => setFormState({...formState, batchNumber: e.target.value})} placeholder="Batch No.*" className={formInputStyle} required />}
+                    {/* Fix: Changed incorrectly named setter setFormData to setFormState for expiryDate */}
                     {isPharmaMode && <input name="expiryDate" value={formState.expiryDate} onChange={e => setFormState({...formState, expiryDate: e.target.value})} type="month" className={formInputStyle} required />}
                     <input name="quantity" value={formState.quantity} onChange={e => setFormState({...formState, quantity: e.target.value})} type="number" placeholder="Qty*" className={formInputStyle} required />
                     <input name="purchasePrice" value={formState.purchasePrice} onChange={e => setFormState({...formState, purchasePrice: e.target.value})} type="number" placeholder="Price*" className={formInputStyle} required step="0.01" />
@@ -404,7 +408,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                     <button type="submit" className="bg-indigo-600 text-white rounded-lg px-4 py-2 font-bold shadow hover:bg-indigo-700 transition-colors md:col-span-2 lg:col-span-1">{itemToEdit ? 'Update' : 'Add'}</button>
                 </div>
             )}
-            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={(code) => { setFormState({...formState, barcode: code}); setScannerOpen(false); }} />
+            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={(code) => { setFormState({...formState, barcode: extractProductCode(code)}); setScannerOpen(false); }} />
         </form>
     );
 };
