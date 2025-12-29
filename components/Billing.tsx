@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
-import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman } from '../types';
+import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman, Purchase } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { TrashIcon, SwitchHorizontalIcon, PencilIcon, CameraIcon, PrinterIcon, CheckCircleIcon, ShareIcon, PlusIcon, UserCircleIcon, InformationCircleIcon, BarcodeIcon, XIcon, CloudIcon, SearchIcon } from './icons/Icons';
@@ -142,8 +141,9 @@ const SubstituteModal: React.FC<{
     target: Product | null; 
     substitutes: Product[]; 
     onAdd: (product: Product, batch: Batch) => void;
+    getLiveBatchStock: (p: Product, b: Batch) => number;
     formatStock: (stock: number, units?: number) => string;
-}> = ({ isOpen, onClose, target, substitutes, onAdd, formatStock }) => {
+}> = ({ isOpen, onClose, target, substitutes, onAdd, getLiveBatchStock, formatStock }) => {
     if (!isOpen || !target) return null;
 
     return (
@@ -156,7 +156,7 @@ const SubstituteModal: React.FC<{
                 <div className="space-y-4">
                     {substitutes.length > 0 ? (
                         substitutes.map(p => {
-                            const availableBatches = p.batches.filter(b => b.stock > 0);
+                            const batchesWithStock = p.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(p, b) }));
                             return (
                                 <div key={p.id} className="p-4 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl shadow-sm hover:shadow-md transition-all">
                                     <div className="flex justify-between items-start mb-3">
@@ -170,7 +170,7 @@ const SubstituteModal: React.FC<{
                                         </div>
                                     </div>
                                     <div className="space-y-2">
-                                        {availableBatches.map(b => (
+                                        {batchesWithStock.map(b => (
                                             <div key={b.id} className="flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-800/50 transition-colors">
                                                 <div className="text-xs">
                                                     <span className="font-mono text-slate-500 dark:text-slate-400">B: {b.batchNumber}</span>
@@ -178,21 +178,17 @@ const SubstituteModal: React.FC<{
                                                     <span className="font-black text-indigo-600 dark:text-indigo-400">₹{b.mrp.toFixed(2)}</span>
                                                 </div>
                                                 <div className="flex items-center gap-4">
-                                                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-tighter">Stock: {formatStock(b.stock, p.unitsPerStrip)}</span>
+                                                    <span className={`text-[10px] font-black uppercase tracking-tighter ${b.liveStock > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>Stock: {formatStock(b.liveStock, p.unitsPerStrip)}</span>
                                                     <button 
                                                         onClick={() => onAdd(p, b)}
-                                                        className="px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all"
+                                                        disabled={b.liveStock <= 0}
+                                                        className="px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-lg shadow-md hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
-                                                        Add to Cart
+                                                        Add
                                                     </button>
                                                 </div>
                                             </div>
                                         ))}
-                                        {availableBatches.length === 0 && (
-                                            <div className="py-3 text-center border border-dashed border-rose-200 dark:border-rose-900/30 rounded-lg">
-                                                <p className="text-[10px] text-rose-500 font-black uppercase tracking-widest">OUT OF STOCK</p>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
                             )
@@ -215,6 +211,7 @@ const SubstituteModal: React.FC<{
 interface BillingProps {
   products: Product[];
   bills: Bill[];
+  purchases?: Purchase[];
   customers: Customer[];
   salesmen?: Salesman[];
   companyProfile: CompanyProfile;
@@ -237,7 +234,7 @@ interface BillingProps {
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
 
-const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, onUpdateConfig, isSubscriptionExpired, cart, onAddToCart, onRemoveFromCart, onUpdateCartItem }) => {
+const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], customers, salesmen, onGenerateBill, companyProfile, systemConfig, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, onUpdateConfig, isSubscriptionExpired, cart, onAddToCart, onRemoveFromCart, onUpdateCartItem }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
   const isEditing = !!editingBill;
   const isMrpEditable = systemConfig.mrpEditable !== false; 
@@ -277,6 +274,69 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   const [scanResultFeedback, setScanResultFeedback] = useState<{name: string, batch?: string} | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  /**
+   * CORRECT LEDGER STOCK CALCULATION (Real-time Closing Stock)
+   * Refined to ensure Opening Stock (like the 10 units mentioned) is always counted.
+   */
+  const getLiveBatchStock = useCallback((product: Product, batch: Batch): number => {
+    const unitsPerStrip = product.unitsPerStrip || 1;
+    const pBarcode = normalizeCode(product.barcode);
+    const pName = product.name.toLowerCase().trim();
+    const pCompany = product.company.toLowerCase().trim();
+
+    // 1. Initial Inward Base
+    // Always include batch-specific opening stock
+    let totalIn = (batch.openingStock || 0);
+    
+    // Distribute product-level opening stock correctly
+    // It's usually attributed to the 'Primary' or 'First' batch of the product
+    const isPrimary = batch.batchNumber === 'OPENING' || 
+                      batch.batchNumber === 'DEFAULT' || 
+                      batch.id.includes('opening') ||
+                      (product.batches && product.batches.length > 0 && product.batches[0].id === batch.id);
+    
+    if (isPrimary) {
+        totalIn += (product.openingStock || 0);
+    }
+
+    // 2. Add all Inward Transactions (Purchases)
+    // Matches by Product identity AND (Batch Number OR MRP fallback)
+    purchases.forEach(pur => {
+        pur.items.forEach(item => {
+            const iBarcode = normalizeCode(item.barcode);
+            const isProductMatch = item.productId === product.id || 
+                                 (pBarcode !== "" && iBarcode === pBarcode) ||
+                                 (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
+            
+            if (isProductMatch) {
+                // If batch number matches EXACTLY
+                if (item.batchNumber === batch.batchNumber) {
+                    totalIn += (item.quantity * unitsPerStrip);
+                } 
+                // FALLBACK: If batch number is missing or "DEFAULT" in master but specific in purchase, 
+                // and the MRP matches, we attribute it to this ledger line.
+                else if (Math.abs(item.mrp - batch.mrp) < 0.1 && (batch.batchNumber === 'DEFAULT' || batch.batchNumber === 'OPENING')) {
+                    totalIn += (item.quantity * unitsPerStrip);
+                }
+            }
+        });
+    });
+
+    // 3. Subtract all Outward Transactions (Sales)
+    let totalOut = 0;
+    bills.forEach(bill => {
+        bill.items.forEach(item => {
+            const iBarcode = normalizeCode(item.barcode || "");
+            const isProductMatch = item.productId === product.id || (pBarcode !== "" && iBarcode === pBarcode);
+            if (isProductMatch && item.batchId === batch.id) {
+                totalOut += item.quantity;
+            }
+        });
+    });
+    
+    return totalIn - totalOut;
+  }, [bills, purchases]);
+
   const getExpiryDate = (expiryString: string): Date => {
       if (!expiryString) return new Date('9999-12-31');
       const [year, month] = expiryString.split('-').map(Number);
@@ -284,14 +344,16 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
   };
 
   const formatStock = (stock: number, unitsPerStrip?: number): string => {
-      if (stock === 0) return '0 U';
+      const isNegative = stock < 0;
+      const absStock = Math.abs(stock);
+      if (absStock === 0) return '0 U';
       if (!unitsPerStrip || unitsPerStrip <= 1) return `${stock} U`;
-      const strips = Math.floor(stock / unitsPerStrip);
-      const looseUnits = stock % unitsPerStrip;
+      const strips = Math.floor(absStock / unitsPerStrip);
+      const looseUnits = absStock % unitsPerStrip;
       let result = '';
       if (strips > 0) result += `${strips} S`;
       if (looseUnits > 0) result += `${strips > 0 ? ' + ' : ''}${looseUnits} U`;
-      return result || '0 U';
+      return (isNegative ? '-' : '') + (result || '0 U');
   };
 
   useEffect(() => {
@@ -341,6 +403,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         const todayNoTime = new Date(); todayNoTime.setHours(0,0,0,0);
         if (expiry < todayNoTime) { alert(`Expired: ${product.name} (B: ${batch.batchNumber})`); return; } 
     } 
+    const liveStock = getLiveBatchStock(product, batch);
+    if (liveStock <= 0) {
+        if (!window.confirm(`Stock is zero or negative (${liveStock} U). Continue adding?`)) return;
+    }
+
     const existingItem = cart.find(item => item.productId === product.id && item.batchId === batch.id); 
     const unitsPerStrip = (isPharmaMode && product.unitsPerStrip) ? product.unitsPerStrip : 1; 
     const sellingPrice = batch.saleRate || batch.mrp;
@@ -382,7 +449,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
             mrp: sellingPrice, 
             gst: product.gst, 
             total: unitPrice, 
-            addedAt: Date.now(), // Client-side timestamp for instant sorting
+            addedAt: Date.now(),
             ...(isPharmaMode && product.isScheduleH && { isScheduleH: product.isScheduleH }), 
             ...(isPharmaMode && product.composition && { composition: product.composition }), 
             ...(isPharmaMode && product.unitsPerStrip && { unitsPerStrip: product.unitsPerStrip }), 
@@ -398,9 +465,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     if (isSubscriptionExpired) { alert("Subscription Expired! Scanning is disabled."); return; }
     const product = products.find(p => p.barcode === code);
     if (product) {
-        const batch = product.batches.find(b => b.stock > 0);
+        const batchesWithStock = product.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(product, b) }));
+        const batch = batchesWithStock.sort((a, b) => b.liveStock - a.liveStock)[0];
         if (batch) handleAddToCartLocal(product, batch);
-        else alert("Out of stock.");
+        else alert("No batches found for this product.");
     } else alert(`Product with barcode ${code} not found.`);
   };
 
@@ -444,15 +512,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
             bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
         }
         if (bestMatch) {
-            let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch && b.stock > 0) : undefined;
-            if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => b.stock - a.stock).find(b => b.stock > 0);
+            let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch) : undefined;
+            if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => getLiveBatchStock(bestMatch, b) - getLiveBatchStock(bestMatch, a))[0];
             if (targetBatch) {
                 await handleAddToCartLocal(bestMatch, targetBatch);
                 setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
                 setTimeout(() => setScanResultFeedback(null), 3000);
                 setShowTextScanner(false);
             } else {
-                alert(`Found ${bestMatch.name} but out of stock.`);
+                alert(`Found ${bestMatch.name} but no batches available.`);
                 setShowTextScanner(false);
             }
         } else {
@@ -484,16 +552,24 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
     }).slice(0, 10); 
   }, [searchTerm, products, isPharmaMode]);
 
+  /**
+   * Memoize batches with ledger-style closing stock for search results.
+   * SHOWS CLOSING STOCK for each batch.
+   */
   const navigableBatchesByProduct = useMemo(() => { 
       const parts = searchTerm.toLowerCase().split(/\s+/);
       const maybeMRP = parts.length > 1 ? parseFloat(parts[1]) : null;
       return searchResults.map(p => {
-          let batches = p.batches.filter(b => b.stock > 0);
-          if (maybeMRP !== null) batches.sort((a, b) => Math.abs((a.saleRate || a.mrp) - maybeMRP) - Math.abs((b.saleRate || b.mrp) - maybeMRP));
-          else batches.sort((a, b) => isPharmaMode ? (getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()) : 0);
-          return batches;
+          let batchesWithStock = p.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(p, b) }));
+          
+          if (maybeMRP !== null) {
+              batchesWithStock.sort((a, b) => Math.abs((a.saleRate || a.mrp) - maybeMRP) - Math.abs((b.saleRate || b.mrp) - maybeMRP));
+          } else {
+              batchesWithStock.sort((a, b) => isPharmaMode ? (getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime()) : b.liveStock - a.liveStock);
+          }
+          return batchesWithStock;
       }); 
-  }, [searchResults, isPharmaMode, searchTerm]);
+  }, [searchResults, isPharmaMode, searchTerm, getLiveBatchStock]);
 
   useEffect(() => { if (searchTerm && searchResults.length > 0) { const firstProductIndex = navigableBatchesByProduct.findIndex(batches => batches.length > 0); if (firstProductIndex !== -1) { setActiveIndices({ product: firstProductIndex, batch: 0 }); } else { setActiveIndices({ product: 0, batch: -1 }); } } else { setActiveIndices({ product: -1, batch: -1 }); } }, [searchTerm, searchResults, navigableBatchesByProduct]);
   
@@ -514,10 +590,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
       } 
       const totalUnits = (sQty * unitsPerStrip) + lQty; 
 
-      if (totalUnits > 0 && totalUnits <= batch.stock) { 
+      if (totalUnits > 0) { 
           const unitPrice = item.mrp / (unitsPerStrip > 1 ? unitsPerStrip : 1); 
           await onUpdateCartItem(batchId, { stripQty: sQty, looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice }); 
-      } else if (totalUnits === 0) {
+      } else {
           await onRemoveFromCart(batchId);
       }
   };
@@ -633,11 +709,20 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                     {searchResults.length > 0 && searchTerm && (
                     <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg shadow-lg max-h-96 overflow-y-auto">
                         <ul>{searchResults.map((product, productIndex) => {
-                            const isOutOfStock = navigableBatchesByProduct[productIndex].length === 0;
+                            const totalProductStock = navigableBatchesByProduct[productIndex].reduce((sum, b) => sum + (b as any).liveStock, 0);
+                            const isOutOfStock = totalProductStock <= 0;
                             return (
                                 <li key={product.id} className="border-b dark:border-slate-600 last:border-b-0">
                                     <div className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 flex justify-between items-center">
-                                        <div className="flex flex-col"><span className={isOutOfStock ? 'text-rose-500' : ''}>{product.name} {isOutOfStock && '(Out of Stock)'}</span>{isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase mt-0.5 tracking-tight">{product.composition}</span>}</div>
+                                        <div className="flex flex-col">
+                                            <span className={isOutOfStock ? 'text-rose-500' : ''}>
+                                                {product.name} 
+                                                <span className="ml-2 px-2 py-0.5 bg-slate-100 dark:bg-slate-900/50 rounded-full text-[10px] font-black uppercase tracking-tighter text-indigo-600">
+                                                    Stock: {isPharmaMode ? formatStock(totalProductStock, product.unitsPerStrip) : `${totalProductStock} U`}
+                                                </span>
+                                            </span>
+                                            {isPharmaMode && product.composition && <span className="text-[10px] text-slate-500 font-normal uppercase mt-0.5 tracking-tight">{product.composition}</span>}
+                                        </div>
                                         {isPharmaMode && product.composition && (<button onClick={(e) => { e.stopPropagation(); setSubstituteTarget(product); }} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 rounded-lg text-[10px] font-black uppercase tracking-tighter hover:bg-indigo-200 transition-all flex items-center gap-1.5 border border-indigo-200 dark:border-indigo-800 shadow-sm"><SwitchHorizontalIcon className="h-3 w-3" />Alternatives</button>)}
                                     </div>
                                     <ul className="pl-4 pb-2">
@@ -646,10 +731,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
                                             const expiryDate = getExpiryDate(batch.expiryDate);
                                             const today = new Date(); today.setHours(0,0,0,0);
                                             const isExpired = expiryDate < today;
+                                            const liveStock = (batch as any).liveStock || 0;
                                             return (
-                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired ? 'opacity-70' : ''}`} onClick={() => handleAddToCartLocal(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
+                                                <li key={batch.id} className={`px-4 py-2 flex justify-between items-center transition-colors rounded-md mx-2 my-1 ${isActive ? 'bg-indigo-200 dark:bg-indigo-700' : 'hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer'} ${isExpired || liveStock <= 0 ? 'opacity-70' : ''}`} onClick={() => handleAddToCartLocal(product, batch)} onMouseEnter={() => setActiveIndices({ product: productIndex, batch: batchIndex })}>
                                                     <div>{isPharmaMode && (<><span className={`text-sm font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>B: {batch.batchNumber}</span><span className={`text-xs ml-2 ${isExpired ? 'text-rose-600 dark:text-rose-400 font-black' : 'text-slate-500'}`}>Exp: {batch.expiryDate}</span></>)}</div>
-                                                    <div className="flex items-center gap-3"><span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30'}`}>Stock: {isPharmaMode ? formatStock(batch.stock, product.unitsPerStrip) : `${batch.stock}`}</span></div>
+                                                    <div className="flex items-center gap-3"><span className={`font-bold ${isExpired ? 'text-rose-600 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>₹{(batch.saleRate || batch.mrp).toFixed(2)}</span><span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded ${liveStock > 0 ? (isExpired ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/40' : 'bg-green-50 text-green-600 dark:bg-green-900/30') : 'bg-slate-100 text-slate-500'}`}>Stock: {isPharmaMode ? formatStock(liveStock, product.unitsPerStrip) : `${liveStock} U`}</span></div>
                                                 </li>
                                             ); 
                                         })}
@@ -686,7 +772,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, customers, salesmen,
         </Card>
       </div>
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
-      <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCartLocal} formatStock={formatStock} />
+      <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={substitutes} onAdd={handleAddToCartLocal} getLiveBatchStock={getLiveBatchStock} formatStock={formatStock} />
       <BarcodeScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanSuccess={handleBarcodeScan} />
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); }} systemConfig={systemConfig} onUpdateConfig={onUpdateConfig} onSelectPrinter={(printer) => { if (billToPrint) { executePrint(billToPrint, printer); setBillToPrint(null); } }} />
       <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="Smart AI Bill Entry" />

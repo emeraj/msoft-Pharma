@@ -1,17 +1,18 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import Header from './components/Header';
 import Billing from './components/Billing';
-import Inventory from './components/Inventory';
+import Inventory, { InventoryRef } from './components/Inventory';
 import Purchases from './components/Purchases';
 import DayBook from './components/DayBook';
 import SettingsModal from './components/SettingsModal';
 import Auth from './components/Auth';
 import PaymentEntry from './components/PaymentEntry';
 import SuppliersLedger from './components/SuppliersLedger';
+import SupplierMaster from './components/SupplierMaster';
 import CustomerLedger from './components/CustomerLedger';
 import SalesReport from './components/SalesReport';
 import SalesmanReport from './components/SalesmanReport';
@@ -25,7 +26,7 @@ import { InformationCircleIcon, XIcon, CloudIcon, CheckCircleIcon } from './comp
 import type { 
   AppView, Product, Bill, Purchase, Supplier, Customer, CustomerPayment, 
   Payment, CompanyProfile, SystemConfig, GstRate, Company, UserPermissions, 
-  Salesman, UserMapping, GstReportView, CartItem
+  Salesman, UserMapping, GstReportView, CartItem, MasterDataView
 } from './types';
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
@@ -90,14 +91,6 @@ function App() {
   // Cloud-Synced Cart State
   const [cloudCart, setCloudCart] = useState<CartItem[]>([]);
 
-  const subscriptionStatus = useMemo(() => {
-    if (!systemConfig.subscription?.isPremium || !systemConfig.subscription?.expiryDate) return { isExpiring: false, isExpired: false, daysLeft: 0 };
-    const expiry = new Date(systemConfig.subscription.expiryDate); const today = new Date(); const diffTime = expiry.getTime() - today.getTime(); const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return { isExpiring: diffDays <= 15 && diffDays > 0, isExpired: diffDays <= 0, daysLeft: diffDays };
-  }, [systemConfig.subscription]);
-
-  const upiId = "9890072651@upi"; const upiUrl = `upi://pay?pa=${upiId}&pn=${encodeURIComponent("M. Soft India")}&am=5000&cu=INR`; const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -133,12 +126,9 @@ function App() {
     const unsubCompanies = onSnapshot(collection(db, `${basePath}/companies`), (snap) => setCompanies(snap.docs.map(d => ({ id: d.id, ...d.data() } as Company))));
     const unsubProfile = onSnapshot(doc(db, `${basePath}/companyProfile`, 'profile'), (snap) => { if (snap.exists()) setCompanyProfile(snap.data() as CompanyProfile); });
     const unsubConfig = onSnapshot(doc(db, `${basePath}/systemConfig`, 'config'), (snap) => { if (snap.exists()) setSystemConfig(snap.data() as SystemConfig); });
-    
-    // Live Cloud Cart Listener - Sorted by client-side addedAt for instant sequence
     const unsubCart = onSnapshot(query(collection(db, `${basePath}/tempCart`), orderBy('addedAt', 'asc')), (snap) => {
         setCloudCart(snap.docs.map(d => d.data() as CartItem));
     });
-
     return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
   }, [dataOwnerId]);
 
@@ -146,33 +136,18 @@ function App() {
   const handleUpdateProduct = async (id: string, productData: Partial<Product>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/products`, id), sanitizeForFirestore(productData)); };
   const handleDeleteProduct = async (id: string) => { if (!dataOwnerId) return; const isUsedInBills = bills.some(bill => bill.items.some(item => item.productId === id)); if (isUsedInBills) { alert("Used in Sales"); return; } const isUsedInPurchases = purchases.some(purchase => purchase.items.some(item => item.productId === id)); if (isUsedInPurchases) { alert("Used in Purchases"); return; } if (window.confirm('Delete product?')) { await deleteDoc(doc(db, `users/${dataOwnerId}/products`, id)); } };
 
-  // Cloud Cart Methods
+  const handleUpdateSupplier = async (id: string, data: Partial<Supplier>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/suppliers`, id), sanitizeForFirestore(data)); };
+  const handleDeleteSupplier = async (id: string) => { if (!dataOwnerId) return; const supplier = suppliers.find(s => s.id === id); if (!supplier) return; const isUsed = purchases.some(p => p.supplier === supplier.name); if (isUsed) { alert("Supplier has recorded purchases. Cannot delete."); return; } if (window.confirm('Delete supplier?')) { await deleteDoc(doc(db, `users/${dataOwnerId}/suppliers`, id)); } };
+
   const handleAddToCartCloud = async (item: CartItem) => {
       if (!dataOwnerId) return;
       const itemRef = doc(db, `users/${dataOwnerId}/tempCart`, item.batchId);
-      // Use Date.now() for addedAt to ensure local order is established immediately without server-timestamp delay
       const itemToSave = { ...item, addedAt: item.addedAt || Date.now() };
       await setDoc(itemRef, sanitizeForFirestore(itemToSave), { merge: true });
   };
-
-  const handleRemoveFromCartCloud = async (batchId: string) => {
-      if (!dataOwnerId) return;
-      await deleteDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId));
-  };
-
-  const handleUpdateCartItemCloud = async (batchId: string, updates: Partial<CartItem>) => {
-      if (!dataOwnerId) return;
-      await updateDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId), sanitizeForFirestore(updates));
-  };
-
-  const handleClearCartCloud = async () => {
-      if (!dataOwnerId) return;
-      const batch = writeBatch(db);
-      cloudCart.forEach(item => {
-          batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId));
-      });
-      await batch.commit();
-  };
+  const handleRemoveFromCartCloud = async (batchId: string) => { if (!dataOwnerId) return; await deleteDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId)); };
+  const handleUpdateCartItemCloud = async (batchId: string, updates: Partial<CartItem>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId), sanitizeForFirestore(updates)); };
+  const handleClearCartCloud = async () => { if (!dataOwnerId) return; const batch = writeBatch(db); cloudCart.forEach(item => { batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)); }); await batch.commit(); };
 
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>) => {
     if (!dataOwnerId) return null;
@@ -182,10 +157,7 @@ function App() {
         for (const item of billData.items) { const product = currentProducts.find(p => p.id === item.productId); if (product) { const bIdx = product.batches.findIndex(b => b.id === item.batchId); if (bIdx !== -1) { product.batches[bIdx].stock -= item.quantity; productUpdates.set(product.id, product.batches); } } }
         productUpdates.forEach((batches, productId) => batch.update(doc(db, `users/${dataOwnerId}/products`, productId), { batches }));
         if (billData.paymentMode === 'Credit' && billData.customerId) batch.update(doc(db, `users/${dataOwnerId}/customers`, billData.customerId), { balance: increment(billData.grandTotal) });
-        
-        // Clear cloud cart after successful bill
         cloudCart.forEach(item => batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)));
-
         await batch.commit(); return newBill;
     } catch (e) { alert("Failed"); return null; }
   };
@@ -201,9 +173,7 @@ function App() {
               const iBarcode = normalizeCode(item.barcode);
               const iName = item.productName.toLowerCase().trim();
               const iCompany = item.company.toLowerCase().trim();
-              let product = item.productId 
-                ? currentProducts.find(p => p.id === item.productId) 
-                : currentProducts.find(p => {
+              let product = item.productId ? currentProducts.find(p => p.id === item.productId) : currentProducts.find(p => {
                     const pBarcode = normalizeCode(p.barcode);
                     if (iBarcode !== "" && pBarcode !== "") return pBarcode === iBarcode;
                     if (iBarcode === "" && pBarcode === "") return p.name.toLowerCase().trim() === iName && p.company.toLowerCase().trim() === iCompany;
@@ -232,55 +202,31 @@ function App() {
       } catch(e) { alert("Error"); }
   };
 
-  const handleEditBill = (bill: Bill) => { 
-      // Populate cloud cart with bill items for editing
-      setCloudCart([]); // Reset
-      bill.items.forEach(item => handleAddToCartCloud(item));
-      setEditingBill(bill); 
-      setActiveView('billing'); 
-  };
-  
+  const handleEditBill = (bill: Bill) => { setCloudCart([]); bill.items.forEach(item => handleAddToCartCloud(item)); setEditingBill(bill); setActiveView('billing'); };
   const handleDeleteBill = async (bill: Bill) => { if (!dataOwnerId || !window.confirm("Delete?")) return; const batch = writeBatch(db); batch.delete(doc(db, `users/${dataOwnerId}/bills`, bill.id)); const currentProducts = JSON.parse(JSON.stringify(products)) as Product[]; for (const item of bill.items) { const p = currentProducts.find(pr => pr.id === item.productId); if (p) { const bIdx = p.batches.findIndex(b => b.id === item.batchId); if (bIdx !== -1) { p.batches[bIdx].stock += item.quantity; batch.update(doc(db, `users/${dataOwnerId}/products`, p.id), { batches: p.batches }); } } } if (bill.paymentMode === 'Credit' && bill.customerId) batch.update(doc(db, `users/${dataOwnerId}/customers`, bill.customerId), { balance: increment(-bill.grandTotal) }); await batch.commit(); };
   const handleUpdateConfig = (config: SystemConfig) => { if (dataOwnerId) setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), sanitizeForFirestore(config)); };
   
   const isGstView = (view: AppView): view is GstReportView => ['gstr3b', 'hsnSales', 'hsnPurchase', 'gstWiseSales'].includes(view);
+  const isMasterView = (view: AppView): view is MasterDataView => ['ledgerMaster', 'productMaster', 'supplierMaster', 'batchMaster'].includes(view);
 
   if (!user) return <Auth />;
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 transition-colors duration-200">
       <Header activeView={activeView} setActiveView={setActiveView} onOpenSettings={() => setIsSettingsOpen(true)} user={user} onLogout={() => signOut(auth)} systemConfig={systemConfig} userPermissions={userPermissions} isOperator={isOperator} />
-      
       <div className="flex-grow">
-        {(subscriptionStatus.isExpiring || subscriptionStatus.isExpired) && !isOperator && (<div className={`sticky top-16 z-30 flex flex-col sm:flex-row items-center justify-between px-6 py-3 shadow-md animate-pulse-subtle ${subscriptionStatus.isExpired ? 'bg-rose-600 text-white' : 'bg-amber-500 text-slate-900'}`}><div className="flex items-center gap-3 mb-2 sm:mb-0"><InformationCircleIcon className="h-6 w-6" /><p className="text-sm font-black uppercase tracking-tight">{subscriptionStatus.isExpired ? 'CRITICAL: Subscription Expired! Renew immediately.' : `Attention: Your Premium Subscription expires in ${subscriptionStatus.daysLeft} days.`}</p></div><button onClick={() => setShowRenewOverlay(true)} className={`px-6 py-1.5 rounded-full font-black text-xs uppercase tracking-widest shadow-lg ${subscriptionStatus.isExpired ? 'bg-white text-rose-600 hover:bg-slate-100' : 'bg-slate-900 text-white'}`}>Renew Now</button></div>)}
-        {showRenewOverlay && (<div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"><div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border-4 border-indigo-600 relative animate-fade-in-up"><button onClick={() => setShowRenewOverlay(false)} className="absolute top-4 right-4 text-slate-400"><XIcon className="h-6 w-6" /></button><div className="p-6 text-center"><div className="flex justify-center mb-4"><div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-full"><CloudIcon className="h-10 w-10 text-indigo-600" /></div></div><h3 className="text-xl font-black uppercase tracking-tighter">Renew Premium</h3><p className="text-xs text-slate-500 mt-1">Tag Your Business to the Cloud</p><div className="mt-6 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-dashed border-indigo-300"><img src={qrCodeUrl} alt="Payment QR" className="w-48 h-48 mx-auto border-4 border-white rounded-lg" /><p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs font-normal">/ Year</span></p></div><div className="mt-6 space-y-3"><p className="text-[11px] text-slate-600">Scan using any UPI App</p><div className="bg-indigo-50 dark:bg-indigo-900/20 py-2 px-4 rounded-lg flex items-center justify-center gap-2"><CheckCircleIcon className="h-4 w-4 text-indigo-500" /><span className="text-xs font-bold">WhatsApp Screenshot: 9890072651</span></div></div></div></div></div>)}
-        
         <main className="max-w-7xl mx-auto py-6">
           {activeView === 'billing' && (
-            <Billing 
-              products={products} 
-              bills={bills} 
-              customers={customers} 
-              salesmen={salesmen} 
-              companyProfile={companyProfile} 
-              systemConfig={systemConfig} 
-              onGenerateBill={handleGenerateBill} 
-              onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} 
-              onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} 
-              editingBill={editingBill} 
-              onUpdateBill={async (id, data) => { if (!dataOwnerId) return null; await updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(data)); return { id, ...data } as Bill; }} 
-              onCancelEdit={() => { setEditingBill(null); handleClearCartCloud(); setActiveView('billing'); }} 
-              onUpdateConfig={handleUpdateConfig} 
-              isSubscriptionExpired={subscriptionStatus.isExpired}
-              cart={cloudCart}
-              onAddToCart={handleAddToCartCloud}
-              onRemoveFromCart={handleRemoveFromCartCloud}
-              onUpdateCartItem={handleUpdateCartItemCloud}
-            />
+            <Billing products={products} bills={bills} customers={customers} salesmen={salesmen} companyProfile={companyProfile} systemConfig={systemConfig} onGenerateBill={handleGenerateBill} onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingBill={editingBill} onUpdateBill={async (id, data) => { if (!dataOwnerId) return null; await updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(data)); return { id, ...data } as Bill; }} onCancelEdit={() => { setEditingBill(null); handleClearCartCloud(); setActiveView('billing'); }} onUpdateConfig={handleUpdateConfig} cart={cloudCart} onAddToCart={handleAddToCartCloud} onRemoveFromCart={handleRemoveFromCartCloud} onUpdateCartItem={handleUpdateCartItemCloud} />
           )}
           {activeView === 'inventory' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} />)}
-          {activeView === 'purchases' && (<Purchases products={products} purchases={purchases} companies={companies} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddPurchase={handleAddPurchase} onUpdatePurchase={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/purchases`, id), sanitizeForFirestore(data) as any)} onDeletePurchase={(p) => deleteDoc(doc(db, `users/${dataOwnerId}/purchases`, p.id))} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingPurchase={editingPurchase} onCancelEdit={() => setEditingPurchase(null)} onUpdateConfig={handleUpdateConfig} isSubscriptionExpired={subscriptionStatus.isExpired} />)}
+          {activeView === 'productMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="productMaster" />)}
+          {activeView === 'batchMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="batch" />)}
+          {activeView === 'purchases' && (<Purchases products={products} purchases={purchases} companies={companies} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddPurchase={handleAddPurchase} onUpdatePurchase={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/purchases`, id), sanitizeForFirestore(data) as any)} onDeletePurchase={(p) => deleteDoc(doc(db, `users/${dataOwnerId}/purchases`, p.id))} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingPurchase={editingPurchase} onCancelEdit={() => setEditingPurchase(null)} onUpdateConfig={handleUpdateConfig} />)}
+          {activeView === 'suppliers' && (<SupplierMaster suppliers={suppliers} onAdd={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdate={handleUpdateSupplier} onDelete={handleDeleteSupplier} />)}
+          {activeView === 'supplierMaster' && (<SupplierMaster suppliers={suppliers} onAdd={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdate={handleUpdateSupplier} onDelete={handleDeleteSupplier} />)}
+          {activeView === 'ledgerMaster' && (<SupplierMaster suppliers={suppliers} onAdd={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdate={handleUpdateSupplier} onDelete={handleDeleteSupplier} />)}
           {activeView === 'daybook' && (<DayBook bills={bills} products={products} companyProfile={companyProfile} systemConfig={systemConfig} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} onUpdateBillDetails={(id, updates) => updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(updates))} />)}
-          {activeView === 'suppliersLedger' && (<SuppliersLedger suppliers={suppliers} purchases={purchases} payments={supplierPayments} companyProfile={companyProfile} initialSupplierId={currentLedgerSupplierId} onSupplierSelected={setCurrentLedgerSupplierId} onUpdateSupplier={(id, d) => updateDoc(doc(db, `users/${dataOwnerId}/suppliers`, id), sanitizeForFirestore(d))} onAddPayment={async (p) => { const v = `VCH-${Date.now().toString().slice(-6)}`; const r = await addDoc(collection(db, `users/${dataOwnerId}/payments`), sanitizeForFirestore({...p, voucherNumber: v})); return {id: r.id, ...p, voucherNumber: v}; }} onDeletePurchase={(p) => deleteDoc(doc(db, `users/${dataOwnerId}/purchases`, p.id))} onEditPurchase={(p) => { setEditingPurchase(p); setActiveView('purchases'); }} onUpdatePayment={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/payments`, id), sanitizeForFirestore(data) as any)} onDeletePayment={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/payments`, id))} />)}
+          {activeView === 'suppliersLedger' && (<SuppliersLedger suppliers={suppliers} purchases={purchases} payments={supplierPayments} companyProfile={companyProfile} initialSupplierId={currentLedgerSupplierId} onSupplierSelected={setCurrentLedgerSupplierId} onUpdateSupplier={handleUpdateSupplier} onAddPayment={async (p) => { const v = `VCH-${Date.now().toString().slice(-6)}`; const r = await addDoc(collection(db, `users/${dataOwnerId}/payments`), sanitizeForFirestore({...p, voucherNumber: v})); return {id: r.id, ...p, voucherNumber: v}; }} onDeletePurchase={(p) => deleteDoc(doc(db, `users/${dataOwnerId}/purchases`, p.id))} onEditPurchase={(p) => { setEditingPurchase(p); setActiveView('purchases'); }} onUpdatePayment={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/payments`, id), sanitizeForFirestore(data) as any)} onDeletePayment={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/payments`, id))} />)}
           {activeView === 'paymentEntry' && (<PaymentEntry suppliers={suppliers} payments={supplierPayments} companyProfile={companyProfile} onAddPayment={async (p) => { const v = `VCH-${Date.now().toString().slice(-6)}`; const r = await addDoc(collection(db, `users/${dataOwnerId}/payments`), sanitizeForFirestore({...p, voucherNumber: v})); return {id: r.id, ...p, voucherNumber: v}; }} onUpdatePayment={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/payments`, id), sanitizeForFirestore(data) as any)} onDeletePayment={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/payments`, id))} />)}
           {activeView === 'customerLedger' && (<CustomerLedger customers={customers} bills={bills} payments={customerPayments} companyProfile={companyProfile} initialCustomerId={currentLedgerCustomerId} onCustomerSelected={setCurrentLedgerCustomerId} onAddPayment={async (p) => { const b = writeBatch(db); b.set(doc(collection(db, `users/${dataOwnerId}/customerPayments`)), sanitizeForFirestore(p)); b.update(doc(db, `users/${dataOwnerId}/customers`, p.customerId), { balance: increment(-p.amount) }); await b.commit(); }} onUpdateCustomer={(id, d) => updateDoc(doc(db, `users/${dataOwnerId}/customers`, id), sanitizeForFirestore(d))} onEditBill={handleEditBill} onDeleteBill={handleDeleteBill} onUpdatePayment={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/customerPayments`, id), sanitizeForFirestore(data) as any)} onDeletePayment={(p) => deleteDoc(doc(db, `users/${dataOwnerId}/customerPayments`, p.id))} />)}
           {activeView === 'salesReport' && <SalesReport bills={bills} />}
@@ -293,23 +239,13 @@ function App() {
           {isGstView(activeView) && <GstReports view={activeView} bills={bills} purchases={purchases} />}
         </main>
       </div>
-
       <footer className="bg-white dark:bg-slate-800 border-t dark:border-slate-700 py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-600 dark:text-slate-400">
-          <p>
-            Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span>
-            <span className="mx-2">|</span>
-            Contact: <a href="tel:9890072651" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">9890072651</a>
-            <span className="mx-2">|</span>
-            Visit: <a href="http://msoftindia.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">msoftindia.com</a>
-          </p>
+          <p>Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span> | 9890072651 | msoftindia.com</p>
         </div>
       </footer>
-
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} companyProfile={companyProfile} onProfileChange={(p) => setDoc(doc(db, `users/${dataOwnerId}/companyProfile`, 'profile'), sanitizeForFirestore(p))} systemConfig={systemConfig} onSystemConfigChange={handleUpdateConfig} onBackupData={() => { const backup = { products, bills, purchases, suppliers, customers, payments: supplierPayments, gstRates, companyProfile, systemConfig }; const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup)); const a = document.createElement('a'); a.href = dataStr; a.download = "backup.json"; a.click(); }} gstRates={gstRates} onAddGstRate={(r) => addDoc(collection(db, `users/${dataOwnerId}/gstRates`), sanitizeForFirestore({ rate: r }))} onUpdateGstRate={(id, r) => updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), sanitizeForFirestore({ rate: r }))} onDeleteGstRate={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))} />
-      <style>{` @keyframes pulse-subtle { 0%, 100% { opacity: 1; } 50% { opacity: 0.92; } } .animate-pulse-subtle { animation: pulse-subtle 3s infinite ease-in-out; } @keyframes fade-in-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fade-in-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; } `}</style>
     </div>
   );
 }
-
 export default App;

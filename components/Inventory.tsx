@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+
+import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
@@ -7,6 +8,8 @@ import { getTranslation } from '../utils/translationHelper';
 import BarcodeScannerModal from './BarcodeScannerModal';
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+type InventoryTab = 'productMaster' | 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearExpiry';
 
 interface InventoryProps {
   products: Product[];
@@ -19,6 +22,7 @@ interface InventoryProps {
   onUpdateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   onDeleteProduct: (id: string) => Promise<void>;
   onAddCompany: (company: Omit<Company, 'id'>) => Promise<Company | null>;
+  initialTab?: InventoryTab;
 }
 
 const inputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
@@ -77,69 +81,48 @@ const formatStock = (stock: number, unitsPerStrip?: number): string => {
     return isNegative ? `-${result}` : result;
 };
 
-/**
- * HELPER: Calculate current stock for a specific product and its batches by aggregating transactions.
- * Uses strict matching: Product ID > Barcode > (Name + Company if Barcode is empty).
- */
 const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]) => {
     const unitsPerStrip = product.unitsPerStrip || 1;
     let totalIn = (product.openingStock || 0);
     let totalOut = 0;
-
     const batchStockMap = new Map<string, number>();
-    
     const pName = product.name.toLowerCase().trim();
     const pCompany = product.company.toLowerCase().trim();
     const pBarcode = normalizeCode(product.barcode);
 
-    // Initialize with existing batch info
     (product.batches || []).forEach(b => {
-        batchStockMap.set(b.id, 0);
+        let initialBatchStock = b.openingStock || 0;
         if (b.batchNumber === 'OPENING' || (b.batchNumber === 'DEFAULT' && (product.batches || []).length === 1)) {
-            batchStockMap.set(b.id, product.openingStock || 0);
+            initialBatchStock += (product.openingStock || 0);
         }
+        batchStockMap.set(b.id, initialBatchStock);
+        if (b.openingStock) totalIn += b.openingStock;
     });
 
-    // 1. Sum all Purchases
     purchases.forEach(pur => {
         pur.items.forEach(item => {
             const iBarcode = normalizeCode(item.barcode);
             const iName = item.productName.toLowerCase().trim();
             const iCompany = item.company.toLowerCase().trim();
-
-            const isMatch = item.productId === product.id || 
-                          (pBarcode !== "" && iBarcode === pBarcode) ||
-                          (pBarcode === "" && iBarcode === "" && iName === pName && iCompany === pCompany);
-            
+            const isMatch = item.productId === product.id || (pBarcode !== "" && iBarcode === pBarcode) || (pBarcode === "" && iBarcode === "" && iName === pName && iCompany === pCompany);
             if (isMatch) {
                 const qtyUnits = item.quantity * unitsPerStrip;
                 totalIn += qtyUnits;
-                
-                const targetBatch = product.batches.find(b => b.batchNumber === item.batchNumber && Math.abs(b.mrp - item.mrp) < 0.1) ||
-                                  product.batches.find(b => Math.abs(b.mrp - item.mrp) < 0.1);
-                
-                if (targetBatch) {
-                    batchStockMap.set(targetBatch.id, (batchStockMap.get(targetBatch.id) || 0) + qtyUnits);
-                } else if (product.batches.length > 0) {
-                    const firstId = product.batches[0].id;
-                    batchStockMap.set(firstId, (batchStockMap.get(firstId) || 0) + qtyUnits);
-                }
+                const targetBatch = product.batches.find(b => b.batchNumber === item.batchNumber && Math.abs(b.mrp - item.mrp) < 0.1) || product.batches.find(b => Math.abs(b.mrp - item.mrp) < 0.1);
+                if (targetBatch) batchStockMap.set(targetBatch.id, (batchStockMap.get(targetBatch.id) || 0) + qtyUnits);
+                else if (product.batches.length > 0) batchStockMap.set(product.batches[0].id, (batchStockMap.get(product.batches[0].id) || 0) + qtyUnits);
             }
         });
     });
 
-    // 2. Subtract all Sales
     bills.forEach(bill => {
         bill.items.forEach(item => {
             const iBarcode = normalizeCode(item.barcode || "");
-            const isMatch = item.productId === product.id || 
-                          (pBarcode !== "" && iBarcode === pBarcode);
-            
+            const isMatch = item.productId === product.id || (pBarcode !== "" && iBarcode === pBarcode);
             if (isMatch) {
                 totalOut += item.quantity;
-                if (batchStockMap.has(item.batchId)) {
-                    batchStockMap.set(item.batchId, (batchStockMap.get(item.batchId) || 0) - item.quantity);
-                } else if (product.batches.length > 0) {
+                if (batchStockMap.has(item.batchId)) batchStockMap.set(item.batchId, (batchStockMap.get(item.batchId) || 0) - item.quantity);
+                else if (product.batches.length > 0) {
                     const matchedBatch = product.batches.find(b => b.batchNumber === item.batchNumber);
                     const fallbackId = matchedBatch ? matchedBatch.id : product.batches[0].id;
                     batchStockMap.set(fallbackId, (batchStockMap.get(fallbackId) || 0) - item.quantity);
@@ -148,20 +131,10 @@ const getLiveStockData = (product: Product, purchases: Purchase[], bills: Bill[]
         });
     });
 
-    return {
-        total: totalIn - totalOut,
-        totalIn,
-        totalOut,
-        batchStocks: batchStockMap
-    };
+    return { total: totalIn - totalOut, totalIn, totalOut, batchStocks: batchStockMap };
 };
 
-const PrintLabelModal: React.FC<{ 
-    isOpen: boolean; 
-    onClose: () => void; 
-    product: Product | null; 
-    onPrint: (quantity: number) => void; 
-}> = ({ isOpen, onClose, product, onPrint }) => {
+const PrintLabelModal: React.FC<{ isOpen: boolean; onClose: () => void; product: Product | null; onPrint: (quantity: number) => void; }> = ({ isOpen, onClose, product, onPrint }) => {
     const [quantity, setQuantity] = useState(1);
     if (!isOpen || !product) return null;
     return (
@@ -348,11 +321,12 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
             (p.batches || []).forEach(b => {
                 const existing = batchMap.get(b.batchNumber) || { batchNumber: b.batchNumber, expiryDate: b.expiryDate, opening: 0, purchased: 0, sold: 0, purchasePrice: b.purchasePrice, batchIds: new Set<string>() };
                 existing.batchIds.add(b.id);
+                existing.opening += (b.openingStock || 0);
                 batchMap.set(b.batchNumber, existing);
             });
             const baseOpening = p.openingStock || 0;
             batchMap.forEach((agg, bName) => {
-                let opening = 0, purchased = 0, sold = 0;
+                let transOpening = 0, purchased = 0, sold = 0;
                 purchases.forEach(pur => {
                     const purDate = new Date(pur.invoiceDate);
                     pur.items.forEach(item => {
@@ -360,7 +334,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                         const isMatch = item.productId === p.id || (pBarcode !== "" && iBarcode === pBarcode) || (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === p.name.toLowerCase().trim() && item.company.toLowerCase().trim() === p.company.toLowerCase().trim());
                         if (!isMatch || item.batchNumber !== bName) return;
                         const qtyInUnits = item.quantity * unitsPerStrip;
-                        if (purDate < (start || new Date(0))) opening += qtyInUnits;
+                        if (purDate < (start || new Date(0))) transOpening += qtyInUnits;
                         else if (purDate <= end) purchased += qtyInUnits;
                     });
                 });
@@ -370,14 +344,15 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                         const iBarcode = normalizeCode(item.barcode);
                         const isMatch = item.productId === p.id || (pBarcode !== "" && iBarcode === pBarcode);
                         if (!isMatch || !agg.batchIds.has(item.batchId)) return;
-                        if (billDate < (start || new Date(0))) opening -= item.quantity;
+                        if (billDate < (start || new Date(0))) transOpening -= item.quantity;
                         else if (billDate <= end) sold += item.quantity;
                     });
                 });
-                const closing = opening + purchased - sold + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0);
+                const totalOpening = agg.opening + transOpening + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0);
+                const closing = totalOpening + purchased - sold;
                 const valuation = closing * (agg.purchasePrice / unitsPerStrip);
-                if (purchased !== 0 || sold !== 0 || closing !== 0 || opening !== 0) {
-                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening: opening + (bName === 'OPENING' || (bName === 'DEFAULT' && batchMap.size === 1) ? baseOpening : 0), purchased, sold, closing, valuation, unitsPerStrip });
+                if (purchased !== 0 || sold !== 0 || closing !== 0 || totalOpening !== 0) {
+                    rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: agg.batchNumber, expiryDate: agg.expiryDate, opening: totalOpening, purchased, sold, closing, valuation, unitsPerStrip });
                 }
             });
             if (batchMap.size === 0 && baseOpening > 0) rows.push({ productId: p.id, productName: p.name, company: p.company, batchNumber: 'OPENING', expiryDate: '-', opening: baseOpening, purchased: 0, sold: 0, closing: baseOpening, valuation: 0, unitsPerStrip });
@@ -388,7 +363,7 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
     return (
         <Card title="Company Stock Ledger">
             <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
-                <div className="w-full md:w-1/3"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Company</label><select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className={inputStyle}>{companies.map(c => <option key={c} value={c}>{c === 'All' ? 'All Companies' : c}</option>)}</select></div>
+                <div className="w-full md:w-1/3"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Select Company</label><select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className={inputStyle}>{companies.map(c => <option key={c} value={c}>{c === 'All' ? 'All Companies' : c}</option>)}</select></div>
                 <div className="flex gap-2 w-full md:w-auto">
                     <div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div>
                     <div className="flex-1"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div>
@@ -461,7 +436,8 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         return txs.sort((a, b) => a.date.getTime() - b.date.getTime());
     }, [selectedProduct, purchases, bills]);
     const filteredResults = useMemo(() => {
-        let opening = selectedProduct?.openingStock || 0;
+        let opening = (selectedProduct?.openingStock || 0);
+        selectedProduct?.batches?.forEach(b => { opening += (b.openingStock || 0); });
         const start = fromDate ? new Date(fromDate) : null; if (start) start.setHours(0,0,0,0);
         const end = toDate ? new Date(toDate) : new Date(); end.setHours(23,59,59,999);
         if (start) transactions.forEach(tx => { if (tx.date < start) opening += (tx.inQty - tx.outQty); });
@@ -510,7 +486,7 @@ const EditBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: 
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP</label><input type="number" name="mrp" step="0.01" value={formData.mrp} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={e => setFormData({...formData, saleRate: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Internal Reference Stock (U)</label><input type="number" name="stock" value={formData.stock} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label><input type="number" name="openingStock" value={formData.openingStock || 0} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
                 </div>
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE CHANGES</button></div>
             </form>
@@ -611,12 +587,29 @@ const ProductImportModal: React.FC<{ isOpen: boolean; onClose: () => void; onImp
     );
 };
 
-type InventoryTab = 'productMaster' | 'all' | 'selected' | 'batch' | 'company' | 'expired' | 'nearExpiry';
+export interface InventoryRef {
+    setTab: (tab: InventoryTab) => void;
+}
 
-const Inventory: React.FC<InventoryProps> = ({ products, companies, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany }) => {
-    const t = getTranslation(systemConfig.language); const isPharma = systemConfig.softwareMode === 'Pharma'; const [activeTab, setActiveTab] = useState<InventoryTab>('productMaster'); const [isImportModalOpen, setImportModalOpen] = useState(false); const [isProductModalOpen, setProductModalOpen] = useState(false); const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companies, purchases = [], bills = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany, initialTab = 'productMaster' }, ref) => {
+    const t = getTranslation(systemConfig.language); 
+    const isPharma = systemConfig.softwareMode === 'Pharma'; 
+    const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab); 
+    const [isImportModalOpen, setImportModalOpen] = useState(false); 
+    const [isProductModalOpen, setProductModalOpen] = useState(false); 
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+
+    useImperativeHandle(ref, () => ({
+        setTab: (tab: InventoryTab) => setActiveTab(tab)
+    }));
+
+    useEffect(() => {
+        setActiveTab(initialTab);
+    }, [initialTab]);
+
     const handleDeleteBatch = (pid: string, bid: string) => { if (!window.confirm("Delete batch?")) return; const product = products.find(p => p && p.id === pid); if (product) { const updatedBatches = (product.batches || []).filter(b => b.id !== bid); onUpdateProduct(pid, { batches: updatedBatches }); } };
     const TabButton: React.FC<{ tab: InventoryTab, label: string }> = ({ tab, label }) => (<button onClick={() => setActiveTab(tab)} className={`px-5 py-2.5 text-xs font-black uppercase tracking-widest rounded-xl transition-all whitespace-nowrap ${activeTab === tab ? 'bg-indigo-600 text-white shadow-xl ring-2 ring-indigo-500/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-transparent dark:border-slate-700'}`}>{label}</button>);
+    
     return (
         <div className="p-4 sm:p-6 space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-end gap-4 bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700"><div><h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-200 flex items-center gap-3"><ArchiveIcon className="h-8 w-8 text-indigo-600" />Inventory Reports</h1><p className="text-slate-500 dark:text-slate-400 font-medium mt-1 uppercase text-[10px] tracking-widest">Real-time Batch, Expiry & Stock Tracking</p></div><div className="flex gap-3 w-full sm:w-auto"><button onClick={() => setImportModalOpen(true)} className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-tighter hover:bg-indigo-200 transition-all border border-indigo-200 dark:border-indigo-800"><UploadIcon className="h-5 w-5" /> Bulk Import</button></div></div>
@@ -626,5 +619,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, companies, purchases = 
             <AddEditProductModal isOpen={isProductModalOpen} onClose={() => setProductModalOpen(false)} product={editingProduct} products={products} companies={companies} gstRates={gstRates} onSave={onAddProduct} onUpdate={onUpdateProduct} onAddCompany={onAddCompany} systemConfig={systemConfig} />
         </div>
     );
-};
+});
+
 export default Inventory;

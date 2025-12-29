@@ -151,7 +151,9 @@ export type ReportView = 'dashboard' | 'daybook' | 'suppliersLedger' | 'customer
 
 export type GstReportView = 'gstr3b' | 'hsnSales' | 'hsnPurchase' | 'gstWiseSales';
 
-export type AppView = 'billing' | 'inventory' | 'purchases' | 'paymentEntry' | ReportView | GstReportView;
+export type MasterDataView = 'ledgerMaster' | 'productMaster' | 'supplierMaster' | 'batchMaster';
+
+export type AppView = 'billing' | 'inventory' | 'purchases' | 'suppliers' | 'paymentEntry' | ReportView | GstReportView | MasterDataView;
 
 export interface CompanyProfile {
   name: string;
