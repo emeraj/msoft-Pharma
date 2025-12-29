@@ -99,13 +99,37 @@ export class BluetoothHelper {
   }
 
   /**
-   * Generate professional ESC/POS receipt bytes for 80mm (3-inch) printers
-   * Character width: 42 (safe standard for 80mm)
+   * Generates native ESC/POS QR code commands
+   */
+  private static generateQrCode(data: string): number[] {
+    const cmds: number[] = [];
+    const store_len = data.length + 3;
+    const pl = store_len % 256;
+    const ph = Math.floor(store_len / 256);
+
+    // 1. Set QR Model
+    cmds.push(0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00);
+    // 2. Set QR Size (8 is large/clear)
+    cmds.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x08);
+    // 3. Set Error Correction (Level L)
+    cmds.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x30);
+    // 4. Store data
+    cmds.push(0x1d, 0x28, 0x6b, pl, ph, 0x31, 0x50, 0x30);
+    for (let i = 0; i < data.length; i++) {
+        cmds.push(data.charCodeAt(i));
+    }
+    // 5. Print QR
+    cmds.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30);
+    
+    return cmds;
+  }
+
+  /**
+   * Generate professional ESC/POS receipt bytes for thermal printers
    */
   static generateEscPos(bill: any, company: any, isPharma: boolean = false): Uint8Array {
-    const lineChar = "-";
-    const width = 42; // Standard width for 80mm/3-inch printers
-    const line = lineChar.repeat(width) + "\n";
+    const width = 32; // Standard width for 58mm (most common BT printers)
+    const line = "-".repeat(width) + "\n";
     
     let cmds: number[] = [
       0x1B, 0x40, // Initialize
@@ -116,16 +140,14 @@ export class BluetoothHelper {
     const setLeft = () => cmds.push(0x1B, 0x61, 0x00);
     const setRight = () => cmds.push(0x1B, 0x61, 0x02);
     const setBold = (on: boolean) => cmds.push(0x1B, 0x45, on ? 0x01 : 0x00);
-    const setBig = (on: boolean) => cmds.push(0x1D, 0x21, on ? 0x11 : 0x00); // Double width/height
+    const setBig = (on: boolean) => cmds.push(0x1D, 0x21, on ? 0x11 : 0x00); 
 
     // 1. Header Section
     setCenter();
     setBold(true);
-    setBig(true);
-    addText(`${company.name}\n`);
-    setBig(false);
+    addText(`${company.name.toUpperCase()}\n`);
     setBold(false);
-    addText(`${company.address?.substring(0, 80)}\n`);
+    addText(`${company.address?.substring(0, 64)}\n`);
     addText(`GST: ${company.gstin}\n`);
     addText(line);
     setBold(true);
@@ -136,36 +158,32 @@ export class BluetoothHelper {
     // 2. Metadata Section
     setLeft();
     const dateStr = new Date(bill.date).toLocaleDateString();
-    addText(`Bill No: ${bill.billNumber.padEnd(15)} Date: ${dateStr}\n`);
-    addText(`Customer: ${bill.customerName}\n`);
+    addText(`Bill: ${bill.billNumber}\n`);
+    addText(`Date: ${dateStr}\n`);
+    addText(`Cust: ${bill.customerName.substring(0, 20)}\n`);
     if (isPharma && bill.doctorName) {
-        addText(`Doctor: ${bill.doctorName}\n`);
+        addText(`Doc : ${bill.doctorName.substring(0, 20)}\n`);
     }
     addText(line);
 
     // 3. Items Table Header
-    // Column map: Index+Item (22), Qty (5), Rate (7), Amount (8) = 42
-    addText("Item description          Qty   Rate    Amt\n");
+    // Column map for 32 chars: Item (16), Qty (4), Rate (6), Amt (6)
+    addText("Item            Qty   Rate   Amt\n");
     addText(line);
 
     // 4. Items List
     bill.items.forEach((item: any, idx: number) => {
         setLeft();
         setBold(true);
-        // Product Name (truncated to 22 chars for the row)
-        const displayName = `${idx + 1}. ${item.productName.substring(0, 18)}`;
-        const namePart = displayName.padEnd(22);
-        
-        const qtyPart = item.quantity.toString().padStart(5);
-        const ratePart = item.mrp.toFixed(1).padStart(7);
-        const amtPart = item.total.toFixed(1).padStart(8);
-        
-        addText(`${namePart}${qtyPart}${ratePart}${amtPart}\n`);
+        const name = `${idx + 1}.${item.productName.substring(0, 14)}`.padEnd(16);
+        const qty = item.quantity.toString().padStart(4);
+        const rate = Math.round(item.mrp).toString().padStart(6);
+        const amt = Math.round(item.total).toString().padStart(6);
+        addText(`${name}${qty}${rate}${amt}\n`);
         setBold(false);
         
-        // Pharma specific batch/expiry info (indented)
         if (isPharma) {
-            addText(`   Batch:${item.batchNumber} Exp:${item.expiryDate}\n`);
+            addText(` B:${item.batchNumber} E:${item.expiryDate}\n`);
         }
     });
 
@@ -173,28 +191,20 @@ export class BluetoothHelper {
 
     // 5. Totals Section
     setRight();
-    const subTotal = (bill.subTotal || 0).toFixed(2);
-    const totalGst = (bill.totalGst || 0).toFixed(2);
-    const roundOff = (bill.roundOff || 0).toFixed(2);
-    const grandTotal = (bill.grandTotal || 0).toFixed(2);
-
-    addText(`Subtotal :  ${subTotal.padStart(10)}\n`);
-    addText(`Total GST:  ${totalGst.padStart(10)}\n`);
-    if (Math.abs(bill.roundOff) > 0.01) {
-        addText(`Round Off:  ${roundOff.padStart(10)}\n`);
+    addText(`Subtotal : ${bill.subTotal.toFixed(2)}\n`);
+    addText(`GST Total: ${bill.totalGst.toFixed(2)}\n`);
+    if (bill.roundOff) {
+        addText(`RoundOff : ${bill.roundOff.toFixed(2)}\n`);
     }
     setBold(true);
-    addText(`GRAND TOTAL: Rs. ${grandTotal.padStart(10)}\n`);
+    addText(`TOTAL: Rs. ${bill.grandTotal.toFixed(2)}\n`);
     setBold(false);
     addText(line);
 
-    // 6. GST Breakdown Table
+    // 6. GST Summary
     setCenter();
-    setBold(true);
-    addText("GST TAX ANALYSIS\n");
-    setBold(false);
-    // Columns: Rate (6), Taxable (12), CGST (12), SGST (12) = 42
-    addText("Rate %    Taxable      CGST      SGST\n");
+    addText("GST Summary\n");
+    addText("Rate %   Taxable    CGST    SGST\n");
     
     const summary = new Map<number, { taxable: number; gst: number }>();
     bill.items.forEach((item: any) => {
@@ -207,22 +217,32 @@ export class BluetoothHelper {
     });
 
     summary.forEach((val, rate) => {
-        const rStr = `${rate}%`.padEnd(6);
-        const tStr = val.taxable.toFixed(2).padStart(11);
-        const cStr = (val.gst / 2).toFixed(2).padStart(10);
-        const sStr = (val.gst / 2).toFixed(2).padStart(10);
+        const rStr = `${rate}%`.padEnd(8);
+        const tStr = Math.round(val.taxable).toString().padStart(8);
+        const cStr = Math.round(val.gst/2).toString().padStart(8);
+        const sStr = Math.round(val.gst/2).toString().padStart(8);
         addText(`${rStr}${tStr}${cStr}${sStr}\n`);
     });
-    
     addText(line);
 
-    // 7. Footer
+    // 7. UPI QR Code Section
+    if (company.upiId && bill.grandTotal > 0) {
+        setCenter();
+        addText("SCAN TO PAY\n\n");
+        const upiUrl = `upi://pay?pa=${company.upiId}&pn=${encodeURIComponent(company.name)}&am=${bill.grandTotal.toFixed(2)}&cu=INR`;
+        const qrCmds = this.generateQrCode(upiUrl);
+        qrCmds.forEach(c => cmds.push(c));
+        addText("\n");
+    }
+
+    // 8. Footer
     setCenter();
     addText("THANK YOU! VISIT AGAIN\n");
-    if (company.remarkLine1) addText(`${company.remarkLine1.substring(0, 42)}\n`);
+    if (company.remarkLine1) addText(`${company.remarkLine1.substring(0, 32)}\n`);
     
-    addText("\n\n\n\n\n"); // Feed paper
-    cmds.push(0x1D, 0x56, 0x42, 0x00); // Cut paper (Full cut)
+    addText("\n\n\n\n"); // Feed paper
+    cmds.push(0x1B, 0x69); // Partial cut (some printers)
+    cmds.push(0x1D, 0x56, 0x01); // Feed and cut
 
     return new Uint8Array(cmds);
   }
