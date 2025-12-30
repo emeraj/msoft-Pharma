@@ -3,9 +3,8 @@ import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwa
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, UploadIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, CheckCircleIcon, SearchIcon, XIcon, CameraIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, SearchIcon, XIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
-import BarcodeScannerModal from './BarcodeScannerModal';
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
@@ -458,25 +457,111 @@ const EditBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: 
 };
 
 const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; products: Product[]; onSave: (pid: string, newBatch: Batch) => void; }> = ({ isOpen, onClose, products, onSave }) => {
-    const [selectedPid, setSelectedPid] = useState('');
-    const [formData, setFormData] = useState<Omit<Batch, 'id'>>({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0, openingStock: 0 });
-    const productList = useMemo(() => [...products].sort((a,b) => a.name.localeCompare(b.name)), [products]);
-    const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!selectedPid) return; onSave(selectedPid, { ...formData, id: `batch_${Date.now()}` }); reset(); onClose(); };
-    const reset = () => { setSelectedPid(''); setFormData({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0, openingStock: 0 }); };
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+    const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(-1);
+    const [formData, setFormData] = useState({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0 });
+    
+    const productSuggestions = useMemo(() => {
+        if (!searchTerm || selectedProduct) return [];
+        return products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 5);
+    }, [searchTerm, products, selectedProduct]);
+
+    const handleSubmit = (e: React.FormEvent) => { 
+        e.preventDefault(); 
+        if (!selectedProduct) { alert("Please select a product first."); return; } 
+        onSave(selectedProduct.id, { ...formData, id: `batch_${Date.now()}` }); 
+        reset(); 
+        onClose(); 
+    };
+
+    const reset = () => { 
+        setSearchTerm(''); 
+        setSelectedProduct(null); 
+        setActiveIndex(-1);
+        setFormData({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0 }); 
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (productSuggestions.length === 0) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveIndex(prev => (prev < productSuggestions.length - 1 ? prev + 1 : prev));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveIndex(prev => (prev > 0 ? prev - 1 : prev));
+        } else if (e.key === 'Enter') {
+            if (activeIndex >= 0) {
+                e.preventDefault();
+                const p = productSuggestions[activeIndex];
+                setSelectedProduct(p);
+                setSearchTerm(p.name);
+                setIsSuggestionsOpen(false);
+            }
+        } else if (e.key === 'Escape') {
+            setIsSuggestionsOpen(false);
+            setActiveIndex(-1);
+        }
+    };
+
     if (!isOpen) return null;
+
     return (
         <Modal isOpen={isOpen} onClose={onClose} title="Initialize Manual Batch">
             <form onSubmit={handleSubmit} className="space-y-4">
-                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Select Product*</label>
-                <select value={selectedPid} onChange={e => setSelectedPid(e.target.value)} className={inputStyle} required><option value="">-- Choose --</option>{productList.map(p => <option key={p.id} value={p.id}>{p.name} ({p.company})</option>)}</select></div>
-                <div className="grid grid-cols-2 gap-4">
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Batch No*</label><input value={formData.batchNumber} onChange={e => setFormData({...formData, batchNumber: e.target.value})} className={inputStyle} required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expiry (YYYY-MM)*</label><input value={formData.expiryDate} onChange={e => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} placeholder="YYYY-MM" required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP*</label><input type="number" step="0.01" value={formData.mrp || ''} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0, saleRate: formData.saleRate || parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" step="0.01" value={formData.purchasePrice || ''} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
-                    <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)*</label><input type="number" value={formData.stock || ''} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                <div className="relative">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Select Product*</label>
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            value={searchTerm} 
+                            onChange={e => { setSearchTerm(e.target.value); setSelectedProduct(null); setIsSuggestionsOpen(true); setActiveIndex(-1); }}
+                            onFocus={() => setIsSuggestionsOpen(true)}
+                            onKeyDown={handleKeyDown}
+                            className={inputStyle}
+                            placeholder="Type to search product..."
+                            autoComplete="off"
+                            required
+                        />
+                        <SearchIcon className="absolute right-3 top-2.5 h-4 w-4 text-slate-400" />
+                    </div>
+                    {isSuggestionsOpen && productSuggestions.length > 0 && (
+                        <ul className="absolute z-[100] w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-2xl max-h-48 overflow-y-auto">
+                            {productSuggestions.map((p, idx) => (
+                                <li 
+                                    key={p.id} 
+                                    onClick={() => { setSelectedProduct(p); setSearchTerm(p.name); setIsSuggestionsOpen(false); }}
+                                    className={`px-4 py-3 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-600 transition-colors ${idx === activeIndex ? 'bg-indigo-100 dark:bg-indigo-900 border-l-4 border-indigo-600' : 'hover:bg-indigo-50 dark:hover:bg-slate-600'}`}
+                                >
+                                    <div className="font-bold">{p.name}</div>
+                                    <div className="text-[10px] text-slate-500 uppercase">{p.company}</div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
-                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700">ADD BATCH</button></div>
+
+                {selectedProduct && (
+                    <div className="animate-fade-in space-y-4 pt-2">
+                        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest block mb-1">Target Product</span>
+                             <span className="font-bold text-slate-800 dark:text-white">{selectedProduct.name} ({selectedProduct.company})</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Batch No*</label><input value={formData.batchNumber} onChange={e => setFormData({...formData, batchNumber: e.target.value})} className={inputStyle} required /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expiry (YYYY-MM)*</label><input value={formData.expiryDate} onChange={e => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} placeholder="YYYY-MM" required /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP*</label><input type="number" step="0.01" value={formData.mrp || ''} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0, saleRate: formData.saleRate || parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" step="0.01" value={formData.purchasePrice || ''} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
+                            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)*</label><input type="number" value={formData.stock || ''} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                        </div>
+                    </div>
+                )}
+                
+                <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700">
+                    <button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button>
+                    <button type="submit" disabled={!selectedProduct} className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">ADD BATCH</button>
+                </div>
             </form>
         </Modal>
     );
@@ -623,7 +708,7 @@ const AddEditProductModal: React.FC<{
                                 <input type="number" value={formData.unitsPerStrip} onChange={e => setFormData({ ...formData, unitsPerStrip: parseInt(e.target.value) || 1 })} className={inputStyle} />
                             </div>
                             <div className="flex items-center gap-2 pt-6">
-                                <input type="checkbox" id="isScheduleH" checked={formData.isScheduleH} onChange={e => setFormData({ ...formData, iScheduleH: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />
+                                <input type="checkbox" id="isScheduleH" checked={formData.isScheduleH} onChange={e => setFormData({ ...formData, isScheduleH: e.target.checked })} className="h-4 w-4 text-indigo-600 rounded" />
                                 <label htmlFor="isScheduleH" className="text-xs font-bold text-slate-500 uppercase">Is Schedule H?</label>
                             </div>
                         </>
