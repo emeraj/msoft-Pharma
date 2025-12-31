@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import type { AppView, ReportView, GstReportView, MasterDataView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon, AdjustmentsIcon, UserGroupIcon } from './icons/Icons';
+import type { AppView, ReportView, GstReportView, MasterDataView, VoucherEntryView, SystemConfig, UserPermissions } from '../types';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon, AdjustmentsIcon, UserGroupIcon, BookOpenIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -96,6 +96,74 @@ const MasterDataDropdown: React.FC<{
                             }`}
                         >
                             {labels[view]}
+                        </a>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const VoucherEntryDropdown: React.FC<{
+    activeView: AppView;
+    setActiveView: (view: AppView) => void;
+}> = ({ activeView, setActiveView }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    const voucherViews: {view: VoucherEntryView | 'billing' | 'purchases', label: string}[] = [
+        { view: 'billing', label: 'Sale Entry' },
+        { view: 'purchases', label: 'Purchase Entry' },
+        { view: 'saleReturn', label: 'Sale Return' },
+        { view: 'purchaseReturn', label: 'Purchase Return' },
+        { view: 'journalEntry', label: 'Journal Entry' },
+        { view: 'debitNote', label: 'Debit Note' },
+        { view: 'creditNote', label: 'Credit Note' },
+    ];
+    
+    const isVoucherActive = voucherViews.some(v => v.view === activeView) || activeView === 'saleEntry' || activeView === 'purchaseEntry';
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    return (
+        <div className="relative" ref={dropdownRef}>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                    isVoucherActive
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+            >
+                <ReceiptIcon className="h-5 w-5" />
+                <span className="hidden sm:inline">Voucher Entry</span>
+            </button>
+            {isOpen && (
+                <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
+                    {voucherViews.map(item => (
+                        <a
+                            key={item.view}
+                            href="#"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                setActiveView(item.view as AppView);
+                                setIsOpen(false);
+                            }}
+                            className={`block px-4 py-2 text-sm ${
+                                activeView === item.view
+                                    ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200'
+                                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            {item.label}
                         </a>
                     ))}
                 </div>
@@ -266,7 +334,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           <div className="flex items-center">
             <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                <CloudIcon className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
-               <span className="flex items-center gap-2">
+               <span className="hidden lg:flex items-center gap-2">
                 Cloud-TAG 
                 {isPremium && <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm font-extrabold uppercase tracking-tighter">PRO</span>}
                </span>
@@ -275,8 +343,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
           <div className="flex items-center space-x-2 sm:space-x-4">
              <nav className="hidden sm:flex space-x-2">
               {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
-              {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
-              {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
+              {hasPermission('canPurchase') && <VoucherEntryDropdown activeView={activeView} setActiveView={setActiveView} />}
               {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
               {hasPermission('canPayment') && <GstReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
               {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
@@ -312,8 +379,7 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
         </div>
          <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
             {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
-            {hasPermission('canBill') && <NavButton label={t.nav.billing} view="billing" activeView={activeView} onClick={setActiveView} icon={<ReceiptIcon className="h-5 w-5" />} />}
-            {hasPermission('canPurchase') && <NavButton label={t.nav.purchases} view="purchases" activeView={activeView} onClick={setActiveView} icon={<CubeIcon className="h-5 w-5" />} />}
+            {hasPermission('canPurchase') && <VoucherEntryDropdown activeView={activeView} setActiveView={setActiveView} />}
             {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
             {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
         </nav>

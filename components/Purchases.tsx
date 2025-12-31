@@ -393,7 +393,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
             {(formState.selectedProduct || formState.isNewProduct) && (
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 items-end">
                     <div className="flex gap-1 md:col-span-2">
-                        <input name="barcode" value={formState.barcode} onChange={e => setFormState({...formState, barcode: e.target.value})} placeholder="Barcode" className={formInputStyle} />
+                        <input name="barcode" value={formState.barcode} onChange={e => setFormState({...formState, barcode: e.target.value})} placeholder="Barcode (Optional)" title="Auto-seq if blank" className={formInputStyle} />
                         <button type="button" onClick={() => setScannerOpen(true)} className="p-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 transition-colors" title="Scan Barcode"><CameraIcon className="h-5 w-5" /></button>
                     </div>
                     {isPharmaMode && <input name="batchNumber" value={formState.batchNumber} onChange={e => setFormState({...formState, batchNumber: e.target.value})} placeholder="Batch No.*" className={formInputStyle} required />}

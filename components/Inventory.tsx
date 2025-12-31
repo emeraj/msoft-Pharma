@@ -342,6 +342,22 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         const pName = selectedProduct.name.toLowerCase().trim();
         const pCompany = selectedProduct.company.toLowerCase().trim();
 
+        // 1. Add Batch Opening Stocks
+        selectedProduct.batches?.forEach(b => {
+            if (b.openingStock && b.openingStock > 0) {
+                txs.push({
+                    id: `opening_${b.id}`,
+                    date: new Date(0), // Starting date
+                    type: 'Opening',
+                    particulars: `Opening Stock (Batch: ${b.batchNumber})`,
+                    batch: b.batchNumber,
+                    inQty: b.openingStock,
+                    outQty: 0
+                });
+            }
+        });
+
+        // 2. Add Purchases
         purchases?.forEach(pur => pur.items.forEach(item => {
             const iBarcode = normalizeCode(item.barcode || "");
             const isMatch = item.productId === selectedProduct.id || 
@@ -361,21 +377,19 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             }
         }));
 
+        // 3. Add Sales
         bills?.forEach(bill => bill.items.forEach(item => {
-            const iBarcode = normalizeCode(item.barcode || "");
-            const isMatch = item.productId === selectedProduct.id || (pBarcode !== "" && iBarcode === pBarcode);
-            
-            if (isMatch) {
-                txs.push({ 
-                    id: bill.id + '_' + Math.random(),
-                    date: new Date(bill.date), 
-                    type: 'Sale', 
-                    particulars: `Bill: ${bill.billNumber} (${bill.customerName})`, 
-                    batch: item.batchNumber,
-                    inQty: 0, 
-                    outQty: item.quantity 
-                });
-            }
+             if (item.productId === selectedProduct.id) {
+                 txs.push({
+                     id: bill.id + '_' + Math.random(),
+                     date: new Date(bill.date),
+                     type: 'Sale',
+                     particulars: `Bill: ${bill.billNumber} (${bill.customerName})`,
+                     batch: item.batchNumber,
+                     inQty: 0,
+                     outQty: item.quantity
+                 });
+             }
         }));
 
         return txs.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -385,9 +399,8 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         if (!selectedProduct) return { opening: 0, rows: [], closing: 0 };
 
         let opening = (selectedProduct.openingStock || 0);
-        selectedProduct.batches?.forEach(b => { 
-            opening += (b.openingStock || 0); 
-        });
+        // Note: Individual batch opening stocks are now in the transaction array for better visibility.
+        // We only start with the master product openingStock here.
 
         const start = fromDate ? new Date(fromDate) : null; if (start) start.setHours(0,0,0,0);
         const end = toDate ? new Date(toDate) : new Date(); end.setHours(23,59,59,999);
@@ -399,7 +412,7 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         }
 
         let running = opening;
-        const rows = transactions.filter(tx => (!start || tx.date >= start) && tx.date <= end).map(tx => { 
+        const rows = transactions.filter(tx => (!start || tx.date >= start || tx.type === 'Opening') && tx.date <= end).map(tx => { 
             running += (tx.inQty - tx.outQty); 
             return { ...tx, balance: running }; 
         });
@@ -409,8 +422,8 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
 
     return (
         <Card title={t.inventory.selectedStock}>
-            <div className="mb-6 relative"><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search Product</label><div className="relative"><input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={inputStyle} placeholder="Type product name..." /><SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" /></div>{isSuggestionsOpen && productSuggestions.length > 0 && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">{productSuggestions.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-600"><div className="font-bold">{p.name}</div><div className="text-[10px] text-slate-500 uppercase">{p.company}</div></li>))}</ul>)}</div>
-            {selectedProduct && (<div className="space-y-6 animate-fade-in"><div className="bg-[#1e293b] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl border border-slate-700"><div><h2 className="text-2xl font-black tracking-tight">{selectedProduct.name}</h2><p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p></div><div className="text-right"><p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Master Ledger Stock</p><p className="text-3xl font-black">{formatStock(filteredResults.closing, selectedProduct.unitsPerStrip)}</p></div></div><div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700"><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div><div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Particulars</th>{isPharma && <th className="px-6 py-4">Batch</th>}<th className="px-6 py-4 text-right">IN (Qty)</th><th className="px-6 py-4 text-right">OUT (Qty)</th><th className="px-6 py-4 text-right">Balance</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"><tr className="bg-slate-50 dark:bg-slate-800/30 font-bold"><td colSpan={isPharma ? 6 : 5} className="px-6 py-4 text-right text-slate-500 uppercase text-[10px] tracking-widest">Opening Balance:</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td></tr>{filteredResults.rows.map((row) => (<tr key={row.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 whitespace-nowrap">{row.date.toLocaleDateString()}</td><td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${row.type === 'Sale' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>{row.type}</span></td><td className="px-6 py-4 text-slate-500 dark:text-slate-400">{row.particulars}</td>{isPharma && <td className="px-6 py-4 font-mono text-xs">{row.batch || '-'}</td>}<td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{row.inQty > 0 ? row.inQty : '-'}</td><td className="px-6 py-4 text-right font-bold text-rose-600 dark:text-rose-400">{row.outQty > 0 ? row.outQty : '-'}</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td></tr>))}</tbody></table></div></div>)}
+            <div className="mb-6 relative"><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search Product</label><div className="relative"><input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedProductId(null); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={inputStyle} placeholder="Type product name..." /><SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" /></div>{isSuggestionsOpen && productSuggestions.length > 0 && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">{productSuggestions.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-600"><div className="font-bold">{p.name}</div><div className="text-[10px] text-slate-500 uppercase">{p.company}</div></li>))}</ul>)}</div>
+            {selectedProduct && (<div className="space-y-6 animate-fade-in"><div className="bg-[#1e293b] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl border border-slate-700"><div><h2 className="text-2xl font-black tracking-tight">{selectedProduct.name}</h2><p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p></div><div className="text-right"><p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Master Ledger Stock</p><p className="text-3xl font-black">{formatStock(filteredResults.closing, selectedProduct.unitsPerStrip)}</p></div></div><div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700"><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div><div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Particulars</th>{isPharma && <th className="px-6 py-4">Batch</th>}<th className="px-6 py-4 text-right">IN (Qty)</th><th className="px-6 py-4 text-right">OUT (Qty)</th><th className="px-6 py-4 text-right">Balance</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"><tr className="bg-slate-50 dark:bg-slate-800/30 font-bold"><td colSpan={isPharma ? 6 : 5} className="px-6 py-4 text-right text-slate-500 uppercase text-[10px] tracking-widest">Opening Balance (Master):</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td></tr>{filteredResults.rows.map((row) => (<tr key={row.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${row.type === 'Opening' ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}><td className="px-6 py-4 whitespace-nowrap">{row.type === 'Opening' ? 'Starting' : row.date.toLocaleDateString()}</td><td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${row.type === 'Sale' ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300' : row.type === 'Opening' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>{row.type}</span></td><td className="px-6 py-4 text-slate-500 dark:text-slate-400">{row.particulars}</td>{isPharma && <td className="px-6 py-4 font-mono text-xs">{row.batch || '-'}</td>}<td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{row.inQty > 0 ? row.inQty : '-'}</td><td className="px-6 py-4 text-right font-bold text-rose-600 dark:text-rose-400">{row.outQty > 0 ? row.outQty : '-'}</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td></tr>))}</tbody></table></div></div>)}
         </Card>
     );
 };
@@ -449,6 +462,7 @@ const EditBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; product: 
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sale Rate</label><input type="number" name="saleRate" step="0.01" value={formData.saleRate || formData.mrp} onChange={e => setFormData({...formData, saleRate: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" name="purchasePrice" step="0.01" value={formData.purchasePrice} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
                     <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)</label><input type="number" name="stock" value={formData.stock || 0} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                    <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label><input type="number" name="openingStock" value={formData.openingStock || 0} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0})} className={inputStyle} /></div>
                 </div>
                 <div className="flex justify-end gap-3 pt-6 border-t dark:border-slate-700"><button type="button" onClick={onClose} className="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-bold hover:bg-slate-300">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-black shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">SAVE CHANGES</button></div>
             </form>
@@ -461,7 +475,7 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; products: 
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
     const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
-    const [formData, setFormData] = useState({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0 });
+    const [formData, setFormData] = useState({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0, openingStock: 0 });
     
     const productSuggestions = useMemo(() => {
         if (!searchTerm || selectedProduct) return [];
@@ -480,7 +494,7 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; products: 
         setSearchTerm(''); 
         setSelectedProduct(null); 
         setActiveIndex(-1);
-        setFormData({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0 }); 
+        setFormData({ batchNumber: '', expiryDate: '', mrp: 0, saleRate: 0, purchasePrice: 0, stock: 0, openingStock: 0 }); 
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -553,7 +567,8 @@ const AddBatchModal: React.FC<{ isOpen: boolean; onClose: () => void; products: 
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Expiry (YYYY-MM)*</label><input value={formData.expiryDate} onChange={e => setFormData({...formData, expiryDate: e.target.value})} className={inputStyle} placeholder="YYYY-MM" required /></div>
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">MRP*</label><input type="number" step="0.01" value={formData.mrp || ''} onChange={e => setFormData({...formData, mrp: parseFloat(e.target.value) || 0, saleRate: formData.saleRate || parseFloat(e.target.value) || 0})} className={inputStyle} required /></div>
                             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Purchase Price</label><input type="number" step="0.01" value={formData.purchasePrice || ''} onChange={e => setFormData({...formData, purchasePrice: parseFloat(e.target.value) || 0})} className={inputStyle} /></div>
-                            <div className="col-span-2"><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)*</label><input type="number" value={formData.stock || ''} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label><input type="number" value={formData.openingStock || ''} onChange={e => setFormData({...formData, openingStock: parseInt(e.target.value) || 0, stock: parseInt(e.target.value) || 0})} className={inputStyle} /></div>
+                            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Stock (U)*</label><input type="number" value={formData.stock || ''} onChange={e => setFormData({...formData, stock: parseInt(e.target.value) || 0})} className={inputStyle} required /></div>
                         </div>
                     </div>
                 )}
@@ -690,8 +705,8 @@ const AddEditProductModal: React.FC<{
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode / SKU</label>
-                        <input value={formData.barcode} onChange={e => setFormData({ ...formData, barcode: e.target.value })} className={inputStyle} />
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode / SKU (Optional)</label>
+                        <input value={formData.barcode} onChange={e => setFormData({ ...formData, barcode: e.target.value })} className={inputStyle} placeholder="Auto-gen if left blank" />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Stock (U)</label>

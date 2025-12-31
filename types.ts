@@ -153,7 +153,9 @@ export type GstReportView = 'gstr3b' | 'hsnSales' | 'hsnPurchase' | 'gstWiseSale
 
 export type MasterDataView = 'ledgerMaster' | 'productMaster' | 'batchMaster';
 
-export type AppView = 'billing' | 'inventory' | 'purchases' | 'suppliers' | 'paymentEntry' | ReportView | GstReportView | MasterDataView;
+export type VoucherEntryView = 'saleEntry' | 'purchaseEntry' | 'saleReturn' | 'purchaseReturn' | 'journalEntry' | 'debitNote' | 'creditNote';
+
+export type AppView = 'billing' | 'inventory' | 'purchases' | 'suppliers' | 'paymentEntry' | ReportView | GstReportView | MasterDataView | VoucherEntryView;
 
 export interface CompanyProfile {
   name: string;
@@ -242,7 +244,7 @@ export interface UserMapping {
 }
 
 declare global {
-  interface Window {
+  interface window {
     bluetoothSerial: any;
     BluetoothManager: any;
     BluetoothEscposPrinter: any;
