@@ -93,6 +93,31 @@ export interface Purchase {
   roundOff?: number;
 }
 
+export interface PurchaseReturnLineItem {
+  productId: string;
+  productName: string;
+  company: string;
+  hsnCode: string;
+  gst: number;
+  batchNumber: string;
+  expiryDate: string;
+  quantity: number; // In units/strips as defined in entry
+  mrp: number;
+  purchasePrice: number;
+  discount: number;
+  barcode?: string;
+}
+
+export interface PurchaseReturn {
+  id: string;
+  returnNumber: string;
+  date: string;
+  supplier: string;
+  items: PurchaseReturnLineItem[];
+  totalAmount: number;
+  roundOff?: number;
+}
+
 export interface Company {
   id: string; // Firestore Document ID
   name: string;

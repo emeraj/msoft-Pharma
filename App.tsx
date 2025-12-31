@@ -7,6 +7,7 @@ import Header from './components/Header';
 import Billing from './components/Billing';
 import Inventory, { InventoryRef } from './components/Inventory';
 import Purchases from './components/Purchases';
+import PurchaseReturn from './components/PurchaseReturn';
 import DayBook from './components/DayBook';
 import SettingsModal from './components/SettingsModal';
 import Auth from './components/Auth';
@@ -24,7 +25,7 @@ import SubscriptionAdmin from './components/SubscriptionAdmin';
 import GstReports from './components/GstReports';
 import { InformationCircleIcon, XIcon, CloudIcon, CheckCircleIcon } from './components/icons/Icons';
 import type { 
-  AppView, Product, Bill, Purchase, Supplier, Customer, CustomerPayment, 
+  AppView, Product, Bill, Purchase, PurchaseReturn as PurchaseReturnType, Supplier, Customer, CustomerPayment, 
   Payment, CompanyProfile, SystemConfig, GstRate, Company, UserPermissions, 
   Salesman, UserMapping, GstReportView, CartItem, MasterDataView
 } from './types';
@@ -95,6 +96,7 @@ function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturnType[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
@@ -136,6 +138,7 @@ function App() {
     const unsubProducts = onSnapshot(collection(db, `${basePath}/products`), (snap) => setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product))));
     const unsubBills = onSnapshot(query(collection(db, `${basePath}/bills`), orderBy('date', 'desc')), (snap) => setBills(snap.docs.map(d => ({ id: d.id, ...d.data() } as Bill))));
     const unsubPurchases = onSnapshot(query(collection(db, `${basePath}/purchases`), orderBy('invoiceDate', 'desc')), (snap) => setPurchases(snap.docs.map(d => ({ id: d.id, ...d.data() } as Purchase))));
+    const unsubReturns = onSnapshot(query(collection(db, `${basePath}/purchaseReturns`), orderBy('date', 'desc')), (snap) => setPurchaseReturns(snap.docs.map(d => ({ id: d.id, ...d.data() } as PurchaseReturnType))));
     const unsubSuppliers = onSnapshot(collection(db, `${basePath}/suppliers`), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier))));
     const unsubCustomers = onSnapshot(collection(db, `${basePath}/customers`), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer))));
     const unsubSalesmen = onSnapshot(collection(db, `${basePath}/salesmen`), (snap) => setSalesmen(snap.docs.map(d => ({ id: d.id, ...d.data() } as Salesman))));
@@ -148,7 +151,7 @@ function App() {
     const unsubCart = onSnapshot(query(collection(db, `${basePath}/tempCart`), orderBy('addedAt', 'asc')), (snap) => {
         setCloudCart(snap.docs.map(d => d.data() as CartItem));
     });
-    return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
+    return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubReturns(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
   }, [dataOwnerId]);
 
   const getNextAutoBarcode = (currentProducts: Product[]) => {
@@ -273,6 +276,56 @@ function App() {
       } catch(e) { console.error(e); alert("Error saving purchase"); }
   };
 
+  const handleAddPurchaseReturn = async (returnData: Omit<PurchaseReturnType, 'id' | 'totalAmount'>) => {
+    if (!dataOwnerId) return;
+    try {
+        const batch = writeBatch(db);
+        const returnRef = doc(collection(db, `users/${dataOwnerId}/purchaseReturns`));
+        const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
+        
+        let subtotal = 0;
+        const processedItems = returnData.items.map(item => {
+            const product = currentProducts.find(p => p.id === item.productId);
+            if (product) {
+                const bIdx = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
+                if (bIdx !== -1) {
+                    product.batches[bIdx].stock -= item.quantity;
+                    batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: product.batches });
+                }
+            }
+            const itemTotal = (item.quantity * item.purchasePrice) * (1 - item.discount / 100);
+            subtotal += itemTotal + (itemTotal * item.gst / 100);
+            return item;
+        });
+
+        const totalAmount = Math.round(subtotal + (returnData.roundOff || 0));
+        const newReturn: PurchaseReturnType = { ...returnData, id: returnRef.id, totalAmount };
+        batch.set(returnRef, sanitizeForFirestore(newReturn));
+        await batch.commit();
+        alert("Purchase Return recorded successfully!");
+    } catch (e) { alert("Failed to save return."); }
+  };
+
+  const handleDeletePurchaseReturn = async (pr: PurchaseReturnType) => {
+    if (!dataOwnerId || !window.confirm("Delete this return? Stock will be restored.")) return;
+    try {
+        const batch = writeBatch(db);
+        const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
+        for (const item of pr.items) {
+            const product = currentProducts.find(p => p.id === item.productId);
+            if (product) {
+                const bIdx = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
+                if (bIdx !== -1) {
+                    product.batches[bIdx].stock += item.quantity;
+                    batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: product.batches });
+                }
+            }
+        }
+        batch.delete(doc(db, `users/${dataOwnerId}/purchaseReturns`, pr.id));
+        await batch.commit();
+    } catch (e) { alert("Delete failed"); }
+  };
+
   const handleEditBill = (bill: Bill) => { setCloudCart([]); bill.items.forEach(item => handleAddToCartCloud(item)); setEditingBill(bill); setActiveView('billing'); };
   
   const handleDeleteBill = async (bill: Bill) => { 
@@ -357,7 +410,7 @@ function App() {
   
   const handleUpdateConfig = (config: SystemConfig) => { if (dataOwnerId) setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), sanitizeForFirestore(config)); };
   const isGstView = (view: AppView): view is GstReportView => ['gstr3b', 'hsnSales', 'hsnPurchase', 'gstWiseSales'].includes(view);
-  const isMasterView = (view: AppView): view is MasterDataView => ['ledgerMaster', 'productMaster', 'supplierMaster', 'batchMaster'].includes(view);
+  const isMasterView = (view: AppView): view is MasterDataView => ['ledgerMaster', 'productMaster', 'batchMaster'].includes(view);
 
   if (!user) return <Auth />;
   return (
@@ -372,8 +425,10 @@ function App() {
           {(activeView === 'purchases' || activeView === 'purchaseEntry') && (
              <Purchases products={products} purchases={purchases} companies={companies} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddPurchase={handleAddPurchase} onUpdatePurchase={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/purchases`, id), sanitizeForFirestore(data) as any)} onDeletePurchase={handleDeletePurchase} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingPurchase={editingPurchase} onCancelEdit={() => setEditingPurchase(null)} onUpdateConfig={handleUpdateConfig} />
           )}
+          {activeView === 'purchaseReturn' && (
+            <PurchaseReturn products={products} returns={purchaseReturns} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddReturn={handleAddPurchaseReturn} onDeleteReturn={handleDeletePurchaseReturn} />
+          )}
           {activeView === 'saleReturn' && <ComingSoon title="Sale Return" />}
-          {activeView === 'purchaseReturn' && <ComingSoon title="Purchase Return" />}
           {activeView === 'journalEntry' && <ComingSoon title="Journal Entry" />}
           {activeView === 'debitNote' && <ComingSoon title="Debit Note" />}
           {activeView === 'creditNote' && <ComingSoon title="Credit Note" />}
