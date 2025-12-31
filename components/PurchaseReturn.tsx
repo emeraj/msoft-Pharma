@@ -52,6 +52,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseRet
             batchNumber: formData.batchNumber || (isPharmaMode ? '' : 'DEFAULT'),
             expiryDate: formData.expiryDate || '9999-12',
             quantity: parseInt(formData.quantity, 10),
+            unitsPerStrip: selectedProduct.unitsPerStrip || 1,
             mrp: parseFloat(formData.mrp),
             purchasePrice: parseFloat(formData.purchasePrice),
             discount: parseFloat(formData.discount) || 0,

@@ -289,7 +289,8 @@ function App() {
             if (product) {
                 const bIdx = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
                 if (bIdx !== -1) {
-                    product.batches[bIdx].stock -= item.quantity;
+                    const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
+                    product.batches[bIdx].stock -= (item.quantity * unitsPerStrip);
                     batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: product.batches });
                 }
             }
@@ -316,7 +317,8 @@ function App() {
             if (product) {
                 const bIdx = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
                 if (bIdx !== -1) {
-                    product.batches[bIdx].stock += item.quantity;
+                    const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
+                    product.batches[bIdx].stock += (item.quantity * unitsPerStrip);
                     batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: product.batches });
                 }
             }
@@ -434,11 +436,10 @@ function App() {
           {activeView === 'creditNote' && <ComingSoon title="Credit Note" />}
 
           {/* Master & Inventory Views */}
-          {activeView === 'inventory' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} />)}
-          {activeView === 'productMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="productMaster" />)}
-          {activeView === 'batchMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="batch" />)}
+          {activeView === 'inventory' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} />)}
+          {activeView === 'productMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="productMaster" />)}
+          {activeView === 'batchMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="batch" />)}
           {activeView === 'suppliers' && (<SupplierMaster suppliers={suppliers} onAdd={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdate={handleUpdateSupplier} onDelete={handleDeleteSupplier} />)}
-          {activeView === 'supplierMaster' && (<SupplierMaster suppliers={suppliers} onAdd={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdate={handleUpdateSupplier} onDelete={handleDeleteSupplier} />)}
           {activeView === 'ledgerMaster' && (<SupplierMaster suppliers={suppliers} onAdd={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdate={handleUpdateSupplier} onDelete={handleDeleteSupplier} />)}
           
           {/* Reports & Ledgers */}

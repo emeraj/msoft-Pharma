@@ -101,7 +101,8 @@ export interface PurchaseReturnLineItem {
   gst: number;
   batchNumber: string;
   expiryDate: string;
-  quantity: number; // In units/strips as defined in entry
+  quantity: number; // In strips/boxes as defined in entry
+  unitsPerStrip?: number; // Number of base units in one strip/box
   mrp: number;
   purchasePrice: number;
   discount: number;
