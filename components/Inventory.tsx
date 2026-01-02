@@ -1,6 +1,5 @@
-
 import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company, PurchaseReturn } from '../types';
+import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company, PurchaseReturn, SaleReturn } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
 import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, SearchIcon, XIcon, SwitchHorizontalIcon } from './icons/Icons';
@@ -20,6 +19,7 @@ interface InventoryProps {
   purchases?: Purchase[];
   bills?: Bill[];
   purchaseReturns?: PurchaseReturn[];
+  saleReturns?: SaleReturn[];
   systemConfig: SystemConfig;
   gstRates: GstRate[];
   onAddProduct: (product: Omit<Product, 'id'>) => Promise<void>;
@@ -322,7 +322,7 @@ const AllItemStockView: React.FC<{ products: Product[], purchases: Purchase[], b
     );
 };
 
-const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], purchaseReturns: PurchaseReturn[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, purchaseReturns, systemConfig, t }) => {
+const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase[], bills: Bill[], purchaseReturns: PurchaseReturn[], saleReturns?: SaleReturn[], systemConfig: SystemConfig, t: any }> = ({ products, purchases, bills, purchaseReturns, saleReturns = [], systemConfig, t }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
     const [fromDate, setFromDate] = useState('');
@@ -348,8 +348,8 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             if (b.openingStock && b.openingStock > 0) {
                 txs.push({
                     id: `opening_${b.id}`,
-                    date: new Date(0), // Starting date
-                    type: 'Opening',
+                    date: new Date(0), // Placeholder for starting
+                    type: 'OPENING',
                     particulars: `Opening Stock (Batch: ${b.batchNumber})`,
                     batch: b.batchNumber,
                     inQty: b.openingStock,
@@ -367,9 +367,9 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             
             if (isMatch) {
                 txs.push({ 
-                    id: pur.id + '_' + Math.random(),
+                    id: `pur_${pur.id}_${Math.random()}`,
                     date: new Date(pur.invoiceDate), 
-                    type: 'Purchase', 
+                    type: 'PURCHASE', 
                     particulars: `Inv: ${pur.invoiceNumber} (${pur.supplier})`, 
                     batch: item.batchNumber,
                     inQty: item.quantity * (item.unitsPerStrip || unitsPerStrip), 
@@ -382,9 +382,9 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         bills?.forEach(bill => bill.items.forEach(item => {
              if (item.productId === selectedProduct.id) {
                  txs.push({
-                     id: bill.id + '_' + Math.random(),
+                     id: `bill_${bill.id}_${Math.random()}`,
                      date: new Date(bill.date),
-                     type: 'Sale',
+                     type: 'SALE',
                      particulars: `Bill: ${bill.billNumber} (${bill.customerName})`,
                      batch: item.batchNumber,
                      inQty: 0,
@@ -398,9 +398,9 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             if (item.productId === selectedProduct.id) {
                 const returnUnits = item.quantity * (item.unitsPerStrip || unitsPerStrip);
                 txs.push({
-                    id: ret.id + '_' + Math.random(),
+                    id: `pret_${ret.id}_${Math.random()}`,
                     date: new Date(ret.date),
-                    type: 'P.Return',
+                    type: 'P.RETURN',
                     particulars: `Return: ${ret.returnNumber} (${ret.supplier})`,
                     batch: item.batchNumber,
                     inQty: 0,
@@ -409,8 +409,23 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             }
         }));
 
+        // 5. Add Sale Returns (Stock addition)
+        saleReturns?.forEach(sr => sr.items.forEach(item => {
+            if (item.productId === selectedProduct.id) {
+                txs.push({
+                    id: `sret_${sr.id}_${Math.random()}`,
+                    date: new Date(sr.date),
+                    type: 'S.RETURN',
+                    particulars: `Return: ${sr.returnNumber} (${sr.customerName})`,
+                    batch: item.batchNumber,
+                    inQty: item.quantity,
+                    outQty: 0
+                });
+            }
+        }));
+
         return txs.sort((a, b) => a.date.getTime() - b.date.getTime());
-    }, [selectedProduct, purchases, bills, purchaseReturns]);
+    }, [selectedProduct, purchases, bills, purchaseReturns, saleReturns]);
 
     const filteredResults = useMemo(() => {
         if (!selectedProduct) return { opening: 0, rows: [], closing: 0 };
@@ -426,7 +441,7 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         }
 
         let running = opening;
-        const rows = transactions.filter(tx => (!start || tx.date >= start || tx.type === 'Opening') && tx.date <= end).map(tx => { 
+        const rows = transactions.filter(tx => (!start || tx.date >= start || tx.type === 'OPENING') && tx.date <= end).map(tx => { 
             running += (tx.inQty - tx.outQty); 
             return { ...tx, balance: running }; 
         });
@@ -434,11 +449,110 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         return { opening, rows, closing: running };
     }, [transactions, fromDate, toDate, selectedProduct]);
 
+    const getTypeBadgeClass = (type: string) => {
+        switch (type) {
+            case 'OPENING': return 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30';
+            case 'PURCHASE': return 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+            case 'SALE': return 'bg-rose-500/20 text-rose-400 border border-rose-500/30';
+            case 'P.RETURN': return 'bg-orange-500/20 text-orange-400 border border-orange-500/30';
+            case 'S.RETURN': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
+            default: return 'bg-slate-500/20 text-slate-400 border border-slate-500/30';
+        }
+    };
+
     return (
-        <Card title={t.inventory.selectedStock}>
-            <div className="mb-6 relative"><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search Product</label><div className="relative"><input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedProductId(null); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={inputStyle} placeholder="Type product name..." /><SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" /></div>{isSuggestionsOpen && productSuggestions.length > 0 && (<ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-700 border dark:border-slate-600 rounded-lg shadow-xl max-h-60 overflow-y-auto">{productSuggestions.map(p => (<li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-600 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-600"><div className="font-bold">{p.name}</div><div className="text-[10px] text-slate-500 uppercase">{p.company}</div></li>))}</ul>)}</div>
-            {selectedProduct && (<div className="space-y-6 animate-fade-in"><div className="bg-[#1e293b] text-white p-6 rounded-2xl flex justify-between items-center shadow-xl border border-slate-700"><div><h2 className="text-2xl font-black tracking-tight">{selectedProduct.name}</h2><p className="text-slate-400 text-sm font-bold uppercase tracking-widest mt-1">{selectedProduct.company}</p></div><div className="text-right"><p className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Master Ledger Stock</p><p className="text-3xl font-black">{formatStock(filteredResults.closing, selectedProduct.unitsPerStrip)}</p></div></div><div className="grid grid-cols-2 gap-4 items-end bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border dark:border-slate-700"><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">From</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className={inputStyle} /></div><div><label className="block text-[10px] font-black uppercase mb-1 text-slate-500 tracking-widest">To</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className={inputStyle} /></div></div><div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Date</th><th className="px-6 py-4">Type</th><th className="px-6 py-4">Particulars</th>{isPharma && <th className="px-6 py-4">Batch</th>}<th className="px-6 py-4 text-right">IN (Qty)</th><th className="px-6 py-4 text-right">OUT (Qty)</th><th className="px-6 py-4 text-right">Balance</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"><tr className="bg-slate-50 dark:bg-slate-800/30 font-bold"><td colSpan={isPharma ? 6 : 5} className="px-6 py-4 text-right text-slate-500 uppercase text-[10px] tracking-widest">Opening Balance (Master):</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">{formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}</td></tr>{filteredResults.rows.map((row) => (<tr key={row.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors ${row.type === 'Opening' ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}><td className="px-6 py-4 whitespace-nowrap">{row.type === 'Opening' ? 'Starting' : row.date.toLocaleDateString()}</td><td className="px-6 py-4"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${row.type === 'Sale' || row.type === 'P.Return' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' : row.type === 'Opening' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>{row.type}</span></td><td className="px-6 py-4 text-slate-500 dark:text-slate-400">{row.particulars}</td>{isPharma && <td className="px-6 py-4 font-mono text-xs">{row.batch || '-'}</td>}<td className="px-6 py-4 text-right font-bold text-emerald-600 dark:text-emerald-400">{row.inQty > 0 ? row.inQty : '-'}</td><td className="px-6 py-4 text-right font-bold text-rose-600 dark:text-rose-400">{row.outQty > 0 ? row.outQty : '-'}</td><td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white bg-slate-50/50 dark:bg-slate-900/20">{formatStock(row.balance, selectedProduct.unitsPerStrip)}</td></tr>))}</tbody></table></div></div>)}
-        </Card>
+        <div className="space-y-6">
+            <Card title="Stock Ledger (Cardex)">
+                <div className="mb-6 relative">
+                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Select Product to Audit</label>
+                    <div className="relative">
+                        <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedProductId(null); setIsSuggestionsOpen(true); }} onFocus={() => setIsSuggestionsOpen(true)} className={`${inputStyle} h-12 text-lg`} placeholder="Start typing name..." />
+                        <SearchIcon className="absolute right-4 top-3 h-6 w-6 text-slate-400" />
+                    </div>
+                    {isSuggestionsOpen && productSuggestions.length > 0 && (
+                        <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+                            {productSuggestions.map(p => (
+                                <li key={p.id} onClick={() => handleSelectProduct(p)} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer text-slate-800 dark:text-slate-200 border-b last:border-b-0 dark:border-slate-700 transition-colors">
+                                    <div className="font-bold">{p.name}</div>
+                                    <div className="text-[10px] text-slate-500 uppercase font-bold tracking-tighter">{p.company} | Units: 1*{p.unitsPerStrip || 1}</div>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+
+                {selectedProduct && (
+                    <div className="animate-fade-in space-y-4">
+                        <div className="flex flex-col sm:flex-row gap-4 items-end bg-[#1e293b]/40 p-4 rounded-xl border border-slate-700/50">
+                            <div className="flex-grow">
+                                <h2 className="text-xl font-black text-slate-100 uppercase tracking-tight">{selectedProduct.name}</h2>
+                                <p className="text-xs text-indigo-400 font-bold uppercase tracking-widest">{selectedProduct.company}</p>
+                            </div>
+                            <div className="flex gap-4">
+                                <div><label className="block text-[9px] font-black uppercase text-slate-500 mb-1">From Date</label><input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="px-2 py-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white" /></div>
+                                <div><label className="block text-[9px] font-black uppercase text-slate-500 mb-1">To Date</label><input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="px-2 py-1.5 bg-slate-800 border border-slate-600 rounded text-xs text-white" /></div>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-xl border border-slate-800 shadow-2xl bg-[#0f172a]">
+                            <table className="w-full text-[13px] text-left border-collapse">
+                                <thead className="bg-[#1e293b] text-slate-400 uppercase text-[10px] font-black tracking-widest border-b border-slate-800">
+                                    <tr>
+                                        <th className="px-6 py-4">Date</th>
+                                        <th className="px-6 py-4">Type</th>
+                                        <th className="px-6 py-4">Particulars</th>
+                                        <th className="px-6 py-4 text-center">IN (Qty)</th>
+                                        <th className="px-6 py-4 text-center">OUT (Qty)</th>
+                                        <th className="px-6 py-4 text-right">Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-800 text-slate-300">
+                                    {/* Sub-Header style line for Opening Balance */}
+                                    <tr className="bg-slate-900/50 border-b border-slate-800">
+                                        <td colSpan={5} className="px-6 py-4 text-right">
+                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Opening Balance (Master):</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-black text-white text-base">
+                                            {formatStock(filteredResults.opening, selectedProduct.unitsPerStrip)}
+                                        </td>
+                                    </tr>
+
+                                    {filteredResults.rows.map((row) => (
+                                        <tr key={row.id} className="hover:bg-slate-800/40 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap text-slate-500">
+                                                {row.type === 'OPENING' ? 'Starting' : new Date(row.date).toLocaleDateString('en-IN')}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`inline-block px-3 py-1 rounded-full text-[9px] font-black tracking-widest ${getTypeBadgeClass(row.type)}`}>
+                                                    {row.type}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="font-medium text-slate-300">{row.particulars}</div>
+                                                {isPharma && row.batch && <div className="text-[9px] text-slate-600 font-mono mt-0.5">BATCH: {row.batch}</div>}
+                                            </td>
+                                            <td className="px-6 py-4 text-center font-bold text-emerald-400">
+                                                {row.inQty > 0 ? row.inQty : '-'}
+                                            </td>
+                                            <td className="px-6 py-4 text-center font-bold text-rose-400">
+                                                {row.outQty > 0 ? row.outQty : '-'}
+                                            </td>
+                                            <td className="px-6 py-4 text-right font-black text-white bg-slate-900/30">
+                                                {formatStock(row.balance, selectedProduct.unitsPerStrip)}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    
+                                    {filteredResults.rows.length === 0 && (
+                                        <tr><td colSpan={6} className="text-center py-20 text-slate-600 font-bold uppercase tracking-tighter">No transaction history for selected period</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </Card>
+        </div>
     );
 };
 
@@ -627,7 +741,7 @@ const BatchWiseStockView: React.FC<{ products: Product[], purchases: Purchase[],
             </div>
         }>
             <div className="mb-6 relative"><input type="text" placeholder="Search product or batch number..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className={inputStyle} /><SearchIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" /></div>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expiry Date</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">Live Stock</th><th className="px-6 py-4 text-center">Actions</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">{allBatches.map((item, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs text-slate-500">{item.batchNumber}</td><td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-center"><div className="flex justify-center gap-3"><button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit Batch"><PencilIcon className="h-5 w-5" /></button><button onClick={() => onDeleteBatch(item.product.id, item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors" title="Delete Batch"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table></div>
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm"><table className="w-full text-sm text-left"><thead className="bg-[#1e293b] text-slate-300 uppercase text-[11px] font-black tracking-wider border-b dark:border-slate-700"><tr><th className="px-6 py-4">Product Name</th><th className="px-6 py-4">Batch No</th><th className="px-6 py-4">Expiry Date</th><th className="px-4 py-4 text-right">MRP</th><th className="px-6 py-4 text-center">Live Stock</th><th className="px-6 py-4 text-center">Actions</th></tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">{allBatches.map((item, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{item.product.name}</td><td className="px-6 py-4 font-mono text-xs text-slate-500">{item.batchNumber}</td><td className="px-6 py-4 text-slate-600 dark:text-slate-400">{item.expiryDate}</td><td className="px-4 py-4 text-right font-medium">₹{item.mrp.toFixed(2)}</td><td className="px-6 py-4 text-center font-black text-slate-900 dark:text-white">{formatStock(item.stock, item.product.unitsPerStrip)}</td><td className="px-6 py-4 text-center"><div className="flex justify-center gap-3"><button onClick={() => setEditingBatchData({ product: item.product, batch: item })} className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Edit Batch"><PencilIcon className="h-5 w-5" /></button><button onClick={() => onDeleteBatch(item.product.id, item.id)} className="p-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors" title="Delete Batch"><TrashIcon className="h-5 w-5" /></button></div></td></tr>))}</tbody></table></div>
             {editingBatchData && <EditBatchModal isOpen={!!editingBatchData} onClose={() => setEditingBatchData(null)} product={editingBatchData.product} batch={editingBatchData.batch} onSave={handleUpdateBatch} />}
             <AddBatchModal isOpen={isAddBatchModalOpen} onClose={() => setIsAddBatchModalOpen(false)} products={products} onSave={handleAddBatch} />
         </Card>
@@ -754,7 +868,7 @@ const AddEditProductModal: React.FC<{
     );
 };
 
-const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companies, purchases = [], bills = [], purchaseReturns = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany, initialTab = 'company' }, ref) => {
+const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companies, purchases = [], bills = [], purchaseReturns = [], saleReturns = [], systemConfig, gstRates, onAddProduct, onUpdateProduct, onDeleteProduct, onAddCompany, initialTab = 'company' }, ref) => {
     const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
     const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -817,7 +931,7 @@ const Inventory = forwardRef<InventoryRef, InventoryProps>(({ products, companie
             <div className="animate-fade-in">
                 {activeTab === 'productMaster' && <ProductMasterView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} onEdit={handleEditProduct} onDelete={onDeleteProduct} t={t} />}
                 {activeTab === 'all' && <AllItemStockView products={products} purchases={purchases} bills={bills} systemConfig={systemConfig} t={t} />}
-                {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} t={t} />}
+                {activeTab === 'selected' && <SelectedItemStockView products={products} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} saleReturns={saleReturns} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'batch' && <BatchWiseStockView products={products} purchases={purchases} bills={bills} onDeleteBatch={handleDeleteBatch} onUpdateProduct={onUpdateProduct} systemConfig={systemConfig} t={t} />}
                 {activeTab === 'company' && <CompanyWiseStockView products={products} purchases={purchases} bills={bills} t={t} />}
                 {activeTab === 'expired' && <ExpiredStockView products={products} purchases={purchases} bills={bills} t={t} />}

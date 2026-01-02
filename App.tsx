@@ -26,7 +26,7 @@ import SubscriptionAdmin from './components/SubscriptionAdmin';
 import GstReports from './components/GstReports';
 import { InformationCircleIcon, XIcon, CloudIcon, CheckCircleIcon } from './components/icons/Icons';
 import type { 
-  AppView, Product, Bill, Purchase, PurchaseReturn as PurchaseReturnType, Supplier, Customer, CustomerPayment, 
+  AppView, Product, Bill, Purchase, PurchaseReturn as PurchaseReturnType, SaleReturn, Supplier, Customer, CustomerPayment, 
   Payment, CompanyProfile, SystemConfig, GstRate, Company, UserPermissions, 
   Salesman, UserMapping, GstReportView, CartItem, MasterDataView
 } from './types';
@@ -97,6 +97,7 @@ function App() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturnType[]>([]);
+  const [saleReturns, setSaleReturns] = useState<SaleReturn[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [salesmen, setSalesmen] = useState<Salesman[]>([]);
@@ -139,6 +140,7 @@ function App() {
     const unsubBills = onSnapshot(query(collection(db, `${basePath}/bills`), orderBy('date', 'desc')), (snap) => setBills(snap.docs.map(d => ({ id: d.id, ...d.data() } as Bill))));
     const unsubPurchases = onSnapshot(query(collection(db, `${basePath}/purchases`), orderBy('invoiceDate', 'desc')), (snap) => setPurchases(snap.docs.map(d => ({ id: d.id, ...d.data() } as Purchase))));
     const unsubReturns = onSnapshot(query(collection(db, `${basePath}/purchaseReturns`), orderBy('date', 'desc')), (snap) => setPurchaseReturns(snap.docs.map(d => ({ id: d.id, ...d.data() } as PurchaseReturnType))));
+    const unsubSReturns = onSnapshot(query(collection(db, `${basePath}/saleReturns`), orderBy('date', 'desc')), (snap) => setSaleReturns(snap.docs.map(d => ({ id: d.id, ...d.data() } as SaleReturn))));
     const unsubSuppliers = onSnapshot(collection(db, `${basePath}/suppliers`), (snap) => setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier))));
     const unsubCustomers = onSnapshot(collection(db, `${basePath}/customers`), (snap) => setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Customer))));
     const unsubSalesmen = onSnapshot(collection(db, `${basePath}/salesmen`), (snap) => setSalesmen(snap.docs.map(d => ({ id: d.id, ...d.data() } as Salesman))));
@@ -151,13 +153,13 @@ function App() {
     const unsubCart = onSnapshot(query(collection(db, `${basePath}/tempCart`), orderBy('addedAt', 'asc')), (snap) => {
         setCloudCart(snap.docs.map(d => d.data() as CartItem));
     });
-    return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubReturns(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
+    return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubReturns(); unsubSReturns(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
   }, [dataOwnerId]);
 
   /**
    * RE-WRITE STOCK (Audit Utility)
    * Deep aggregates all history to fix stock discrepancies.
-   * Logic: (Batch Opening) + (Purchases) - (Sales) - (Purchase Returns)
+   * Logic: (Batch Opening) + (Purchases) - (Sales) - (Purchase Returns) + (Sales Returns)
    */
   const handleStockAudit = async () => {
     if (!dataOwnerId) return;
@@ -209,6 +211,13 @@ function App() {
                     if (isMatch && normalizeCode(item.batchNumber) === bNum) {
                         const conversion = item.unitsPerStrip || unitsPerStrip;
                         auditStock -= (item.quantity * conversion);
+                    }
+                }));
+
+                // 4. Audit Sale Returns (+ IN)
+                saleReturns.forEach(sret => sret.items.forEach(item => {
+                    if (item.productId === product.id && (item.batchId === b.id || normalizeCode(item.batchNumber) === bNum)) {
+                        auditStock += item.quantity;
                     }
                 }));
 
@@ -512,10 +521,10 @@ function App() {
           {activeView === 'purchaseReturn' && (
             <PurchaseReturn products={products} returns={purchaseReturns} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddReturn={handleAddPurchaseReturn} onDeleteReturn={handleDeletePurchaseReturn} />
           )}
-          {activeView === 'inventory' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} />)}
+          {activeView === 'inventory' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} saleReturns={saleReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} />)}
           
           {/* Master Data Section */}
-          {activeView === 'productMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="productMaster" />)}
+          {activeView === 'productMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} saleReturns={saleReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="productMaster" />)}
           {activeView === 'ledgerMaster' && (<LedgerMaster customers={customers} suppliers={suppliers} salesmen={salesmen} systemConfig={systemConfig} onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} onUpdateCustomer={async (id, d) => updateDoc(doc(db, `users/${dataOwnerId}/customers`, id), sanitizeForFirestore(d))} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} onUpdateSupplier={handleUpdateSupplier} onDeleteSupplier={handleDeleteSupplier} onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} />)}
           {activeView === 'batchMaster' && (<BatchMaster products={products} systemConfig={systemConfig} onUpdateProduct={handleUpdateProduct} />)}
 

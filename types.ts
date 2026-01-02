@@ -61,6 +61,26 @@ export interface Bill {
   paymentMode?: 'Cash' | 'Credit';
 }
 
+export interface SaleReturnItem {
+  productId: string;
+  productName: string;
+  batchId: string;
+  batchNumber: string;
+  quantity: number;
+  mrp: number;
+  gst: number;
+  total: number;
+}
+
+export interface SaleReturn {
+  id: string;
+  returnNumber: string;
+  date: string;
+  customerName: string;
+  items: SaleReturnItem[];
+  grandTotal: number;
+}
+
 export interface PurchaseLineItem {
   isNewProduct: boolean;
   productName: string;
