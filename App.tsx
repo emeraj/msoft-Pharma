@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment, serverTimestamp } from 'firebase/firestore';
@@ -50,16 +49,6 @@ const sanitizeForFirestore = (obj: any): any => {
 
 const defaultProfile: CompanyProfile = { name: 'My Shop', address: '', gstin: '', };
 const defaultConfig: SystemConfig = { softwareMode: 'Retail', invoicePrintingFormat: 'Thermal', mrpEditable: true, barcodeScannerOpenByDefault: true, maintainCustomerLedger: false, enableSalesman: false, aiInvoiceQuota: 5, subscription: { isPremium: false, planType: 'Free' } };
-
-const ComingSoon: React.FC<{ title: string }> = ({ title }) => (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 text-center">
-        <div className="bg-indigo-100 dark:bg-indigo-900/30 p-8 rounded-full mb-6">
-            <InformationCircleIcon className="h-16 w-16 text-indigo-600" />
-        </div>
-        <h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{title}</h2>
-        <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md">This accounting module is currently under development.</p>
-    </div>
-);
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -127,19 +116,20 @@ function App() {
   }, [dataOwnerId]);
 
   /**
-   * RE-WRITE STOCK (Recalculate all stock levels from transaction history)
-   * Matches the detailed ledger logic found in 'Selected Item Stock'.
+   * RE-WRITE STOCK LOGIC
+   * Professional audit trail matching 'Selected Item Stock' ledger.
+   * This rebuilds the 'Current Stock' field from zero by processing history.
    */
   const handleReWriteStock = async () => {
     if (!dataOwnerId) return;
-    if (!window.confirm("CRITICAL: This will audit every product batch against your entire ledger (Opening + Purchases - Sales - Returns). Mismatches will be corrected. Proceed?")) return;
+    if (!window.confirm("CRITICAL AUDIT: This will recalculate all stock levels for every product from your entire transaction history (Opening + Purchases - Sales - Returns). Proceed?")) return;
 
     try {
         let currentBatch = writeBatch(db);
         let operationsCount = 0;
         let totalCorrections = 0;
 
-        // Iterate through every product
+        // Iterate through every single product in the inventory
         for (const product of products) {
             let productModified = false;
             const unitsPerStrip = product.unitsPerStrip || 1;
@@ -148,11 +138,11 @@ function App() {
             const pCompany = product.company.toLowerCase().trim();
 
             const updatedBatches = product.batches.map(b => {
-                // Start with the defined Opening Stock for this specific batch
+                // Initialize with the batch's defined Opening Stock (the starting balance)
                 let auditStock = b.openingStock || 0;
                 const bNum = normalizeCode(b.batchNumber);
 
-                // 1. Audit Purchases (+ IN)
+                // 1. Audit all matching Purchases (+ IN)
                 purchases.forEach(pur => pur.items.forEach(item => {
                     const iBarcode = normalizeCode(item.barcode || "");
                     const isMatch = (item.productId === product.id) || 
@@ -160,19 +150,22 @@ function App() {
                                    (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
                     
                     if (isMatch && normalizeCode(item.batchNumber) === bNum) {
-                        auditStock += (item.quantity * (item.unitsPerStrip || unitsPerStrip));
+                        // Use item's units per strip if recorded, otherwise fallback to current product configuration
+                        const conversion = item.unitsPerStrip || unitsPerStrip;
+                        auditStock += (item.quantity * conversion);
                     }
                 }));
 
-                // 2. Audit Sales (- OUT)
+                // 2. Audit all matching Sales (- OUT)
                 bills.forEach(bill => bill.items.forEach(item => {
-                    // Sales items are strictly linked by productId and batchId
-                    if (item.productId === product.id && item.batchId === b.id) {
+                    // Billing records are strictly linked to productId and batchId
+                    const isMatch = (item.productId === product.id && (item.batchId === b.id || normalizeCode(item.batchNumber) === bNum));
+                    if (isMatch) {
                         auditStock -= item.quantity;
                     }
                 }));
 
-                // 3. Audit Purchase Returns (- OUT)
+                // 3. Audit all matching Purchase Returns (- OUT)
                 purchaseReturns.forEach(ret => ret.items.forEach(item => {
                     const iBarcode = normalizeCode(item.barcode || "");
                     const isMatch = (item.productId === product.id) || 
@@ -180,10 +173,12 @@ function App() {
                                    (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
                     
                     if (isMatch && normalizeCode(item.batchNumber) === bNum) {
-                        auditStock -= (item.quantity * (item.unitsPerStrip || unitsPerStrip));
+                        const conversion = item.unitsPerStrip || unitsPerStrip;
+                        auditStock -= (item.quantity * conversion);
                     }
                 }));
 
+                // Check for discrepancies between the calculated audit stock and stored stock
                 if (b.stock !== auditStock) {
                     totalCorrections++;
                     productModified = true;
@@ -197,7 +192,7 @@ function App() {
                 currentBatch.update(productRef, { batches: updatedBatches });
                 operationsCount++;
 
-                // Firestore limit is 500 per batch. We commit at 400 for safety.
+                // Firestore allows max 500 writes per batch. Commit and start new batch at 400 for safety.
                 if (operationsCount >= 400) {
                     await currentBatch.commit();
                     currentBatch = writeBatch(db);
@@ -206,18 +201,19 @@ function App() {
             }
         }
 
+        // Final commit for any remaining updates
         if (operationsCount > 0) {
             await currentBatch.commit();
         }
 
         if (totalCorrections > 0) {
-            alert(`Audit Complete! Recalculated and fixed ${totalCorrections} mismatched batches.`);
+            alert(`Audit Complete! Successfully recalculated and fixed ${totalCorrections} mismatched stock entries across your inventory.`);
         } else {
-            alert("Audit Complete! All stock levels are already 100% correct according to the ledger.");
+            alert("Audit Complete! All stock levels are already 100% in sync with your transaction ledger.");
         }
     } catch (e) {
         console.error("Re-Write Stock error:", e);
-        alert("Stock Recalculation failed. Please try again.");
+        alert("Inventory recalculation failed. Please check your network and try again.");
     }
   };
 
