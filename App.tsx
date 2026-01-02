@@ -31,13 +31,20 @@ import type {
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
+/**
+ * Robust sanitizer for Firestore data.
+ */
 const sanitizeForFirestore = (obj: any): any => {
   if (obj === undefined) return null; 
   if (Array.isArray(obj)) {
-    return obj.filter(v => v !== undefined).map(v => sanitizeForFirestore(v));
+    return obj
+      .filter(v => v !== undefined)
+      .map(v => sanitizeForFirestore(v));
   }
   if (obj !== null && typeof obj === 'object') {
-    if (obj.constructor !== Object && obj.constructor !== undefined) return obj;
+    if (obj.constructor !== Object && obj.constructor !== undefined) {
+      return obj;
+    }
     return Object.fromEntries(
       Object.entries(obj)
         .filter(([_, v]) => v !== undefined)
@@ -47,8 +54,35 @@ const sanitizeForFirestore = (obj: any): any => {
   return obj;
 };
 
-const defaultProfile: CompanyProfile = { name: 'My Shop', address: '', gstin: '', };
-const defaultConfig: SystemConfig = { softwareMode: 'Retail', invoicePrintingFormat: 'Thermal', mrpEditable: true, barcodeScannerOpenByDefault: true, maintainCustomerLedger: false, enableSalesman: false, aiInvoiceQuota: 5, subscription: { isPremium: false, planType: 'Free' } };
+const defaultProfile: CompanyProfile = {
+  name: 'My Shop',
+  address: '',
+  gstin: '',
+};
+
+const defaultConfig: SystemConfig = {
+  softwareMode: 'Retail',
+  invoicePrintingFormat: 'Thermal',
+  mrpEditable: true,
+  barcodeScannerOpenByDefault: true,
+  maintainCustomerLedger: false,
+  enableSalesman: false,
+  aiInvoiceQuota: 5,
+  subscription: {
+    isPremium: false,
+    planType: 'Free'
+  }
+};
+
+const ComingSoon: React.FC<{ title: string }> = ({ title }) => (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 text-center">
+        <div className="bg-indigo-100 dark:bg-indigo-900/30 p-8 rounded-full mb-6">
+            <InformationCircleIcon className="h-16 w-16 text-indigo-600" />
+        </div>
+        <h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{title}</h2>
+        <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md">This accounting module is currently under development and will be available in the next Pro update.</p>
+    </div>
+);
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -74,6 +108,7 @@ function App() {
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [currentLedgerCustomerId, setCurrentLedgerCustomerId] = useState<string | null>(null);
   const [currentLedgerSupplierId, setCurrentLedgerSupplierId] = useState<string | null>(null);
+  
   const [cloudCart, setCloudCart] = useState<CartItem[]>([]);
 
   useEffect(() => {
@@ -111,25 +146,26 @@ function App() {
     const unsubCompanies = onSnapshot(collection(db, `${basePath}/companies`), (snap) => setCompanies(snap.docs.map(d => ({ id: d.id, ...d.data() } as Company))));
     const unsubProfile = onSnapshot(doc(db, `${basePath}/companyProfile`, 'profile'), (snap) => { if (snap.exists()) setCompanyProfile(snap.data() as CompanyProfile); });
     const unsubConfig = onSnapshot(doc(db, `${basePath}/systemConfig`, 'config'), (snap) => { if (snap.exists()) setSystemConfig(snap.data() as SystemConfig); });
-    const unsubCart = onSnapshot(query(collection(db, `${basePath}/tempCart`), orderBy('addedAt', 'asc')), (snap) => setCloudCart(snap.docs.map(d => d.data() as CartItem)));
+    const unsubCart = onSnapshot(query(collection(db, `${basePath}/tempCart`), orderBy('addedAt', 'asc')), (snap) => {
+        setCloudCart(snap.docs.map(d => d.data() as CartItem));
+    });
     return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubReturns(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
   }, [dataOwnerId]);
 
   /**
-   * RE-WRITE STOCK LOGIC
-   * Professional audit trail matching 'Selected Item Stock' ledger.
-   * This rebuilds the 'Current Stock' field from zero by processing history.
+   * STOCK AUDIT (RE-WRITE STOCK)
+   * This tool rebuilds current stock from historical records: 
+   * Opening (Batch level) + Inward (Purchases) - Outward (Sales + Returns).
    */
-  const handleReWriteStock = async () => {
+  const handleStockAudit = async () => {
     if (!dataOwnerId) return;
-    if (!window.confirm("CRITICAL AUDIT: This will recalculate all stock levels for every product from your entire transaction history (Opening + Purchases - Sales - Returns). Proceed?")) return;
+    if (!window.confirm("STOCK AUDIT: This will recalculate all stock levels for every item by auditing your ledger (Opening + Purchases - Sales - Returns). proceed?")) return;
 
     try {
         let currentBatch = writeBatch(db);
         let operationsCount = 0;
         let totalCorrections = 0;
 
-        // Iterate through every single product in the inventory
         for (const product of products) {
             let productModified = false;
             const unitsPerStrip = product.unitsPerStrip || 1;
@@ -137,12 +173,12 @@ function App() {
             const pName = product.name.toLowerCase().trim();
             const pCompany = product.company.toLowerCase().trim();
 
-            const updatedBatches = product.batches.map(b => {
-                // Initialize with the batch's defined Opening Stock (the starting balance)
+            const updatedBatches = (product.batches || []).map(b => {
+                // Initialize from Batch Opening Stock
                 let auditStock = b.openingStock || 0;
                 const bNum = normalizeCode(b.batchNumber);
 
-                // 1. Audit all matching Purchases (+ IN)
+                // 1. Audit Purchases (+ IN)
                 purchases.forEach(pur => pur.items.forEach(item => {
                     const iBarcode = normalizeCode(item.barcode || "");
                     const isMatch = (item.productId === product.id) || 
@@ -150,22 +186,20 @@ function App() {
                                    (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
                     
                     if (isMatch && normalizeCode(item.batchNumber) === bNum) {
-                        // Use item's units per strip if recorded, otherwise fallback to current product configuration
                         const conversion = item.unitsPerStrip || unitsPerStrip;
                         auditStock += (item.quantity * conversion);
                     }
                 }));
 
-                // 2. Audit all matching Sales (- OUT)
+                // 2. Audit Sales (- OUT)
                 bills.forEach(bill => bill.items.forEach(item => {
-                    // Billing records are strictly linked to productId and batchId
-                    const isMatch = (item.productId === product.id && (item.batchId === b.id || normalizeCode(item.batchNumber) === bNum));
-                    if (isMatch) {
+                    // Strictly match by Product ID and Batch ID/Number
+                    if (item.productId === product.id && (item.batchId === b.id || normalizeCode(item.batchNumber) === bNum)) {
                         auditStock -= item.quantity;
                     }
                 }));
 
-                // 3. Audit all matching Purchase Returns (- OUT)
+                // 3. Audit Purchase Returns (- OUT)
                 purchaseReturns.forEach(ret => ret.items.forEach(item => {
                     const iBarcode = normalizeCode(item.barcode || "");
                     const isMatch = (item.productId === product.id) || 
@@ -178,7 +212,6 @@ function App() {
                     }
                 }));
 
-                // Check for discrepancies between the calculated audit stock and stored stock
                 if (b.stock !== auditStock) {
                     totalCorrections++;
                     productModified = true;
@@ -192,7 +225,6 @@ function App() {
                 currentBatch.update(productRef, { batches: updatedBatches });
                 operationsCount++;
 
-                // Firestore allows max 500 writes per batch. Commit and start new batch at 400 for safety.
                 if (operationsCount >= 400) {
                     await currentBatch.commit();
                     currentBatch = writeBatch(db);
@@ -201,256 +233,150 @@ function App() {
             }
         }
 
-        // Final commit for any remaining updates
         if (operationsCount > 0) {
             await currentBatch.commit();
         }
 
-        if (totalCorrections > 0) {
-            alert(`Audit Complete! Successfully recalculated and fixed ${totalCorrections} mismatched stock entries across your inventory.`);
-        } else {
-            alert("Audit Complete! All stock levels are already 100% in sync with your transaction ledger.");
-        }
+        alert(totalCorrections > 0 
+            ? `Audit Successful! Fixed ${totalCorrections} mismatched stock entries.` 
+            : "Audit Complete! Your live stock perfectly matches the transaction ledger.");
     } catch (e) {
-        console.error("Re-Write Stock error:", e);
-        alert("Inventory recalculation failed. Please check your network and try again.");
+        console.error("Audit failed", e);
+        alert("Stock Audit failed. Please try again.");
     }
+  };
+
+  const getNextAutoBarcode = (currentProducts: Product[]) => {
+    const numericBarcodes = currentProducts
+      .map(p => p.barcode)
+      .filter(b => b && /^\d+$/.test(b) && b.length <= 6)
+      .map(b => parseInt(b, 10));
+    const max = numericBarcodes.length > 0 ? Math.max(...numericBarcodes) : 0;
+    return String(max + 1).padStart(6, '0');
   };
 
   const handleAddProduct = async (productData: Omit<Product, 'id'>) => { 
     if (!dataOwnerId) return; 
     const finalData = { ...productData };
     if (!finalData.barcode || finalData.barcode.trim() === '') {
-        const numericBarcodes = products.map(p => p.barcode).filter(b => b && /^\d+$/.test(b) && b.length <= 6).map(b => parseInt(b, 10));
-        const max = numericBarcodes.length > 0 ? Math.max(...numericBarcodes) : 0;
-        finalData.barcode = String(max + 1).padStart(6, '0');
+        finalData.barcode = getNextAutoBarcode(products);
     }
     await addDoc(collection(db, `users/${dataOwnerId}/products`), sanitizeForFirestore(finalData)); 
   };
 
   const handleUpdateProduct = async (id: string, productData: Partial<Product>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/products`, id), sanitizeForFirestore(productData)); };
-  const handleDeleteProduct = async (id: string) => { if (!dataOwnerId) return; if (window.confirm('Delete product?')) await deleteDoc(doc(db, `users/${dataOwnerId}/products`, id)); };
+  const handleDeleteProduct = async (id: string) => { if (!dataOwnerId) return; if (window.confirm('Delete product?')) { await deleteDoc(doc(db, `users/${dataOwnerId}/products`, id)); } };
+
+  const handleAddToCartCloud = async (item: CartItem) => {
+      if (!dataOwnerId) return;
+      const itemRef = doc(db, `users/${dataOwnerId}/tempCart`, item.batchId);
+      const itemToSave = { ...item, addedAt: item.addedAt || Date.now() };
+      await setDoc(itemRef, sanitizeForFirestore(itemToSave), { merge: true });
+  };
+  const handleRemoveFromCartCloud = async (batchId: string) => { if (!dataOwnerId) return; await deleteDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId)); };
+  const handleUpdateCartItemCloud = async (batchId: string, updates: Partial<CartItem>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId), sanitizeForFirestore(updates)); };
+  const handleClearCartCloud = async () => { if (!dataOwnerId) return; const batch = writeBatch(db); cloudCart.forEach(item => { batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)); }); await batch.commit(); };
+
+  const handleEditBill = (bill: Bill) => { setCloudCart([]); bill.items.forEach(item => handleAddToCartCloud(item)); setEditingBill(bill); setActiveView('billing'); };
   const handleUpdateConfig = (config: SystemConfig) => { if (dataOwnerId) setDoc(doc(db, `users/${dataOwnerId}/systemConfig`, 'config'), sanitizeForFirestore(config)); };
 
   const handleGenerateBill = async (billData: Omit<Bill, 'id' | 'billNumber'>) => {
     if (!dataOwnerId) return null;
     try {
-      const batch = writeBatch(db);
-      const billNumber = `INV-${Date.now().toString().slice(-6)}`;
-      const billRef = doc(collection(db, `users/${dataOwnerId}/bills`));
-      const newBill = { ...billData, billNumber, id: billRef.id };
-      batch.set(billRef, sanitizeForFirestore(newBill));
-      for (const item of billData.items) {
-        const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-          const updatedBatches = product.batches.map(b => {
-            if (b.id === item.batchId) {
-              return { ...b, stock: (b.stock || 0) - item.quantity };
-            }
-            return b;
-          });
-          batch.update(productRef, { batches: updatedBatches });
+        const batch = writeBatch(db); const billsRef = collection(db, `users/${dataOwnerId}/bills`); const billNumber = `INV-${Date.now().toString().slice(-6)}`; const newBillRef = doc(billsRef); const newBill: Bill = { ...billData, id: newBillRef.id, billNumber }; batch.set(newBillRef, sanitizeForFirestore(newBill));
+        for (const item of billData.items) { 
+          const product = products.find(p => p.id === item.productId); 
+          if (product) { 
+            const updatedBatches = product.batches.map(b => b.id === item.batchId ? { ...b, stock: (b.stock || 0) - item.quantity } : b);
+            batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: updatedBatches }); 
+          } 
         }
-      }
-      cloudCart.forEach(item => {
-        batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId));
-      });
-      await batch.commit();
-      return newBill as Bill;
-    } catch (e) {
-      console.error(e);
-      alert("Failed to generate bill.");
-      return null;
-    }
-  };
-
-  const handleAddToCartCloud = async (item: CartItem) => {
-    if (!dataOwnerId) return;
-    await setDoc(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId), sanitizeForFirestore(item));
-  };
-
-  const handleRemoveFromCartCloud = async (batchId: string) => {
-    if (!dataOwnerId) return;
-    await deleteDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId));
-  };
-
-  const handleUpdateCartItemCloud = async (batchId: string, updates: Partial<CartItem>) => {
-    if (!dataOwnerId) return;
-    await updateDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId), sanitizeForFirestore(updates));
+        if (billData.paymentMode === 'Credit' && billData.customerId) batch.update(doc(db, `users/${dataOwnerId}/customers`, billData.customerId), { balance: increment(billData.grandTotal) });
+        cloudCart.forEach(item => batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)));
+        await batch.commit(); return newBill;
+    } catch (e) { alert("Failed"); return null; }
   };
 
   const handleAddPurchase = async (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => {
-    if (!dataOwnerId) return;
-    try {
-      const batch = writeBatch(db);
-      const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`));
-      let totalAmount = 0;
-      purchaseData.items.forEach(item => {
-        const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0) / 100);
-        totalAmount += itemTotal * (1 + (item.gst / 100));
-      });
-      totalAmount += (purchaseData.roundOff || 0);
-      const finalPurchase = { ...purchaseData, totalAmount, id: purchaseRef.id };
-      batch.set(purchaseRef, sanitizeForFirestore(finalPurchase));
-      for (const item of purchaseData.items) {
-        if (item.productId) {
-          const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-          const product = products.find(p => p.id === item.productId);
-          if (product) {
-            const unitsPerStrip = product.unitsPerStrip || 1;
-            const incomingUnits = item.quantity * unitsPerStrip;
-            let batchExists = false;
-            const updatedBatches = product.batches.map(b => {
-              if (b.batchNumber === item.batchNumber) {
-                batchExists = true;
-                return { ...b, stock: (b.stock || 0) + incomingUnits, purchasePrice: item.purchasePrice, mrp: item.mrp };
-              }
-              return b;
-            });
-            if (!batchExists) {
-              updatedBatches.push({
-                id: `batch_${Date.now()}_${Math.random()}`,
-                batchNumber: item.batchNumber,
-                expiryDate: item.expiryDate,
-                stock: incomingUnits,
-                purchasePrice: item.purchasePrice,
-                mrp: item.mrp,
-                openingStock: 0
+      if (!dataOwnerId) return;
+      try {
+          const batch = writeBatch(db); const purchaseRef = doc(collection(db, `users/${dataOwnerId}/purchases`)); 
+          const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
+          const processedItems = purchaseData.items.map(item => {
+              const iBarcode = normalizeCode(item.barcode);
+              const iName = item.productName.toLowerCase().trim();
+              const iCompany = item.company.toLowerCase().trim();
+              let product = item.productId ? currentProducts.find(p => p.id === item.productId) : currentProducts.find(p => {
+                  const pBarcode = normalizeCode(p.barcode);
+                  if (iBarcode !== "" && pBarcode !== "") return pBarcode === iBarcode;
+                  if (iBarcode === "" && pBarcode === "") return p.name.toLowerCase().trim() === iName && p.company.toLowerCase().trim() === iCompany;
+                  return false;
               });
-            }
-            batch.update(productRef, { batches: updatedBatches });
-          }
-        }
-      }
-      await batch.commit();
-      alert("Purchase recorded successfully.");
-    } catch (e) {
-      console.error(e);
-      alert("Failed to add purchase.");
-    }
-  };
 
-  const handleDeletePurchase = async (purchase: Purchase) => {
-    if (!dataOwnerId || !window.confirm("Delete purchase and reverse stock?")) return;
-    try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, `users/${dataOwnerId}/purchases`, purchase.id));
-      for (const item of purchase.items) {
-        if (item.productId) {
-          const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-          const product = products.find(p => p.id === item.productId);
-          if (product) {
-            const unitsPerStrip = product.unitsPerStrip || 1;
-            const unitsToRemove = item.quantity * unitsPerStrip;
-            const updatedBatches = product.batches.map(b => {
-              if (b.batchNumber === item.batchNumber) {
-                return { ...b, stock: Math.max(0, (b.stock || 0) - unitsToRemove) };
+              if (product) {
+                  const productRef = doc(db, `users/${dataOwnerId}/products`, product.id);
+                  const existingBatchIndex = product.batches.findIndex(b => Math.abs(b.mrp - item.mrp) < 0.01);
+                  const units = item.unitsPerStrip || product.unitsPerStrip || 1;
+                  const quantityToAdd = item.quantity * units;
+                  if (existingBatchIndex >= 0) {
+                      product.batches[existingBatchIndex].stock += quantityToAdd;
+                      product.batches[existingBatchIndex].purchasePrice = item.purchasePrice; 
+                      product.batches[existingBatchIndex].batchNumber = item.batchNumber;
+                      product.batches[existingBatchIndex].expiryDate = item.expiryDate;
+                  } else { 
+                      product.batches.push({ id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: quantityToAdd, mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 }); 
+                  }
+                  batch.update(productRef, sanitizeForFirestore({ batches: product.batches }));
+                  return { ...item, productId: product.id };
+              } else {
+                  const productRef = doc(collection(db, `users/${dataOwnerId}/products`));
+                  const newBatch = { id: `batch_${Date.now()}_${Math.random()}`, batchNumber: item.batchNumber, expiryDate: item.expiryDate, stock: item.quantity * (item.unitsPerStrip || 1), mrp: item.mrp, purchasePrice: item.purchasePrice, openingStock: 0 };
+                  let barcodeToUse = item.barcode || '';
+                  if (!barcodeToUse || barcodeToUse.trim() === '') barcodeToUse = getNextAutoBarcode(currentProducts);
+                  const newProduct: Product = { id: productRef.id, name: item.productName, company: item.company, hsnCode: item.hsnCode, gst: item.gst, batches: [newBatch], barcode: barcodeToUse, ...(item.composition && { composition: item.composition }), ...(item.unitsPerStrip && { unitsPerStrip: item.unitsPerStrip }), ...(item.isScheduleH !== undefined && { isScheduleH: item.isScheduleH }) };
+                  currentProducts.push(newProduct);
+                  batch.set(productRef, sanitizeForFirestore(newProduct));
+                  return { ...item, productId: productRef.id, barcode: barcodeToUse };
               }
-              return b;
-            });
-            batch.update(productRef, { batches: updatedBatches });
-          }
-        }
-      }
-      await batch.commit();
-    } catch (e) {
-      console.error(e);
-      alert("Failed to delete purchase.");
-    }
+          });
+
+          let totalAmount = processedItems.reduce((sum, item) => {
+              const itTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0)/100);
+              return sum + itTotal + (itTotal * item.gst/100);
+          }, 0);
+          totalAmount += (purchaseData.roundOff || 0);
+          const newPurchase: Purchase = { ...purchaseData, items: processedItems, totalAmount, id: purchaseRef.id }; 
+          batch.set(purchaseRef, sanitizeForFirestore(newPurchase));
+          await batch.commit();
+      } catch(e) { console.error(e); alert("Error saving purchase"); }
   };
 
   const handleAddPurchaseReturn = async (returnData: Omit<PurchaseReturnType, 'id' | 'totalAmount'>) => {
     if (!dataOwnerId) return;
     try {
-      const batch = writeBatch(db);
-      const returnRef = doc(collection(db, `users/${dataOwnerId}/purchaseReturns`));
-      let totalAmount = 0;
-      returnData.items.forEach(item => {
-        const itemTotal = (item.quantity * item.purchasePrice) * (1 - (item.discount || 0) / 100);
-        totalAmount += itemTotal * (1 + (item.gst / 100));
-      });
-      totalAmount += (returnData.roundOff || 0);
-      const finalReturn = { ...returnData, totalAmount, id: returnRef.id };
-      batch.set(returnRef, sanitizeForFirestore(finalReturn));
-      for (const item of returnData.items) {
-        const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-          const unitsPerStrip = product.unitsPerStrip || 1;
-          const unitsToRemove = item.quantity * unitsPerStrip;
-          const updatedBatches = product.batches.map(b => {
-            if (b.batchNumber === item.batchNumber) {
-              return { ...b, stock: Math.max(0, (b.stock || 0) - unitsToRemove) };
+        const batch = writeBatch(db);
+        const returnRef = doc(collection(db, `users/${dataOwnerId}/purchaseReturns`));
+        const currentProducts = JSON.parse(JSON.stringify(products)) as Product[];
+        let subtotal = 0;
+        const processedItems = returnData.items.map(item => {
+            const product = currentProducts.find(p => p.id === item.productId);
+            if (product) {
+                const bIdx = product.batches.findIndex(b => b.batchNumber === item.batchNumber);
+                if (bIdx !== -1) {
+                    const unitsPerStrip = item.unitsPerStrip || product.unitsPerStrip || 1;
+                    product.batches[bIdx].stock -= (item.quantity * unitsPerStrip);
+                    batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: product.batches });
+                }
             }
-            return b;
-          });
-          batch.update(productRef, { batches: updatedBatches });
-        }
-      }
-      await batch.commit();
-      alert("Return recorded and stock updated.");
-    } catch (e) {
-      console.error(e);
-      alert("Failed to process return.");
-    }
-  };
-
-  const handleDeletePurchaseReturn = async (pr: PurchaseReturnType) => {
-    if (!dataOwnerId || !window.confirm("Delete return and restore stock?")) return;
-    try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, `users/${dataOwnerId}/purchaseReturns`, pr.id));
-      for (const item of pr.items) {
-        const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-          const unitsPerStrip = product.unitsPerStrip || 1;
-          const unitsToAdd = item.quantity * unitsPerStrip;
-          const updatedBatches = product.batches.map(b => {
-            if (b.batchNumber === item.batchNumber) {
-              return { ...b, stock: (b.stock || 0) + unitsToAdd };
-            }
-            return b;
-          });
-          batch.update(productRef, { batches: updatedBatches });
-        }
-      }
-      await batch.commit();
-    } catch (e) {
-      console.error(e);
-      alert("Failed to delete return.");
-    }
-  };
-
-  const handleDeleteBill = async (bill: Bill) => {
-    if (!dataOwnerId || !window.confirm(`Delete Bill ${bill.billNumber} and restore stock?`)) return;
-    try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, `users/${dataOwnerId}/bills`, bill.id));
-      for (const item of bill.items) {
-        const productRef = doc(db, `users/${dataOwnerId}/products`, item.productId);
-        const product = products.find(p => p.id === item.productId);
-        if (product) {
-          const updatedBatches = product.batches.map(b => {
-            if (b.id === item.batchId) {
-              return { ...b, stock: (b.stock || 0) + item.quantity };
-            }
-            return b;
-          });
-          batch.update(productRef, { batches: updatedBatches });
-        }
-      }
-      await batch.commit();
-    } catch (e) {
-      console.error(e);
-      alert("Failed to delete bill.");
-    }
-  };
-
-  const handleEditBill = (bill: Bill) => {
-    setEditingBill(bill);
-    setActiveView('billing');
+            const itemTotal = (item.quantity * item.purchasePrice) * (1 - item.discount / 100);
+            subtotal += itemTotal + (itemTotal * item.gst / 100);
+            return item;
+        });
+        const totalAmount = Math.round(subtotal + (returnData.roundOff || 0));
+        const newReturn: PurchaseReturnType = { ...returnData, id: returnRef.id, totalAmount };
+        batch.set(returnRef, sanitizeForFirestore(newReturn));
+        await batch.commit();
+    } catch (e) { alert("Failed"); }
   };
 
   if (!user) return <Auth />;
@@ -460,21 +386,27 @@ function App() {
       <div className="flex-grow">
         <main className="max-w-7xl mx-auto py-6">
           {(activeView === 'billing' || activeView === 'saleEntry') && (
-            <Billing products={products} bills={bills} customers={customers} salesmen={salesmen} companyProfile={companyProfile} systemConfig={systemConfig} onGenerateBill={handleGenerateBill} onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingBill={editingBill} onUpdateBill={async (id, data) => { if (!dataOwnerId) return null; await updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(data)); return { id, ...data } as Bill; }} onCancelEdit={() => { setEditingBill(null); setActiveView('billing'); }} onUpdateConfig={handleUpdateConfig} cart={cloudCart} onAddToCart={handleAddToCartCloud} onRemoveFromCart={handleRemoveFromCartCloud} onUpdateCartItem={handleUpdateCartItemCloud} />
+            <Billing products={products} bills={bills} customers={customers} salesmen={salesmen} companyProfile={companyProfile} systemConfig={systemConfig} onGenerateBill={handleGenerateBill} onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingBill={editingBill} onUpdateBill={async (id, data) => { if (!dataOwnerId) return null; await updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(data)); return { id, ...data } as Bill; }} onCancelEdit={() => { setEditingBill(null); handleClearCartCloud(); setActiveView('billing'); }} onUpdateConfig={handleUpdateConfig} cart={cloudCart} onAddToCart={handleAddToCartCloud} onRemoveFromCart={handleRemoveFromCartCloud} onUpdateCartItem={handleUpdateCartItemCloud} />
           )}
           {(activeView === 'purchases' || activeView === 'purchaseEntry') && (
-             <Purchases products={products} purchases={purchases} companies={companies} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddPurchase={handleAddPurchase} onUpdatePurchase={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/purchases`, id), sanitizeForFirestore(data) as any)} onDeletePurchase={handleDeletePurchase} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingPurchase={editingPurchase} onCancelEdit={() => setEditingPurchase(null)} onUpdateConfig={handleUpdateConfig} />
-          )}
-          {activeView === 'purchaseReturn' && (
-            <PurchaseReturn products={products} returns={purchaseReturns} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddReturn={handleAddPurchaseReturn} onDeleteReturn={handleDeletePurchaseReturn} />
+             <Purchases products={products} purchases={purchases} companies={companies} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddPurchase={handleAddPurchase} onUpdatePurchase={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/purchases`, id), sanitizeForFirestore(data) as any)} onDeletePurchase={()=>{}} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingPurchase={editingPurchase} onCancelEdit={() => setEditingPurchase(null)} onUpdateConfig={handleUpdateConfig} />
           )}
           {activeView === 'inventory' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} />)}
-          {activeView === 'productMaster' && (<Inventory products={products} companies={companies} purchases={purchases} bills={bills} purchaseReturns={purchaseReturns} systemConfig={systemConfig} gstRates={gstRates} onAddProduct={handleAddProduct} onUpdateProduct={handleUpdateProduct} onDeleteProduct={handleDeleteProduct} onAddCompany={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/companies`), sanitizeForFirestore(c)); return { id: r.id, ...c }; }} initialTab="productMaster" />)}
-          {activeView === 'daybook' && (<DayBook bills={bills} products={products} companyProfile={companyProfile} systemConfig={systemConfig} onDeleteBill={handleDeleteBill} onEditBill={handleEditBill} onUpdateBillDetails={(id, updates) => updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(updates))} />)}
-          {activeView === 'dashboard' && <SalesDashboard bills={bills} products={products} systemConfig={systemConfig} />}
+          {activeView === 'daybook' && (<DayBook bills={bills} products={products} companyProfile={companyProfile} systemConfig={systemConfig} onDeleteBill={()=>{}} onEditBill={handleEditBill} onUpdateBillDetails={(id, updates) => updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(updates))} />)}
         </main>
       </div>
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} companyProfile={companyProfile} onProfileChange={(p) => setDoc(doc(db, `users/${dataOwnerId}/companyProfile`, 'profile'), sanitizeForFirestore(p))} systemConfig={systemConfig} onSystemConfigChange={handleUpdateConfig} onBackupData={() => {}} onReWriteStock={handleReWriteStock} gstRates={gstRates} onAddGstRate={() => {}} onUpdateGstRate={() => {}} onDeleteGstRate={() => {}} />
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        companyProfile={companyProfile} 
+        onProfileChange={(p) => setDoc(doc(db, `users/${dataOwnerId}/companyProfile`, 'profile'), sanitizeForFirestore(p))} 
+        systemConfig={systemConfig} 
+        onSystemConfigChange={handleUpdateConfig} 
+        onBackupData={() => {}} 
+        onReWriteStock={handleStockAudit}
+        gstRates={gstRates} 
+        onAddGstRate={()=>{}} onUpdateGstRate={()=>{}} onDeleteGstRate={()=>{}} 
+      />
     </div>
   );
 }
