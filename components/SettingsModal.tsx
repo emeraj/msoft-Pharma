@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
 import Card from './common/Card';
+/* Fix: Added missing UserGroupIcon import */
 import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon, BluetoothIcon, SwitchHorizontalIcon, UserGroupIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
@@ -19,16 +21,32 @@ interface SettingsModalProps {
   onSystemConfigChange: (config: SystemConfig) => void;
   onBackupData: () => void;
   onRestoreData?: (category: string, items: any[]) => Promise<void>;
+  onReWriteStock: () => Promise<void>;
   gstRates: GstRate[];
   onAddGstRate: (rate: number) => void;
   onUpdateGstRate: (id: string, newRate: number) => void;
   onDeleteGstRate: (id: string, rateValue: number) => void;
-  onReWriteStock?: () => Promise<void>;
 }
 
-type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language' | 'users' | 'maintenance';
+type SettingsTab = 'profile' | 'backup' | 'system' | 'gstMaster' | 'printers' | 'language' | 'users' | 'audit';
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500 transition-all";
+const formSelectStyle = `${formInputStyle} appearance-none`;
+
+const languages = [
+  { code: 'en', name: 'English' },
+  { code: 'hi', name: 'हिन्दी (Hindi)' },
+  { code: 'mr', name: 'मराठी (Marathi)' },
+  { code: 'gu', name: 'ગુજરાતી (Gujarati)' },
+  { code: 'bn', name: 'বাংলা (Bengali)' },
+  { code: 'ta', name: 'தமிழ் (Tamil)' },
+  { code: 'te', name: 'తెలుగు (Telugu)' },
+  { code: 'kn', name: 'ಕನ್ನಡ (Kannada)' },
+  { code: 'ml', name: 'മലയാളം (Malayalam)' },
+  { code: 'pa', name: 'ਪੰਜਾਬੀ (Punjabi)' },
+  { code: 'or', name: 'ଓଡ଼ିଆ (Odia)' },
+  { code: 'ur', name: 'اردو (Urdu)' },
+];
 
 const ToggleRow: React.FC<{ 
     label: string; 
@@ -99,11 +117,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       } catch (e) { console.error(e); }
   };
 
-  const handleAuditAction = async () => {
+  const handleRewriteAction = async () => {
       if (!onReWriteStock) return;
       setIsProcessing(true);
       await onReWriteStock();
       setIsProcessing(false);
+  };
+
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 800000) { alert("Image too large. Max 800KB."); return; }
+      const reader = new FileReader();
+      reader.onloadend = () => setProfile({ ...profile, logo: reader.result as string });
+      reader.readAsDataURL(file);
+    }
   };
 
   const renderContent = () => {
@@ -111,6 +139,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         case 'profile':
             return (
                 <div className="space-y-6 animate-fade-in pb-4">
+                    <div className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-slate-50 dark:bg-slate-700/30 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-900/50">
+                        <div className="relative">
+                            <div className="w-28 h-28 rounded-xl bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center overflow-hidden shadow-sm">
+                                {profile.logo ? <img src={profile.logo} alt="Logo" className="w-full h-full object-contain p-1" /> : <div className="text-slate-300 text-center"><CloudIcon className="h-12 w-12 mx-auto" /><span className="text-[10px] font-black uppercase mt-1 block">No Logo</span></div>}
+                            </div>
+                            <label htmlFor="logo-upload" className="absolute -bottom-2 -right-2 p-2 bg-indigo-600 text-white rounded-full shadow-lg cursor-pointer hover:bg-indigo-700 transition-all transform active:scale-90"><CameraIcon className="h-5 w-5" /><input type="file" id="logo-upload" accept="image/*" onChange={handleLogoChange} className="hidden" /></label>
+                        </div>
+                        <div className="flex-grow text-center sm:text-left">
+                            <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Business Logo</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">Logo for digital and printed invoices.</p>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="md:col-span-2">
                             <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Shop Name</label>
@@ -149,7 +190,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
             );
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
-        case 'maintenance':
+        case 'language':
+            return (
+                <div className="space-y-6 animate-fade-in pb-10">
+                    <div>
+                        <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Language Selection</h3>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Select your preferred language from the dropdown below. The application will update automatically.</p>
+                    </div>
+                    
+                    <div className="space-y-2 pt-4">
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">Interface Language</label>
+                        <select 
+                            value={config.language || 'en'} 
+                            onChange={(e) => setConfig({ ...config, language: e.target.value })}
+                            className={formInputStyle}
+                        >
+                            {languages.map(lang => (
+                                <option key={lang.code} value={lang.code}>{lang.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex justify-end pt-8 border-t dark:border-slate-700 mt-4">
+                        <button 
+                            type="button" 
+                            onClick={() => { onSystemConfigChange(config); onClose(); }}
+                            className="flex items-center gap-3 px-8 py-3 bg-indigo-600 text-white font-black rounded-xl shadow-xl hover:bg-indigo-700 uppercase tracking-widest text-sm transition-all transform active:scale-95"
+                        >
+                            <CheckCircleIcon className="h-5 w-5" /> Save Language Setting
+                        </button>
+                    </div>
+                </div>
+            );
+        case 'audit':
             return (
                 <div className="space-y-6 animate-fade-in pb-10">
                     <Card className="bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
@@ -161,12 +234,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 </p>
                             </div>
                             <button 
-                                onClick={handleAuditAction}
+                                onClick={handleRewriteAction}
                                 disabled={isProcessing}
                                 className="px-8 py-3 bg-amber-600 text-white rounded-xl font-black text-xs uppercase shadow-xl hover:bg-amber-700 transition-all transform active:scale-95 flex items-center gap-2"
                             >
                                 {isProcessing ? <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div> : <SwitchHorizontalIcon className="h-5 w-5" />}
-                                Stock Audit
+                                Re-Write Stock
                             </button>
                         </div>
                     </Card>
@@ -183,11 +256,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       <div className="flex flex-col h-full">
         <div className="flex border-b dark:border-slate-700 mb-6 overflow-x-auto pb-1 gap-1">
             <TabButton label="Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
             <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
             <TabButton label="Operators" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserGroupIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />
             <TabButton label="GST" isActive={activeTab === 'gstMaster'} onClick={() => setActiveTab('gstMaster')} icon={<PercentIcon className="h-5 w-5" />} />
-            <TabButton label="Audit" isActive={activeTab === 'maintenance'} onClick={() => setActiveTab('maintenance')} icon={<CheckCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Audit" isActive={activeTab === 'audit'} onClick={() => setActiveTab('audit')} icon={<CheckCircleIcon className="h-5 w-5" />} />
         </div>
         <div className="flex-grow overflow-y-auto min-h-[60vh] px-1">{renderContent()}</div>
         <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700"><button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-black hover:bg-slate-700">Close</button></div>
