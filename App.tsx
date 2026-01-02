@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment, serverTimestamp } from 'firebase/firestore';
@@ -153,6 +152,75 @@ function App() {
     });
     return () => { unsubProducts(); unsubBills(); unsubPurchases(); unsubReturns(); unsubSuppliers(); unsubCustomers(); unsubPayments(); unsubGst(); unsubCompanies(); unsubProfile(); unsubConfig(); unsubCustPayments(); unsubSalesmen(); unsubCart(); };
   }, [dataOwnerId]);
+
+  /**
+   * RE-WRITE STOCK LOGIC
+   * Audits all products and their batches to ensure stock matches the transaction history.
+   */
+  const handleReWriteStock = async () => {
+    if (!dataOwnerId) return;
+    if (!window.confirm("CRITICAL: This will recalculate all stock levels from transaction history (Opening + Purchases - Sales - Returns). Mismatches will be corrected in the database. Proceed?")) return;
+
+    try {
+        const batch = writeBatch(db);
+        let correctionCount = 0;
+
+        for (const product of products) {
+            let changed = false;
+            const updatedBatches = product.batches.map(b => {
+                // Correct Stock = Opening Stock + All Purchases - All Sales - All Returns
+                let correctStock = b.openingStock || 0;
+                const bNum = normalizeCode(b.batchNumber);
+
+                // 1. Add all purchases for this specific product and batch
+                purchases.forEach(p => p.items.forEach(item => {
+                    const iBatchNum = normalizeCode(item.batchNumber);
+                    if (item.productId === product.id && iBatchNum === bNum) {
+                        const units = item.unitsPerStrip || product.unitsPerStrip || 1;
+                        correctStock += (item.quantity * units);
+                    }
+                }));
+
+                // 2. Subtract all sales for this specific product and batch
+                bills.forEach(bill => bill.items.forEach(item => {
+                    if (item.productId === product.id && item.batchId === b.id) {
+                        correctStock -= item.quantity;
+                    }
+                }));
+
+                // 3. Subtract all purchase returns for this specific product and batch
+                purchaseReturns.forEach(ret => ret.items.forEach(item => {
+                    const iBatchNum = normalizeCode(item.batchNumber);
+                    if (item.productId === product.id && iBatchNum === bNum) {
+                        const units = item.unitsPerStrip || product.unitsPerStrip || 1;
+                        correctStock -= (item.quantity * units);
+                    }
+                }));
+
+                if (b.stock !== correctStock) {
+                    correctionCount++;
+                    changed = true;
+                    return { ...b, stock: correctStock };
+                }
+                return b;
+            });
+
+            if (changed) {
+                batch.update(doc(db, `users/${dataOwnerId}/products`, product.id), { batches: updatedBatches });
+            }
+        }
+
+        if (correctionCount > 0) {
+            await batch.commit();
+            alert(`Stock Recalculation Complete! Fixed ${correctionCount} batch stock levels.`);
+        } else {
+            alert("Audit complete. All stock levels are already correct.");
+        }
+    } catch (e) {
+        console.error("Re-Write Stock failed", e);
+        alert("Recalculation failed. Please try again.");
+    }
+  };
 
   const getNextAutoBarcode = (currentProducts: Product[]) => {
     const numericBarcodes = currentProducts
@@ -462,7 +530,7 @@ function App() {
           <p>Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span> | 9890072651 | msoftindia.com</p>
         </div>
       </footer>
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} companyProfile={companyProfile} onProfileChange={(p) => dummy_save_profile(p)} systemConfig={systemConfig} onSystemConfigChange={handleUpdateConfig} onBackupData={() => { const backup = { products, bills, purchases, suppliers, customers, payments: supplierPayments, gstRates, companyProfile, systemConfig }; const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup)); const a = document.createElement('a'); a.href = dataStr; a.download = "backup.json"; a.click(); }} gstRates={gstRates} onAddGstRate={(r) => addDoc(collection(db, `users/${dataOwnerId}/gstRates`), sanitizeForFirestore({ rate: r }))} onUpdateGstRate={(id, r) => updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), sanitizeForFirestore({ rate: r }))} onDeleteGstRate={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} companyProfile={companyProfile} onProfileChange={(p) => dummy_save_profile(p)} systemConfig={systemConfig} onSystemConfigChange={handleUpdateConfig} onBackupData={() => { const backup = { products, bills, purchases, suppliers, customers, payments: supplierPayments, gstRates, companyProfile, systemConfig }; const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup)); const a = document.createElement('a'); a.href = dataStr; a.download = "backup.json"; a.click(); }} onReWriteStock={handleReWriteStock} gstRates={gstRates} onAddGstRate={(r) => addDoc(collection(db, `users/${dataOwnerId}/gstRates`), sanitizeForFirestore({ rate: r }))} onUpdateGstRate={(id, r) => updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), sanitizeForFirestore({ rate: r }))} onDeleteGstRate={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))} />
     </div>
   );
   function dummy_save_profile(p: CompanyProfile) { setDoc(doc(db, `users/${dataOwnerId}/companyProfile`, 'profile'), sanitizeForFirestore(p)); }

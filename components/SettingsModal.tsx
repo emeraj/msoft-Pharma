@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
 import Card from './common/Card';
-import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon, BluetoothIcon } from './icons/Icons';
+import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon, BluetoothIcon, SwitchHorizontalIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
 import { collection, getDocs } from 'firebase/firestore';
@@ -20,6 +19,7 @@ interface SettingsModalProps {
   systemConfig: SystemConfig;
   onSystemConfigChange: (config: SystemConfig) => void;
   onBackupData: () => void;
+  onReWriteStock?: () => Promise<void>;
   onRestoreData?: (category: string, items: any[]) => Promise<void>;
   gstRates: GstRate[];
   onAddGstRate: (rate: number) => void;
@@ -84,6 +84,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   systemConfig,
   onSystemConfigChange,
   onBackupData,
+  onReWriteStock,
   onRestoreData,
   gstRates,
   onAddGstRate,
@@ -100,6 +101,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isBtConnected, setIsBtConnected] = useState(BluetoothHelper.isConnected);
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [passwordStatus, setPasswordStatus] = useState<{type: 'success' | 'error' | '', msg: string}>({ type: '', msg: '' });
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -158,6 +160,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleRewriteAction = async () => {
+    if (!onReWriteStock) return;
+    setIsRecalculating(true);
+    await onReWriteStock();
+    setIsRecalculating(false);
   };
 
   const renderContent = () => {
@@ -309,6 +318,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     <div className="space-y-4">
+                        <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Inventory Tools</h4>
+                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <div className="flex-grow">
+                                    <h5 className="font-bold text-amber-800 dark:text-amber-300 uppercase text-[11px] tracking-widest">Audit & Recalculate Stock</h5>
+                                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1">If live stock values show mismatches, use this tool to re-audit all items based on transaction history.</p>
+                                </div>
+                                <button 
+                                    onClick={handleRewriteAction}
+                                    disabled={isRecalculating}
+                                    className="px-6 py-2.5 bg-amber-600 text-white rounded-lg font-black text-[10px] uppercase shadow hover:bg-amber-700 transition-all disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    {isRecalculating ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SwitchHorizontalIcon className="h-4 w-4" />}
+                                    Re-Write Stock
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
                         <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Billing Settings</h4>
                         <div className="grid grid-cols-1 gap-3">
                             <ToggleRow label="MRP Editable (Y/N)" value={!!config.mrpEditable} onChange={(v) => setConfig({...config, mrpEditable: v})} />
@@ -328,7 +357,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         case 'printers': return (
             <div className="space-y-6 animate-fade-in pb-4">
                 {/* Bluetooth Direct Connect Status Card */}
-                <div className={`p-4 rounded-xl border-2 transition-all ${isBtConnected ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-indigo-50 border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800'}`}>
+                <div className={`p-4 rounded-xl border-2 transition-all ${isBtConnected ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-indigo-50 border-indigo-100 dark:bg-indigo-900/20 dark:border-emerald-800'}`}>
                     <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
                             <div className={`p-2.5 rounded-full ${isBtConnected ? 'bg-emerald-500' : 'bg-indigo-500'} text-white shadow-lg`}>
