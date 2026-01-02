@@ -76,16 +76,6 @@ const defaultConfig: SystemConfig = {
   }
 };
 
-const ComingSoon: React.FC<{ title: string }> = ({ title }) => (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] p-4 text-center">
-        <div className="bg-indigo-100 dark:bg-indigo-900/30 p-8 rounded-full mb-6">
-            <InformationCircleIcon className="h-16 w-16 text-indigo-600" />
-        </div>
-        <h2 className="text-3xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{title}</h2>
-        <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-md">This accounting module is currently under development and will be available in the next Pro update.</p>
-    </div>
-);
-
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<AppView>('billing');
@@ -247,7 +237,7 @@ function App() {
         }
 
         alert(totalFixed > 0 
-            ? `Audit Successful! corrected ${totalFixed} mismatched batches.` 
+            ? `Audit Successful! Corrected ${totalFixed} mismatched batches.` 
             : "Audit Complete! Your live stock perfectly matches the transaction history.");
     } catch (e) {
         console.error("Audit error:", e);

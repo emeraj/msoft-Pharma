@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
@@ -230,7 +229,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <div className="flex-grow">
                                 <h5 className="font-black text-amber-800 dark:text-amber-300 uppercase text-sm tracking-widest">Inventory Health Utility</h5>
                                 <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-1 leading-relaxed">
-                                    Rebuild your live stock levels by auditing the transaction ledger (Opening + Purchases - Sales - Returns).
+                                    Rebuild your live stock levels by auditing the transaction ledger (Opening (BATCH) + Purchases (BATCH) - Sales (BATCH) - P.Returns (BATCH) + Sale Return (BATCH)).
                                 </p>
                             </div>
                             <button 
