@@ -1,8 +1,8 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { CompanyProfile, SystemConfig, GstRate, PrinterProfile, SubUser, SubscriptionInfo } from '../types';
 import Modal from './common/Modal';
 import Card from './common/Card';
-/* Fix: Added missing UserGroupIcon import */
 import { CheckCircleIcon, DownloadIcon, UploadIcon, UserCircleIcon, AdjustmentsIcon, PercentIcon, PrinterIcon, TrashIcon, GlobeIcon, ArchiveIcon, CloudIcon, InformationCircleIcon, PlusIcon, XIcon, SearchIcon, CameraIcon, BluetoothIcon, SwitchHorizontalIcon, UserGroupIcon } from './icons/Icons';
 import GstMaster from './GstMaster';
 import UserManagement from './UserManagement';
@@ -43,7 +43,7 @@ const languages = [
   { code: 'kn', name: 'ಕನ್ನಡ (Kannada)' },
   { code: 'ml', name: 'മലയാളം (Malayalam)' },
   { code: 'pa', name: 'ਪੰਜਾਬੀ (Punjabi)' },
-  { code: 'or', name: 'ଓଡ଼ିଆ (Odia)' },
+  { code: 'or', name: 'ଓڈ଼ିଆ (Odia)' },
   { code: 'ur', name: 'اردو (Urdu)' },
 ];
 
@@ -100,6 +100,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const [subUsers, setSubUsers] = useState<SubUser[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // New Printer State
+  const [newPrinter, setNewPrinter] = useState<Omit<PrinterProfile, 'id' | 'isDefault'>>({
+      name: '',
+      format: 'Thermal',
+      orientation: 'Portrait',
+      connectionType: 'system'
+  });
+
   useEffect(() => {
     if (isOpen) {
         setProfile(companyProfile);
@@ -131,6 +139,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       reader.onloadend = () => setProfile({ ...profile, logo: reader.result as string });
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleAddPrinter = () => {
+      if (!newPrinter.name.trim()) return;
+      const printers = config.printers || [];
+      const printerToAdd: PrinterProfile = {
+          ...newPrinter,
+          id: `printer-${Date.now()}`,
+          isDefault: printers.length === 0
+      };
+      const updatedConfig = { ...config, printers: [...printers, printerToAdd] };
+      setConfig(updatedConfig);
+      onSystemConfigChange(updatedConfig);
+      setNewPrinter({ name: '', format: 'Thermal', orientation: 'Portrait', connectionType: 'system' });
+  };
+
+  const handleDeletePrinter = (id: string) => {
+      const printers = (config.printers || []).filter(p => p.id !== id);
+      // If deleted printer was default, set the first remaining as default
+      if (printers.length > 0 && !printers.some(p => p.isDefault)) {
+          printers[0].isDefault = true;
+      }
+      const updatedConfig = { ...config, printers };
+      setConfig(updatedConfig);
+      onSystemConfigChange(updatedConfig);
+  };
+
+  const handleSetDefaultPrinter = (id: string) => {
+      const printers = (config.printers || []).map(p => ({
+          ...p,
+          isDefault: p.id === id
+      }));
+      const updatedConfig = { ...config, printers };
+      setConfig(updatedConfig);
+      onSystemConfigChange(updatedConfig);
   };
 
   const renderContent = () => {
@@ -189,6 +232,94 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
             );
         case 'gstMaster': return <GstMaster gstRates={gstRates} onAdd={onAddGstRate} onUpdate={onUpdateGstRate} onDelete={onDeleteGstRate} />;
+        case 'printers':
+            return (
+                <div className="space-y-6 animate-fade-in pb-10">
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100">Printer Management</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Configure the printers you use. When printing a bill, you can select which printer configuration (and format) to use.</p>
+                    </div>
+
+                    <div className="p-5 bg-slate-50 dark:bg-slate-700/30 rounded-2xl border border-slate-200 dark:border-slate-700">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                            <div className="md:col-span-1">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Printer Name</label>
+                                <input 
+                                    type="text" 
+                                    value={newPrinter.name} 
+                                    onChange={e => setNewPrinter({...newPrinter, name: e.target.value})} 
+                                    placeholder="e.g., Counter Thermal, Office A4" 
+                                    className={formInputStyle} 
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Format</label>
+                                <select 
+                                    value={newPrinter.format} 
+                                    onChange={e => setNewPrinter({...newPrinter, format: e.target.value as any})} 
+                                    className={formSelectStyle}
+                                >
+                                    <option value="Thermal">Thermal</option>
+                                    <option value="A5">A5</option>
+                                    <option value="A4">A4</option>
+                                </select>
+                            </div>
+                            <button 
+                                onClick={handleAddPrinter}
+                                className="bg-indigo-600 text-white py-2 rounded-lg font-bold shadow-lg hover:bg-indigo-700 h-10 transform active:scale-95 transition-all"
+                            >
+                                Add Printer
+                            </button>
+                        </div>
+                        {newPrinter.format !== 'Thermal' && (
+                            <div className="mt-4 animate-fade-in">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Default Orientation</label>
+                                <div className="flex gap-4">
+                                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                        <input type="radio" name="orientation" checked={newPrinter.orientation === 'Portrait'} onChange={() => setNewPrinter({...newPrinter, orientation: 'Portrait'})} /> Portrait
+                                    </label>
+                                    <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                        <input type="radio" name="orientation" checked={newPrinter.orientation === 'Landscape'} onChange={() => setNewPrinter({...newPrinter, orientation: 'Landscape'})} /> Landscape
+                                    </label>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <h4 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-4 uppercase tracking-widest px-1">Configured Printers</h4>
+                        <div className="space-y-3">
+                            {(config.printers || []).map(p => (
+                                <div key={p.id} className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:border-indigo-300 transition-colors">
+                                    <div className="flex items-center gap-4">
+                                        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg text-indigo-600">
+                                            <PrinterIcon className="h-5 w-5" />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                                {p.name} 
+                                                {p.isDefault && <span className="bg-emerald-100 text-emerald-700 text-[9px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">Default</span>}
+                                            </p>
+                                            <p className="text-[10px] text-slate-500 uppercase font-medium tracking-widest">{p.format} Format {p.orientation ? `• ${p.orientation}` : ''}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {!p.isDefault && (
+                                            <button onClick={() => handleSetDefaultPrinter(p.id)} className="text-[10px] font-black text-indigo-600 hover:underline uppercase mr-4">Set Default</button>
+                                        )}
+                                        <button onClick={() => handleDeletePrinter(p.id)} className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg">
+                                            <TrashIcon className="h-5 w-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!config.printers || config.printers.length === 0) && (
+                                <div className="text-center py-10 text-slate-400 italic">No printers configured.</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
         case 'language':
             return (
                 <div className="space-y-6 animate-fade-in pb-10">
@@ -254,13 +385,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" maxWidth="max-w-4xl">
       <div className="flex flex-col h-full">
         <div className="flex border-b dark:border-slate-700 mb-6 overflow-x-auto pb-1 gap-1">
-            <TabButton label="Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Shop Profile" isActive={activeTab === 'profile'} onClick={() => setActiveTab('profile')} icon={<UserCircleIcon className="h-5 w-5" />} />
             <TabButton label="Language" isActive={activeTab === 'language'} onClick={() => setActiveTab('language')} icon={<GlobeIcon className="h-5 w-5" />} />
-            <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
-            <TabButton label="Operators" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserGroupIcon className="h-5 w-5" />} />
+            <TabButton label="User Mgmt" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UserGroupIcon className="h-5 w-5" />} />
+            <TabButton label="Printers" isActive={activeTab === 'printers'} onClick={() => setActiveTab('printers')} icon={<PrinterIcon className="h-5 w-5" />} />
             <TabButton label="System" isActive={activeTab === 'system'} onClick={() => setActiveTab('system')} icon={<AdjustmentsIcon className="h-5 w-5" />} />
             <TabButton label="GST" isActive={activeTab === 'gstMaster'} onClick={() => setActiveTab('gstMaster')} icon={<PercentIcon className="h-5 w-5" />} />
             <TabButton label="Audit" isActive={activeTab === 'audit'} onClick={() => setActiveTab('audit')} icon={<CheckCircleIcon className="h-5 w-5" />} />
+            <TabButton label="Backup" isActive={activeTab === 'backup'} onClick={() => setActiveTab('backup')} icon={<ArchiveIcon className="h-5 w-5" />} />
         </div>
         <div className="flex-grow overflow-y-auto min-h-[60vh] px-1">{renderContent()}</div>
         <div className="flex justify-end pt-4 mt-4 border-t dark:border-slate-700"><button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-black hover:bg-slate-700">Close</button></div>
