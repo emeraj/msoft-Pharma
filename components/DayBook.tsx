@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom/client';
 import type { Bill, CompanyProfile, SystemConfig, PrinterProfile, Product } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, PencilIcon, TrashIcon, PrinterIcon, CashIcon, ReceiptIcon, InformationCircleIcon } from './icons/Icons';
+import { DownloadIcon, PencilIcon, TrashIcon, PrinterIcon, CashIcon, ReceiptIcon, InformationCircleIcon, UserCircleIcon } from './icons/Icons';
 import PrintableA5Bill from './PrintableA5Bill';
 import PrintableA5LandscapeBill from './PrintableA5LandscapeBill';
 import ThermalPrintableBill from './ThermalPrintableBill';
@@ -57,12 +57,26 @@ interface DayBookProps {
 const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile, systemConfig, onDeleteBill, onEditBill, onUpdateBillDetails }) => {
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedOperatorId, setSelectedOperatorId] = useState('All');
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
 
-  const billsForSelectedDate = useMemo(() => {
-    return bills.filter(bill => bill.date.startsWith(selectedDate)).sort((a, b) => a.billNumber.localeCompare(b.billNumber));
+  // Extract unique operators who have bills on this date
+  const operators = useMemo(() => {
+    const opsMap = new Map<string, string>();
+    bills.filter(b => b.date.startsWith(selectedDate)).forEach(b => {
+        if (b.operatorId) opsMap.set(b.operatorId, b.operatorName || 'Unknown Staff');
+    });
+    return Array.from(opsMap.entries()).map(([id, name]) => ({ id, name }));
   }, [bills, selectedDate]);
+
+  const billsForSelectedDate = useMemo(() => {
+    return bills.filter(bill => {
+        const dateMatch = bill.date.startsWith(selectedDate);
+        const operatorMatch = selectedOperatorId === 'All' || bill.operatorId === selectedOperatorId;
+        return dateMatch && operatorMatch;
+    }).sort((a, b) => a.billNumber.localeCompare(b.billNumber));
+  }, [bills, selectedDate, selectedOperatorId]);
 
   const summary = useMemo(() => {
     let cashTotal = 0;
@@ -76,7 +90,6 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
         else creditTotal += amount;
         totalTax += b.totalGst;
 
-        // Simple Profit Estimation based on Purchase Prices in items
         b.items.forEach(item => {
             const product = products.find(p => p.id === item.productId);
             const batch = product?.batches.find(bt => bt.id === item.batchId);
@@ -104,13 +117,13 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
     const exportData: any[] = billsForSelectedDate.map(bill => ({
         'Bill No.': bill.billNumber,
         'Time': new Date(bill.date).toLocaleTimeString(),
+        'Cashier': bill.operatorName || 'Admin',
         'Customer': bill.customerName,
         'Type': bill.paymentMode || 'Cash',
         'Amount': bill.grandTotal.toFixed(2),
         'Tax': bill.totalGst.toFixed(2),
     }));
-    exportData.push({ 'Bill No.': 'TOTAL', 'Time': '', 'Customer': '', 'Type': '', 'Amount': summary.total.toFixed(2), 'Tax': summary.tax.toFixed(2) });
-    exportToCsv(`day_book_${selectedDate}`, exportData);
+    exportToCsv(`day_book_${selectedDate}_${selectedOperatorId}`, exportData);
   };
   
   const formattedDate = useMemo(() => new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }), [selectedDate]);
@@ -163,23 +176,58 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
                 <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">{formattedDate}</p>
             </div>
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-                <input 
-                    type="date" 
-                    value={selectedDate} 
-                    onChange={e => setSelectedDate(e.target.value)}
-                    className="w-full sm:w-auto px-4 py-2.5 bg-yellow-100 dark:bg-slate-700 text-slate-900 dark:text-white border-2 border-indigo-100 dark:border-slate-600 rounded-xl focus:ring-4 focus:ring-indigo-500/20 transition-all outline-none"
-                />
-                <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all transform active:scale-95 font-bold">
-                    <DownloadIcon className="h-5 w-5" /> Export Excel
+                <div className="w-full sm:w-auto">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 tracking-widest">Select Cashier/Counter</label>
+                    <select 
+                        value={selectedOperatorId} 
+                        onChange={e => setSelectedOperatorId(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-indigo-50 dark:bg-slate-700 text-slate-900 dark:text-white border-2 border-indigo-100 dark:border-slate-600 rounded-xl focus:ring-4 focus:ring-indigo-500/20 transition-all outline-none font-bold"
+                    >
+                        <option value="All">All Cashiers (Main Pool)</option>
+                        {operators.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                    </select>
+                </div>
+                <div className="w-full sm:w-auto">
+                    <label className="block text-[9px] font-black text-slate-400 uppercase mb-1 tracking-widest">Select Date</label>
+                    <input 
+                        type="date" 
+                        value={selectedDate} 
+                        onChange={e => setSelectedDate(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-yellow-100 dark:bg-slate-700 text-slate-900 dark:text-white border-2 border-indigo-100 dark:border-slate-600 rounded-xl focus:ring-4 focus:ring-indigo-500/20 transition-all outline-none"
+                    />
+                </div>
+                <button onClick={handleExport} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl shadow-lg transition-all transform active:scale-95 font-bold mt-5">
+                    <DownloadIcon className="h-5 w-5" /> Export
                 </button>
             </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <SummaryCard title="Total Revenue" value={`₹${summary.total.toFixed(2)}`} icon={<ReceiptIcon className="h-6 w-6 text-indigo-600" />} bgColor="bg-indigo-50 dark:bg-indigo-900/30" isHighlight />
-            <SummaryCard title="GST Collected" value={`₹${summary.tax.toFixed(2)}`} icon={<div className="font-black text-xl text-orange-600">%</div>} bgColor="bg-orange-50 dark:bg-orange-900/30" />
-            <SummaryCard title="Est. Gross Profit" value={`₹${summary.profit.toFixed(2)}`} icon={<CashIcon className="h-6 w-6 text-emerald-600" />} bgColor="bg-emerald-50 dark:bg-emerald-900/30" />
-            <SummaryCard title="Bills Count" value={summary.count} icon={<div className="font-black text-xl text-slate-600 dark:text-slate-300">#</div>} bgColor="bg-slate-100 dark:bg-slate-700" />
+            <SummaryCard 
+                title={selectedOperatorId === 'All' ? "Total Daily Sales" : "Cashier Net Sale"} 
+                value={`₹${summary.total.toFixed(2)}`} 
+                icon={<ReceiptIcon className="h-6 w-6 text-indigo-600" />} 
+                bgColor="bg-indigo-50 dark:bg-indigo-900/30" 
+                isHighlight 
+            />
+            <SummaryCard 
+                title="Actual Cash-in-Hand" 
+                value={`₹${summary.cash.toFixed(2)}`} 
+                icon={<CashIcon className="h-6 w-6 text-emerald-600" />} 
+                bgColor="bg-emerald-50 dark:bg-emerald-900/30" 
+            />
+            <SummaryCard 
+                title="Credit Pending" 
+                value={`₹${summary.credit.toFixed(2)}`} 
+                icon={<InformationCircleIcon className="h-6 w-6 text-rose-600" />} 
+                bgColor="bg-rose-50 dark:bg-rose-900/30" 
+            />
+            <SummaryCard 
+                title="Invoices Tally" 
+                value={summary.count} 
+                icon={<div className="font-black text-xl text-slate-600 dark:text-slate-300">#</div>} 
+                bgColor="bg-slate-100 dark:bg-slate-700" 
+            />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -191,9 +239,9 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
                                 <tr>
                                     <th className="px-6 py-4">Bill #</th>
                                     <th className="px-6 py-4">Time</th>
-                                    <th className="px-6 py-4">Customer/Patient</th>
+                                    <th className="px-6 py-4">Cashier</th>
+                                    <th className="px-6 py-4">Customer</th>
                                     <th className="px-6 py-4 text-center">Mode</th>
-                                    <th className="px-6 py-4 text-right">Tax</th>
                                     <th className="px-6 py-4 text-right">Amount</th>
                                     <th className="px-6 py-4 text-center">Actions</th>
                                 </tr>
@@ -203,6 +251,11 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
                                     <tr key={bill.id} className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
                                         <td className="px-6 py-4 font-bold text-indigo-600 dark:text-indigo-400">{bill.billNumber}</td>
                                         <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{new Date(bill.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                                        <td className="px-6 py-4">
+                                            <span className="text-[10px] font-black uppercase text-slate-400 bg-slate-100 dark:bg-slate-900 px-2 py-1 rounded">
+                                                {bill.operatorName || 'Admin'}
+                                            </span>
+                                        </td>
                                         <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-200">{bill.customerName}</td>
                                         <td className="px-6 py-4 text-center">
                                             <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase ${
@@ -213,7 +266,6 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
                                                 {bill.paymentMode || 'Cash'}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-right font-medium text-slate-500 italic">₹{bill.totalGst.toFixed(2)}</td>
                                         <td className="px-6 py-4 text-right font-black text-slate-900 dark:text-white">₹{bill.grandTotal.toFixed(2)}</td>
                                         <td className="px-6 py-4 text-center">
                                             <div className="flex items-center justify-center gap-2">
@@ -240,7 +292,7 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
                                 <div className="bg-slate-100 dark:bg-slate-700 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
                                     <ReceiptIcon className="h-8 w-8" />
                                 </div>
-                                <p className="text-slate-500 dark:text-slate-400 font-bold text-lg">No sales recorded today.</p>
+                                <p className="text-slate-500 dark:text-slate-400 font-bold text-lg">No records for this selection.</p>
                             </div>
                         )}
                     </div>
@@ -248,21 +300,19 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
             </div>
             
             <div className="lg:col-span-1 space-y-6">
-                <Card title="Mode Breakdown">
+                <Card title="Station Reconciliation">
                     <div className="space-y-4">
+                        <p className="text-[11px] text-slate-400 italic mb-4">Reconcile physical cash drawer with software records for the selected cashier.</p>
                         <div className="flex justify-between items-center p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
                             <div>
-                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Cash In</p>
+                                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Expected Cash</p>
                                 <p className="text-xl font-black text-slate-800 dark:text-slate-100">₹{summary.cash.toFixed(2)}</p>
                             </div>
                             <CashIcon className="h-8 w-8 text-emerald-500 opacity-50" />
                         </div>
-                        <div className="flex justify-between items-center p-3 bg-rose-50 dark:bg-rose-900/20 rounded-xl border border-rose-100 dark:border-rose-800">
-                            <div>
-                                <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Credit Sale</p>
-                                <p className="text-xl font-black text-slate-800 dark:text-slate-100">₹{summary.credit.toFixed(2)}</p>
-                            </div>
-                            <InformationCircleIcon className="h-8 w-8 text-rose-500 opacity-50" />
+                         <div className="p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border dark:border-slate-700">
+                            <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest">Physical Cash Drawer Tally</label>
+                            <input type="number" placeholder="Enter counted cash..." className="w-full p-2 bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-600 rounded-lg font-bold" />
                         </div>
                     </div>
                 </Card>
@@ -270,18 +320,17 @@ const DayBook: React.FC<DayBookProps> = ({ bills, products = [], companyProfile,
                 <Card title="Quick Audit Memo">
                     <div className="text-xs text-slate-500 dark:text-slate-400 space-y-3">
                         <div className="flex justify-between border-b dark:border-slate-700 pb-2">
-                            <span>Total Bills:</span>
-                            <span className="font-bold text-slate-800 dark:text-slate-200">{summary.count}</span>
+                            <span>Counter ID:</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{selectedOperatorId === 'All' ? 'MAIN' : selectedOperatorId.slice(-6)}</span>
                         </div>
                         <div className="flex justify-between border-b dark:border-slate-700 pb-2">
                             <span>Tax (GST):</span>
                             <span className="font-bold text-slate-800 dark:text-slate-200">₹{summary.tax.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between border-b dark:border-slate-700 pb-2">
-                            <span>Net Value:</span>
-                            <span className="font-bold text-slate-800 dark:text-slate-200">₹{(summary.total - summary.tax).toFixed(2)}</span>
+                            <span>Gross Margin:</span>
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">₹{summary.profit.toFixed(2)}</span>
                         </div>
-                        <p className="mt-4 italic text-[10px] opacity-70">Note: Profit estimation is based on the purchase price recorded in the active batches at the time of calculation.</p>
                     </div>
                 </Card>
             </div>
@@ -343,6 +392,10 @@ const BillDetailsModal: React.FC<{
                     <div className="space-y-1">
                         <EditableField label="Customer" value={bill.customerName} onSave={(val) => onUpdateBillDetails(bill.id, { customerName: val })} />
                         {isPharmaMode && <EditableField label="Doctor" value={bill.doctorName || ''} onSave={(val) => onUpdateBillDetails(bill.id, { doctorName: val })} />}
+                        <div className="flex items-center gap-2 pt-2">
+                            <span className="text-[10px] font-black text-slate-400 uppercase w-20">Counter:</span>
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-tighter">{bill.operatorName || 'Admin'}</span>
+                        </div>
                     </div>
                     <div className="text-right mt-4 sm:mt-0 text-sm text-slate-500 dark:text-slate-400">
                         <p>Date: {new Date(bill.date).toLocaleString('en-IN')}</p>

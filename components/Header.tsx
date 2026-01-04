@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, GstReportView, MasterDataView, VoucherEntryView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon, AdjustmentsIcon, UserGroupIcon, BookOpenIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon, AdjustmentsIcon, UserGroupIcon, BookOpenIcon, UserCircleIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -339,7 +339,16 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
                 {isPremium && <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm font-extrabold uppercase tracking-tighter">PRO</span>}
                </span>
             </h1>
+            
+            {/* Counter/Cashier ID Visual */}
+            <div className="ml-6 hidden md:flex items-center gap-2 bg-slate-100 dark:bg-slate-900/50 px-3 py-1.5 rounded-full border dark:border-slate-700">
+                <UserCircleIcon className={`h-4 w-4 ${isOperator ? 'text-emerald-500' : 'text-indigo-500'}`} />
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    {isOperator ? `Cashier: ${user.displayName || 'Operator'}` : 'Admin Counter'}
+                </span>
+            </div>
           </div>
+          
           <div className="flex items-center space-x-2 sm:space-x-4">
              <nav className="hidden sm:flex space-x-2">
               {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}

@@ -53,6 +53,8 @@ export interface Bill {
   doctorName?: string;
   salesmanId?: string;
   salesmanName?: string;
+  operatorId?: string; // UID of the cashier
+  operatorName?: string; // Name of the cashier
   items: CartItem[];
   subTotal: number;
   totalGst: number;
@@ -175,6 +177,8 @@ export interface CustomerPayment {
   amount: number;
   method: 'Cash' | 'UPI' | 'Other';
   notes?: string;
+  operatorId?: string;
+  operatorName?: string;
 }
 
 export interface Payment {
