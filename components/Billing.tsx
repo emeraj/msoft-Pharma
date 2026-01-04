@@ -41,7 +41,7 @@ const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureNa
                     <p className="mt-3 text-2xl font-black text-indigo-600">₹5,000 <span className="text-xs text-slate-400 font-normal">/ Year</span></p>
                 </div>
                 <div className="bg-indigo-50 dark:bg-indigo-900/20 py-3 px-4 rounded-lg flex items-center justify-center gap-2 mb-4">
-                    CheckCircleIcon className="h-4 w-4 text-indigo-500" />
+                    <CheckCircleIcon className="h-4 w-4 text-indigo-500" />
                     <span className="text-xs font-bold text-slate-700 dark:text-slate-300">WhatsApp Screenshot: 9890072651</span>
                 </div>
                 <button onClick={onClose} className="w-full py-2 text-slate-500 hover:text-slate-700 font-bold text-sm">Maybe Later</button>
