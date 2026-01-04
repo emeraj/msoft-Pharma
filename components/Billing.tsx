@@ -751,14 +751,26 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <table className="w-full text-[13px] text-left">
                   <thead className="bg-[#1e293b] text-slate-300 uppercase text-[10px] font-black tracking-widest">
-                    <tr>
-                      <th className="px-4 py-4">{t.billing.product}</th>
-                      {isPharmaMode && <th className="px-4 py-4 text-center">{t.billing.batch}</th>}
-                      <th className="px-4 py-4 text-center">{t.billing.qty}</th>
-                      <th className="px-4 py-4 text-right">{t.billing.mrp}</th>
-                      <th className="px-4 py-4 text-right">{t.billing.amount}</th>
-                      <th className="px-4 py-4 text-center"></th>
-                    </tr>
+                    {isPharmaMode ? (
+                      <tr>
+                        <th className="px-4 py-4">PRODUCT</th>
+                        <th className="px-4 py-4 text-center">PACK</th>
+                        <th className="px-4 py-4 text-center">BATCH</th>
+                        <th className="px-4 py-4 text-center">STRI</th>
+                        <th className="px-4 py-4 text-center">TAB.</th>
+                        <th className="px-4 py-4 text-right">M.R.P./S</th>
+                        <th className="px-4 py-4 text-right">AMOUNT</th>
+                        <th className="px-4 py-4 text-center"></th>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <th className="px-4 py-4">{t.billing.product}</th>
+                        <th className="px-4 py-4 text-center">{t.billing.qty}</th>
+                        <th className="px-4 py-4 text-right">{t.billing.mrp}</th>
+                        <th className="px-4 py-4 text-right">{t.billing.amount}</th>
+                        <th className="px-4 py-4 text-center"></th>
+                      </tr>
+                    )}
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                     {cart.map(item => {
@@ -768,59 +780,66 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                       <tr key={item.batchId} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                         <td className="px-4 py-3.5">
                           <div className="font-bold text-slate-800 dark:text-slate-100">{item.productName}</div>
-                          <div className="text-[10px] text-slate-500 flex gap-2">
-                            <span>GST {item.gst}%</span>
-                            {isPharmaMode && <span>• 1*{item.unitsPerStrip}</span>}
-                          </div>
+                          <div className="text-[10px] text-slate-500">GST {item.gst}%</div>
                         </td>
-                        {isPharmaMode && (
-                          <td className="px-4 py-3.5 text-center">
-                            <div className="font-mono text-xs font-bold text-indigo-600">{item.batchNumber}</div>
-                            <div className="text-[9px] text-slate-400">EXP: {item.expiryDate}</div>
-                          </td>
-                        )}
-                        <td className="px-4 py-3.5">
-                           <div className="flex items-center justify-center gap-2">
-                               {isPharmaMode && (item.unitsPerStrip || 1) > 1 ? (
-                                   <>
-                                        <div className="flex flex-col items-center">
-                                            <input ref={el => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="number" value={item.stripQty || ''} onChange={e => {
-                                                const sQty = parseInt(e.target.value) || 0;
-                                                const totalUnits = (sQty * (item.unitsPerStrip || 1)) + (item.looseQty || 0);
-                                                onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * unitPrice });
-                                            }} className="w-12 text-center p-1 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded text-xs font-bold" />
-                                            <span className="text-[8px] font-black text-slate-400 uppercase mt-1">Strips</span>
-                                        </div>
-                                        <span className="text-slate-300 font-bold">+</span>
-                                        <div className="flex flex-col items-center">
-                                            <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.looseQty || ''} onChange={e => {
-                                                const lQty = parseInt(e.target.value) || 0;
-                                                const totalUnits = ((item.stripQty || 0) * (item.unitsPerStrip || 1)) + lQty;
-                                                onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice });
-                                            }} className="w-12 text-center p-1 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded text-xs font-bold" />
-                                            <span className="text-[8px] font-black text-slate-400 uppercase mt-1">Units</span>
-                                        </div>
-                                   </>
-                               ) : (
+                        
+                        {isPharmaMode ? (
+                          <>
+                            <td className="px-4 py-3.5 text-center font-medium text-slate-600 dark:text-slate-400">
+                              1 * {item.unitsPerStrip || 1}
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              <div className="font-mono text-xs font-bold text-indigo-600">{item.batchNumber}</div>
+                              <div className="text-[9px] text-slate-400">EXP: {item.expiryDate}</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="flex flex-col items-center">
+                                <input ref={el => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="number" value={item.stripQty || ''} onChange={e => {
+                                    const sQty = parseInt(e.target.value) || 0;
+                                    const totalUnits = (sQty * (item.unitsPerStrip || 1)) + (item.looseQty || 0);
+                                    onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * unitPrice });
+                                }} className="w-14 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <div className="flex flex-col items-center">
+                                <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.looseQty || ''} onChange={e => {
+                                    const lQty = parseInt(e.target.value) || 0;
+                                    const totalUnits = ((item.stripQty || 0) * (item.unitsPerStrip || 1)) + lQty;
+                                    onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice });
+                                }} className="w-14 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5 text-right font-medium">
+                              {isMrpEditable ? (
+                                  <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
+                                      const newMrp = parseFloat(e.target.value) || 0;
+                                      const uPrice = newMrp / (item.unitsPerStrip || 1);
+                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * uPrice });
+                                  }} className="w-20 text-right p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                              ) : `₹${item.mrp.toFixed(2)}`}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3.5">
+                               <div className="flex items-center justify-center">
                                    <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.quantity || ''} onChange={e => {
                                        const qty = parseInt(e.target.value) || 0;
                                        onUpdateCartItem(item.batchId, { quantity: qty, looseQty: qty, total: qty * unitPrice });
                                    }} className="w-16 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
-                               )}
-                           </div>
-                        </td>
-                        <td className="px-4 py-3.5 text-right font-medium">
-                          {isMrpEditable ? (
-                              <div className="flex flex-col items-end">
-                                <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
-                                    const newMrp = parseFloat(e.target.value) || 0;
-                                    const uPrice = newMrp / (item.unitsPerStrip || 1);
-                                    onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * uPrice });
-                                }} className="w-20 text-right p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
-                                <span className="text-[8px] text-slate-400 font-bold uppercase mt-1">Per Pack</span>
-                              </div>
-                          ) : `₹${item.mrp.toFixed(2)}`}
-                        </td>
+                               </div>
+                            </td>
+                            <td className="px-4 py-3.5 text-right font-medium">
+                              {isMrpEditable ? (
+                                  <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
+                                      const newMrp = parseFloat(e.target.value) || 0;
+                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * newMrp });
+                                  }} className="w-20 text-right p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                              ) : `₹${item.mrp.toFixed(2)}`}
+                            </td>
+                          </>
+                        )}
                         <td className="px-4 py-3.5 text-right font-black text-slate-900 dark:text-white">₹{item.total.toFixed(2)}</td>
                         <td className="px-4 py-3.5 text-center">
                           <button onClick={() => onRemoveFromCart(item.batchId)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"><TrashIcon className="h-5 w-5" /></button>
@@ -830,6 +849,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                   </tbody>
                 </table>
               </div>
+              {isPharmaMode && cart.length > 0 && (
+                <div className="mt-4 flex gap-4 text-[10px] font-black uppercase text-slate-400 px-2 tracking-widest">
+                  <span>* STRI = Strips</span>
+                  <span>* TAB = Tablets/Units</span>
+                  <span>* M.R.P./S = Price Per Pack</span>
+                </div>
+              )}
             </div>
           </Card>
         </div>
