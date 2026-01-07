@@ -6,7 +6,6 @@ import Modal from './common/Modal';
 import { PlusIcon, TrashIcon, PencilIcon, DownloadIcon, BarcodeIcon, CameraIcon, UploadIcon, CheckCircleIcon, AdjustmentsIcon, XIcon, CloudIcon, InformationCircleIcon } from './icons/Icons';
 import BarcodeScannerModal from './BarcodeScannerModal';
 import { GoogleGenAI, Type } from "@google/genai";
-import { extractPartNumber } from '../utils/barcodeUtils'; // Added import
 
 // Helper for matching technical codes (removes dashes, dots, spaces)
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -20,6 +19,7 @@ interface PurchasesProps {
     gstRates: GstRate[];
     onAddPurchase: (purchaseData: Omit<Purchase, 'id' | 'totalAmount'>) => void;
     onUpdatePurchase: (id: string, updatedData: Omit<Purchase, 'id'>, originalPurchase: Purchase) => void;
+    onDeletePurchase: (purchase: Purchase) => void;
     onAddSupplier: (supplierData: Omit<Supplier, 'id'>) => Promise<Supplier | null>;
     onUpdateConfig: (config: SystemConfig) => void;
     editingPurchase?: Purchase | null;
@@ -347,12 +347,6 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
         }
     };
 
-    const handleScanSuccess = (rawCode: string) => {
-        const cleanCode = extractPartNumber(rawCode);
-        setFormState({...formState, barcode: cleanCode});
-        setScannerOpen(false);
-    };
-
     return (
         <form onSubmit={handleAddItem} className={`p-4 my-4 space-y-4 bg-slate-50 dark:bg-slate-800/30 rounded-lg border dark:border-slate-700 ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
@@ -411,7 +405,7 @@ const AddItemForm: React.FC<{ products: Product[], onAddItem: (item: PurchaseLin
                     <button type="submit" className="bg-indigo-600 text-white rounded-lg px-4 py-2 font-bold shadow hover:bg-indigo-700 transition-colors md:col-span-2 lg:col-span-1">{itemToEdit ? 'Update' : 'Add'}</button>
                 </div>
             )}
-            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={handleScanSuccess} />
+            <BarcodeScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onScanSuccess={(code) => { setFormState({...formState, barcode: code}); setScannerOpen(false); }} />
         </form>
     );
 };
