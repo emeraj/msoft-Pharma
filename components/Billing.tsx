@@ -244,7 +244,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   const isFreePlan = (systemConfig.subscription?.planType || 'Free') === 'Free';
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [qrCodeInput, setQrCodeInput] = useState(''); // State for the Qrcode Scan field
+  const [qrCodeInput, setQrCodeInput] = useState(''); 
   const [customerName, setCustomerName] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
@@ -266,17 +266,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   const [scannerType, setScannerType] = useState<'standard' | 'xpart'>('standard');
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
-  const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
   const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
   const [showOrderSuccessModal, setShowOrderSuccessModal] = useState(false);
   const [lastSavedBill, setLastSavedBill] = useState<Bill | null>(null);
-  const [orderSeconds, setOrderSeconds] = useState(0);
-  const startTimeRef = useRef<number | null>(null);
+  const [startTimeRef] = useState({ current: null as number | null });
 
   const [showTextScanner, setShowTextScanner] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [substituteTarget, setSubstituteTarget] = useState<Product | null>(null);
-  const [scanResultFeedback, setScanResultFeedback] = useState<{name: string, batch?: string} | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const getLiveBatchStock = useCallback((product: Product, batch: Batch): number => {
@@ -371,6 +368,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     const xpart = rawCode.substring(36, 56).trim();
     if (!xpart) return;
 
+    // Reflection in main search/barcode field
+    setSearchTerm(xpart);
+
     const product = products.find(p => p.barcode === xpart);
     if (product) {
         // Automatically pick the first batch with stock
@@ -380,11 +380,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
             handleAddToCartLocal(product, bestBatch);
             setQrCodeInput(''); // clear field for next scan
         } else {
-            alert(`Product ${product.name} found, but no batches available.`);
+            alert(`Product ${product.name} found, but no stock available.`);
         }
     } else {
         console.log("No product matched xpart:", xpart);
-        setQrCodeInput(xpart); // Show the extracted part for debugging or manual search
+        // If not found, keep xpart in the input fields so user can see what was read
+        setQrCodeInput(xpart); 
     }
   };
 
@@ -395,6 +396,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
         handleXPartScan(rawCode);
     } else {
         const code = extractPartNumber(rawCode);
+        setSearchTerm(code);
         const product = products.find(p => p.barcode === code);
         if (product) {
             const batchesWithStock = product.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(product, b) }));
@@ -450,6 +452,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
 
   const resetBilling = () => {
     setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash');
+    setSearchTerm(''); setQrCodeInput('');
   };
 
   const filteredProducts = useMemo(() => {
@@ -483,40 +486,40 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="relative">
-                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Search Product</label>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Main Barcode / Search</label>
                     <div className="relative">
                         <input ref={searchInputRef} type="text" placeholder="Name or Barcode" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} className={`${inputStyle} w-full p-2.5 h-12`} />
                         <SearchIcon className="absolute right-3 top-3 h-5 w-5 text-slate-400" />
                     </div>
                   </div>
                   <div className="relative">
-                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Qrcode Scan (Direct Input)</label>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Qrcode Scan (Automotive/Ind.)</label>
                     <div className="relative">
-                        <input ref={qrInputRef} type="text" placeholder="Scan into this field..." value={qrCodeInput} onChange={e => {
+                        <input ref={qrInputRef} type="text" placeholder="Scan long QR string here..." value={qrCodeInput} onChange={e => {
                             const val = e.target.value;
                             if (val.length >= 56) {
                                 handleXPartScan(val);
                             } else {
                                 setQrCodeInput(val);
                             }
-                        }} className={`${inputStyle} w-full p-2.5 h-12 bg-rose-50 border-rose-200`} />
+                        }} className={`${inputStyle} w-full p-2.5 h-12 bg-rose-50 border-rose-200 font-mono text-sm`} />
                         <BarcodeIcon className="absolute right-3 top-3 h-5 w-5 text-rose-400" />
                     </div>
                   </div>
               </div>
 
               {filteredProducts.length > 0 && (
-                  <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden mb-4">
+                  <div className="bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden mb-4 animate-fade-in">
                     {filteredProducts.map((product, pIdx) => (
                       <div key={product.id} className="border-b last:border-b-0 p-3 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
                         <div>
                             <h4 className="font-bold text-slate-800 dark:text-slate-100">{product.name}</h4>
-                            <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company}</p>
+                            <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company} | {product.barcode}</p>
                         </div>
-                        <div className="flex gap-2 overflow-x-auto p-1">
+                        <div className="flex gap-2 overflow-x-auto p-1 max-w-[50%]">
                           {product.batches.map(batch => (
-                              <button key={batch.id} onClick={() => handleAddToCartLocal(product, batch)} className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-200 border border-indigo-100 dark:border-indigo-800 rounded-lg text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all">
-                                ₹{batch.mrp.toFixed(2)} - B:{batch.batchNumber} ({batch.stock} U)
+                              <button key={batch.id} onClick={() => handleAddToCartLocal(product, batch)} className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-200 border border-indigo-100 dark:border-indigo-800 rounded-lg text-xs font-bold hover:bg-indigo-600 hover:text-white transition-all whitespace-nowrap">
+                                ₹{batch.mrp.toFixed(0)} (B:{batch.batchNumber})
                               </button>
                           ))}
                         </div>
@@ -552,7 +555,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                       <tr key={item.batchId} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
                         <td className="px-4 py-3.5">
                           <div className="font-bold text-slate-800 dark:text-slate-100">{item.productName}</div>
-                          <div className="text-[10px] text-slate-500 uppercase">Batch: {item.batchNumber} | Exp: {item.expiryDate}</div>
+                          <div className="text-[10px] text-slate-400 uppercase">B:{item.batchNumber} | E:{item.expiryDate}</div>
                         </td>
                         <td className="px-4 py-3.5 text-center">
                             <input type="number" value={item.quantity} onChange={e => onUpdateCartItem(item.batchId, { quantity: parseInt(e.target.value) || 0, total: (parseInt(e.target.value) || 0) * (item.mrp / (item.unitsPerStrip || 1)) })} className="w-16 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border rounded font-bold" />
@@ -611,6 +614,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
               <button onClick={() => { setShowOrderSuccessModal(false); resetBilling(); }} className="mt-8 w-full py-4 bg-indigo-600 text-white rounded-xl font-black">NEXT BILL</button>
           </div>
       </Modal>
+      <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="AI Product Scanner" />
     </div>
   );
 };

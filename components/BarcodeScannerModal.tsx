@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import Modal from './common/Modal';
 import { XIcon } from './icons/Icons';
@@ -65,10 +66,12 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
             scannerRef.current = html5QrCode;
 
             const config = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 150 },
-                aspectRatio: 1.777778,
+                fps: 15, 
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0,
                 formatsToSupport: [
+                    Html5QrcodeSupportedFormats.QR_CODE,
+                    Html5QrcodeSupportedFormats.DATA_MATRIX,
                     Html5QrcodeSupportedFormats.EAN_13,
                     Html5QrcodeSupportedFormats.EAN_8,
                     Html5QrcodeSupportedFormats.CODE_128,
@@ -127,36 +130,15 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
         const cleanup = async () => {
             if (html5QrCode) {
                 try {
-                    // Only stop if actually scanning to avoid the "Cannot stop, scanner is not running" error
-                    // Most versions of html5-qrcode expose isScanning or state
                     if (html5QrCode.isScanning) {
                         await html5QrCode.stop();
-                    } else {
-                        // Fallback check: check if the video element inside is active
-                        const video = document.querySelector(`#${readerId} video`) as HTMLVideoElement;
-                        if (video && video.srcObject) {
-                             await html5QrCode.stop();
-                        }
                     }
                 } catch (e) {
-                    // Silently ignore "scanner not running" errors during cleanup
                     console.debug("Scanner stop suppressed", e);
                 } finally {
                     try {
                         html5QrCode.clear();
                     } catch (e) {}
-                    
-                    // Manually force-kill all tracks on the reader element just in case
-                    try {
-                        const video = document.querySelector(`#${readerId} video`) as HTMLVideoElement;
-                        if (video && video.srcObject) {
-                            (video.srcObject as MediaStream).getTracks().forEach(t => {
-                                t.stop();
-                                console.debug("Track forced stop");
-                            });
-                        }
-                    } catch (e) {}
-                    
                     scannerRef.current = null;
                 }
             }
@@ -179,7 +161,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
         )}
         {!errorMessage && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
-                <div className="relative" style={{ width: '250px', height: '150px' }}>
+                <div className="relative" style={{ width: '250px', height: '250px' }}>
                     <div className="absolute inset-0 border border-white/40 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"></div>
                     <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-indigo-500 rounded-tl-md"></div>
                     <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-indigo-500 rounded-tr-md"></div>
@@ -191,7 +173,7 @@ export const EmbeddedScanner: React.FC<ScannerProps> = ({ onScanSuccess, onClose
         )}
         <style>{`
             #${readerId} video { width: 100% !important; height: 100% !important; object-fit: cover !important; }
-            @keyframes scan-laser { 0% { transform: translateY(-75px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(75px); opacity: 0; } }
+            @keyframes scan-laser { 0% { transform: translateY(-125px); opacity: 0; } 50% { opacity: 1; } 100% { transform: translateY(125px); opacity: 0; } }
             .animate-scan-laser { animation: scan-laser 2s infinite linear; }
         `}</style>
     </div>
@@ -202,11 +184,11 @@ const BarcodeScannerModal: React.FC<{ isOpen: boolean; onClose: () => void; onSc
     if (!isOpen) return null;
     const handleScan = (text: string) => { onScanSuccess(text); if (closeOnScan) onClose(); };
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Scan Barcode">
+        <Modal isOpen={isOpen} onClose={onClose} title="Scan Barcode / QR">
             <div className="flex justify-center p-0">
                <div className="w-full">
                  <EmbeddedScanner onScanSuccess={handleScan} onClose={onClose} />
-                 <p className="text-center text-xs font-bold text-slate-400 mt-2 pb-4 uppercase tracking-widest">Place Barcode in Center</p>
+                 <p className="text-center text-xs font-bold text-slate-400 mt-2 pb-4 uppercase tracking-widest">Place QR code in Center</p>
                </div>
             </div>
         </Modal>
