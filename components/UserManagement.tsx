@@ -15,6 +15,22 @@ interface UserManagementProps {
 
 const formInputStyle = "w-full p-2 bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-md focus:ring-2 focus:ring-indigo-500";
 
+const PermissionCheckbox: React.FC<{
+    label: string;
+    checked: boolean;
+    onChange: () => void;
+}> = ({ label, checked, onChange }) => (
+    <label className="flex items-center gap-2 cursor-pointer p-2 border rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 dark:border-slate-500 select-none">
+        <input 
+            type="checkbox" 
+            checked={checked} 
+            onChange={onChange}
+            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+        />
+        <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300">{label}</span>
+    </label>
+);
+
 const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUsers, onRefresh }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -27,11 +43,11 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
   });
   
   const initialPermissions: UserPermissions = {
-    canBill: true,
+    canMasterLedger: false, canMasterProduct: false, canMasterBatch: false,
+    canVoucherSale: true, canVoucherPurchase: false, canVoucherSaleReturn: false, canVoucherPurchaseReturn: false, canVoucherJournal: false, canVoucherNotes: false,
     canInventory: false,
-    canPurchase: false,
-    canPayment: false,
-    canReports: false,
+    canReportDashboard: false, canReportDaybook: false, canReportCustomerLedger: false, canReportSupplierLedger: false, canReportSales: false, canReportSalesman: false, canReportCompanySales: false, canReportProfit: false, canReportCheque: false,
+    canReportGst: false,
   };
 
   const [permissions, setPermissions] = useState<UserPermissions>(initialPermissions);
@@ -52,7 +68,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
       setFormData({ name: user.name, email: user.email, password: '' });
       setPermissions(user.permissions);
       setShowAddForm(true);
-      // Scroll to form
       window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -62,21 +77,15 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
 
     try {
       if (editingUser) {
-          // --- UPDATE LOGIC ---
           const userRef = doc(db, `users/${currentUserUid}/subUsers`, editingUser.id);
           await updateDoc(userRef, {
               name: formData.name,
               permissions: permissions
           });
           alert('Operator updated successfully!');
-          onRefresh(); // Refresh list
+          onRefresh();
           resetForm();
       } else {
-          // --- CREATE LOGIC ---
-          // 1. Create User in Firebase Auth using a secondary app instance
-          // We use a secondary instance so we don't log out the current Admin
-          // NOTE: We do not delete the app instance to avoid "Transaction aborted" errors 
-          // caused by interrupting IndexedDB operations during cleanup.
           let secondaryApp;
           try {
             secondaryApp = getApp("Secondary");
@@ -85,14 +94,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
           }
           
           const secondaryAuth = getAuth(secondaryApp);
-          
           const userCredential = await createUserWithEmailAndPassword(secondaryAuth, formData.email, formData.password);
           const newUid = userCredential.user.uid;
           
           await updateProfile(userCredential.user, { displayName: formData.name });
-          await signOut(secondaryAuth); // Clean up session immediately
+          await signOut(secondaryAuth);
 
-          // 2. Create SubUser record in Admin's collection
           const subUser: SubUser = {
             id: newUid,
             name: formData.name,
@@ -103,8 +110,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
           };
 
           await setDoc(doc(db, `users/${currentUserUid}/subUsers`, newUid), subUser);
-
-          // 3. Create Global Mapping for Login Resolution
           await setDoc(doc(db, 'userMappings', newUid), {
             ownerId: currentUserUid,
             role: 'operator'
@@ -117,11 +122,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
 
     } catch (error: any) {
       console.error("Error saving user:", error);
-      let msg = "Failed to save user.";
-      if (error.code === 'auth/email-already-in-use') msg = "Email is already in use.";
-      if (error.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
-      if (error.message && error.message.includes('transaction was aborted')) msg = "Browser storage error. Please refresh and try again.";
-      alert(msg);
+      alert(error.message || "Failed to save user.");
     } finally {
       setIsLoading(false);
     }
@@ -129,7 +130,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
 
   const handleDeleteUser = async (userId: string) => {
     if (!window.confirm("Are you sure? This will revoke access for this user immediately.")) return;
-    
     try {
       await deleteDoc(doc(db, `users/${currentUserUid}/subUsers`, userId));
       await deleteDoc(doc(db, 'userMappings', userId));
@@ -145,12 +145,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
       <div className="flex justify-between items-center">
         <div>
             <h4 className="text-lg font-semibold text-slate-800 dark:text-slate-200">User Management</h4>
-            <p className="text-sm text-slate-600 dark:text-slate-400">Manage operators and their permissions.</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Manage operators and their granular menu permissions.</p>
         </div>
         {!showAddForm && (
             <button 
                 onClick={() => setShowAddForm(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-md"
             >
                 <PlusIcon className="h-5 w-5" /> Add Operator
             </button>
@@ -158,124 +158,134 @@ const UserManagement: React.FC<UserManagementProps> = ({ currentUserUid, subUser
       </div>
 
       {showAddForm && (
-        <form onSubmit={handleSubmit} className="bg-slate-50 dark:bg-slate-700/50 p-4 rounded-lg border dark:border-slate-600">
-            <div className="flex justify-between items-center mb-4">
-                <h5 className="font-medium text-slate-800 dark:text-slate-200">{editingUser ? 'Edit Operator' : 'New Operator Details'}</h5>
-                <button type="button" onClick={resetForm} className="text-slate-500 hover:text-slate-700">
-                    <XIcon className="h-5 w-5" />
+        <form onSubmit={handleSubmit} className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-2xl border dark:border-slate-700 shadow-xl border-indigo-100">
+            <div className="flex justify-between items-center mb-6">
+                <h5 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{editingUser ? 'Edit Operator Access' : 'Register New Operator'}</h5>
+                <button type="button" onClick={resetForm} className="p-2 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-all">
+                    <XIcon className="h-6 w-6" />
                 </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                <input 
-                    type="text" 
-                    placeholder="Name" 
-                    value={formData.name} 
-                    onChange={e => setFormData({...formData, name: e.target.value})} 
-                    className={formInputStyle} 
-                    required 
-                />
-                <input 
-                    type="email" 
-                    placeholder="Email" 
-                    value={formData.email} 
-                    onChange={e => setFormData({...formData, email: e.target.value})} 
-                    className={`${formInputStyle} ${editingUser ? 'bg-slate-200 cursor-not-allowed' : ''}`}
-                    required 
-                    readOnly={!!editingUser}
-                />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Full Name</label>
+                    <input type="text" placeholder="John Doe" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className={formInputStyle} required />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Email (Login ID)</label>
+                    <input type="email" placeholder="john@example.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className={`${formInputStyle} ${editingUser ? 'bg-slate-200 cursor-not-allowed' : ''}`} required readOnly={!!editingUser} />
+                </div>
                 {!editingUser && (
-                    <input 
-                        type="password" 
-                        placeholder="Password (min 6 chars)" 
-                        value={formData.password} 
-                        onChange={e => setFormData({...formData, password: e.target.value})} 
-                        className={formInputStyle} 
-                        required 
-                        minLength={6}
-                    />
+                    <div>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Password</label>
+                        <input type="password" placeholder="Min 6 chars" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className={formInputStyle} required minLength={6} />
+                    </div>
                 )}
             </div>
             
-            <h6 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Access Permissions</h6>
-            <div className="flex flex-wrap gap-4 mb-6">
-                {[
-                    { key: 'canBill', label: 'Billing' },
-                    { key: 'canInventory', label: 'Inventory' },
-                    { key: 'canPurchase', label: 'Purchases' },
-                    { key: 'canPayment', label: 'Payments' },
-                    { key: 'canReports', label: 'Reports' },
-                ].map((perm) => (
-                    <label key={perm.key} className="flex items-center gap-2 cursor-pointer p-2 border rounded-md hover:bg-slate-100 dark:hover:bg-slate-600 dark:border-slate-500 select-none">
-                        <input 
-                            type="checkbox" 
-                            checked={permissions[perm.key as keyof UserPermissions]} 
-                            onChange={() => handlePermissionChange(perm.key as keyof UserPermissions)}
-                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-slate-700 dark:text-slate-300">{perm.label}</span>
-                    </label>
-                ))}
+            <div className="space-y-8">
+                {/* Master Data Section */}
+                <section>
+                    <h6 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] mb-3 border-b pb-1 border-indigo-100 dark:border-indigo-900/50">Master Data Access</h6>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <PermissionCheckbox label="Ledger Master" checked={permissions.canMasterLedger} onChange={() => handlePermissionChange('canMasterLedger')} />
+                        <PermissionCheckbox label="Product Master" checked={permissions.canMasterProduct} onChange={() => handlePermissionChange('canMasterProduct')} />
+                        <PermissionCheckbox label="Batch Master" checked={permissions.canMasterBatch} onChange={() => handlePermissionChange('canMasterBatch')} />
+                    </div>
+                </section>
+
+                {/* Vouchers Section */}
+                <section>
+                    <h6 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] mb-3 border-b pb-1 border-indigo-100 dark:border-indigo-900/50">Voucher Entry Access</h6>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <PermissionCheckbox label="Sale Entry (Billing)" checked={permissions.canVoucherSale} onChange={() => handlePermissionChange('canVoucherSale')} />
+                        <PermissionCheckbox label="Purchase Entry" checked={permissions.canVoucherPurchase} onChange={() => handlePermissionChange('canVoucherPurchase')} />
+                        <PermissionCheckbox label="Sale Return" checked={permissions.canVoucherSaleReturn} onChange={() => handlePermissionChange('canVoucherSaleReturn')} />
+                        <PermissionCheckbox label="Purchase Return" checked={permissions.canVoucherPurchaseReturn} onChange={() => handlePermissionChange('canVoucherPurchaseReturn')} />
+                        <PermissionCheckbox label="Journal Entry" checked={permissions.canVoucherJournal} onChange={() => handlePermissionChange('canVoucherJournal')} />
+                        <PermissionCheckbox label="Debit/Credit Notes" checked={permissions.canVoucherNotes} onChange={() => handlePermissionChange('canVoucherNotes')} />
+                    </div>
+                </section>
+
+                {/* Inventory Section */}
+                <section>
+                    <h6 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] mb-3 border-b pb-1 border-indigo-100 dark:border-indigo-900/50">Inventory & Stock</h6>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <PermissionCheckbox label="Inventory (Live Stock)" checked={permissions.canInventory} onChange={() => handlePermissionChange('canInventory')} />
+                    </div>
+                </section>
+
+                {/* Reports Section */}
+                <section>
+                    <h6 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] mb-3 border-b pb-1 border-indigo-100 dark:border-indigo-900/50">Financial Reports Access</h6>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <PermissionCheckbox label="Sales Dashboard" checked={permissions.canReportDashboard} onChange={() => handlePermissionChange('canReportDashboard')} />
+                        <PermissionCheckbox label="Day Book" checked={permissions.canReportDaybook} onChange={() => handlePermissionChange('canReportDaybook')} />
+                        <PermissionCheckbox label="Customer Ledger" checked={permissions.canReportCustomerLedger} onChange={() => handlePermissionChange('canReportCustomerLedger')} />
+                        <PermissionCheckbox label="Supplier Ledger" checked={permissions.canReportSupplierLedger} onChange={() => handlePermissionChange('canReportSupplierLedger')} />
+                        <PermissionCheckbox label="Sales Report" checked={permissions.canReportSales} onChange={() => handlePermissionChange('canReportSales')} />
+                        <PermissionCheckbox label="Salesman Report" checked={permissions.canReportSalesman} onChange={() => handlePermissionChange('canReportSalesman')} />
+                        <PermissionCheckbox label="Company-wise Sale" checked={permissions.canReportCompanySales} onChange={() => handlePermissionChange('canReportCompanySales')} />
+                        <PermissionCheckbox label="Profit Analysis" checked={permissions.canReportProfit} onChange={() => handlePermissionChange('canReportProfit')} />
+                        <PermissionCheckbox label="Cheque Print" checked={permissions.canReportCheque} onChange={() => handlePermissionChange('canReportCheque')} />
+                    </div>
+                </section>
+
+                {/* GST Section */}
+                <section>
+                    <h6 className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] mb-3 border-b pb-1 border-indigo-100 dark:border-indigo-900/50">Tax & Compliance</h6>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <PermissionCheckbox label="GST Reports (GSTR-3B/HSN)" checked={permissions.canReportGst} onChange={() => handlePermissionChange('canReportGst')} />
+                    </div>
+                </section>
             </div>
 
-            <div className="flex justify-end gap-3">
-                <button 
-                    type="button" 
-                    onClick={resetForm}
-                    className="px-4 py-2 bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-500"
-                >
-                    Cancel
-                </button>
-                <button 
-                    type="submit" 
-                    disabled={isLoading}
-                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-                >
-                    {isLoading ? 'Saving...' : (editingUser ? 'Update Operator' : 'Create Operator')}
+            <div className="flex justify-end gap-3 mt-10 pt-6 border-t dark:border-slate-700">
+                <button type="button" onClick={resetForm} className="px-6 py-2.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold hover:bg-slate-200 transition-all">Cancel</button>
+                <button type="submit" disabled={isLoading} className="px-10 py-2.5 bg-indigo-600 text-white rounded-xl font-black shadow-lg hover:bg-indigo-700 disabled:opacity-50 transform active:scale-95 transition-all">
+                    {isLoading ? 'Processing...' : (editingUser ? 'Update Permissions' : 'Register Operator')}
                 </button>
             </div>
         </form>
       )}
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
         <table className="w-full text-sm text-left text-slate-800 dark:text-slate-300">
-            <thead className="text-xs text-slate-800 dark:text-slate-300 uppercase bg-slate-100 dark:bg-slate-700">
+            <thead className="bg-[#1e293b] text-slate-300 uppercase text-[10px] font-black tracking-widest border-b dark:border-slate-700">
                 <tr>
-                    <th className="px-4 py-3">Name</th>
-                    <th className="px-4 py-3">Email</th>
-                    <th className="px-4 py-3">Permissions</th>
-                    <th className="px-4 py-3 text-center">Actions</th>
+                    <th className="px-6 py-4">Operator Name</th>
+                    <th className="px-6 py-4">Email</th>
+                    <th className="px-6 py-4">Active Rights</th>
+                    <th className="px-6 py-4 text-center">Actions</th>
                 </tr>
             </thead>
-            <tbody>
-                {subUsers.map(user => (
-                    <tr key={user.id} className="bg-white dark:bg-slate-800 border-b dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700">
-                        <td className="px-4 py-3 font-medium">{user.name}</td>
-                        <td className="px-4 py-3">{user.email}</td>
-                        <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1">
-                                {Object.entries(user.permissions).map(([key, val]) => val && (
-                                    <span key={key} className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full capitalize">
-                                        {key.replace('can', '')}
-                                    </span>
-                                ))}
-                            </div>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                {subUsers.map(user => {
+                    const activeCount = Object.values(user.permissions).filter(Boolean).length;
+                    return (
+                    <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                        <td className="px-6 py-4 font-bold text-slate-900 dark:text-white uppercase tracking-tight">{user.name}</td>
+                        <td className="px-6 py-4 text-slate-500 font-mono text-xs">{user.email}</td>
+                        <td className="px-6 py-4">
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${activeCount > 5 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {activeCount} Menus Active
+                            </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-6 py-4 text-center">
                             <div className="flex items-center justify-center gap-2">
-                                <button onClick={() => handleEditClick(user)} className="text-blue-600 hover:text-blue-800 p-1" title="Edit User">
+                                <button onClick={() => handleEditClick(user)} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-all" title="Edit Rights">
                                     <PencilIcon className="h-5 w-5" />
                                 </button>
-                                <button onClick={() => handleDeleteUser(user.id)} className="text-red-600 hover:text-red-800 p-1" title="Delete User">
+                                <button onClick={() => handleDeleteUser(user.id)} className="p-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-all" title="Delete Operator">
                                     <TrashIcon className="h-5 w-5" />
                                 </button>
                             </div>
                         </td>
                     </tr>
-                ))}
+                )})}
                 {subUsers.length === 0 && (
                     <tr>
-                        <td colSpan={4} className="px-4 py-6 text-center text-slate-500">No operators found.</td>
+                        <td colSpan={4} className="px-6 py-16 text-center text-slate-500 font-bold italic">No operators currently managed.</td>
                     </tr>
                 )}
             </tbody>

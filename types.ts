@@ -270,11 +270,31 @@ export interface SystemConfig {
 }
 
 export interface UserPermissions {
-  canBill: boolean;
+  // Masters
+  canMasterLedger: boolean;
+  canMasterProduct: boolean;
+  canMasterBatch: boolean;
+  // Vouchers
+  canVoucherSale: boolean;
+  canVoucherPurchase: boolean;
+  canVoucherSaleReturn: boolean;
+  canVoucherPurchaseReturn: boolean;
+  canVoucherJournal: boolean;
+  canVoucherNotes: boolean; // Debit/Credit Notes
+  // Inventory
   canInventory: boolean;
-  canPurchase: boolean;
-  canPayment: boolean;
-  canReports: boolean;
+  // Reports
+  canReportDashboard: boolean;
+  canReportDaybook: boolean;
+  canReportCustomerLedger: boolean;
+  canReportSupplierLedger: boolean;
+  canReportSales: boolean;
+  canReportSalesman: boolean;
+  canReportCompanySales: boolean;
+  canReportProfit: boolean;
+  canReportCheque: boolean;
+  // GST
+  canReportGst: boolean;
 }
 
 export interface SubUser {

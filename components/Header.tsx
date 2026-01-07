@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppView, ReportView, GstReportView, MasterDataView, VoucherEntryView, SystemConfig, UserPermissions } from '../types';
-import { ReceiptIcon, ArchiveIcon, CubeIcon, SettingsIcon, ChartBarIcon, CashIcon, PillIcon, PercentIcon, CloudIcon, CheckCircleIcon, AdjustmentsIcon, UserGroupIcon, BookOpenIcon, UserCircleIcon } from './icons/Icons';
+import { ReceiptIcon, ArchiveIcon, SettingsIcon, ChartBarIcon, PercentIcon, CloudIcon, AdjustmentsIcon, UserCircleIcon } from './icons/Icons';
 import type { User } from 'firebase/auth';
 import { getTranslation } from '../utils/translationHelper';
 
@@ -12,7 +12,7 @@ interface HeaderProps {
   user: User;
   onLogout: () => void;
   systemConfig: SystemConfig;
-  userPermissions?: UserPermissions; // Optional for Admins
+  userPermissions?: UserPermissions; 
   isOperator: boolean;
 }
 
@@ -27,9 +27,9 @@ const NavButton: React.FC<{
   return (
     <button
       onClick={() => onClick(view)}
-      className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+      className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-bold transition-all duration-200 uppercase tracking-tighter ${
         isActive
-          ? 'bg-indigo-600 text-white shadow-md'
+          ? 'bg-indigo-600 text-white shadow-lg scale-105'
           : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
       }`}
     >
@@ -42,12 +42,11 @@ const NavButton: React.FC<{
 const MasterDataDropdown: React.FC<{
     activeView: AppView;
     setActiveView: (view: AppView) => void;
-}> = ({ activeView, setActiveView }) => {
+    userPermissions?: UserPermissions;
+    isOperator: boolean;
+}> = ({ activeView, setActiveView, userPermissions, isOperator }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-
-    const masterDataViews: MasterDataView[] = ['ledgerMaster', 'productMaster', 'batchMaster'];
-    const isMasterActive = masterDataViews.includes(activeView as MasterDataView);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -59,19 +58,26 @@ const MasterDataDropdown: React.FC<{
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const labels: Record<MasterDataView, string> = {
-        ledgerMaster: 'Ledger Master',
-        productMaster: 'Product Master',
-        batchMaster: 'Batch Master'
-    };
+    const hasP = (key: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[key]);
+
+    const masterDataViews: {view: MasterDataView, label: string, p: keyof UserPermissions}[] = [
+        { view: 'ledgerMaster', label: 'Ledger Master', p: 'canMasterLedger' },
+        { view: 'productMaster', label: 'Product Master', p: 'canMasterProduct' },
+        { view: 'batchMaster', label: 'Batch Master', p: 'canMasterBatch' }
+    ];
+
+    const availableViews = masterDataViews.filter(v => hasP(v.p));
+    if (availableViews.length === 0) return null;
+
+    const isMasterActive = availableViews.some(v => v.view === activeView);
 
     return (
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-bold transition-all duration-200 uppercase tracking-tighter ${
                     isMasterActive
-                        ? 'bg-indigo-600 text-white shadow-md'
+                        ? 'bg-indigo-600 text-white shadow-lg'
                         : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
             >
@@ -79,23 +85,23 @@ const MasterDataDropdown: React.FC<{
                 <span className="hidden sm:inline">Master Data</span>
             </button>
             {isOpen && (
-                <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
-                    {masterDataViews.map(view => (
+                <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-2xl py-2 z-50 ring-1 ring-black ring-opacity-5 animate-fade-in border dark:border-slate-700">
+                    {availableViews.map(item => (
                         <a
-                            key={view}
+                            key={item.view}
                             href="#"
                             onClick={(e) => {
                                 e.preventDefault();
-                                setActiveView(view);
+                                setActiveView(item.view);
                                 setIsOpen(false);
                             }}
-                            className={`block px-4 py-2 text-sm ${
-                                activeView === view
-                                    ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200'
+                            className={`block px-4 py-2 text-xs font-black uppercase tracking-widest ${
+                                activeView === item.view
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 border-l-4 border-indigo-600'
                                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                             }`}
                         >
-                            {labels[view]}
+                            {item.label}
                         </a>
                     ))}
                 </div>
@@ -107,21 +113,11 @@ const MasterDataDropdown: React.FC<{
 const VoucherEntryDropdown: React.FC<{
     activeView: AppView;
     setActiveView: (view: AppView) => void;
-}> = ({ activeView, setActiveView }) => {
+    userPermissions?: UserPermissions;
+    isOperator: boolean;
+}> = ({ activeView, setActiveView, userPermissions, isOperator }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-
-    const voucherViews: {view: VoucherEntryView | 'billing' | 'purchases', label: string}[] = [
-        { view: 'billing', label: 'Sale Entry' },
-        { view: 'purchases', label: 'Purchase Entry' },
-        { view: 'saleReturn', label: 'Sale Return' },
-        { view: 'purchaseReturn', label: 'Purchase Return' },
-        { view: 'journalEntry', label: 'Journal Entry' },
-        { view: 'debitNote', label: 'Debit Note' },
-        { view: 'creditNote', label: 'Credit Note' },
-    ];
-    
-    const isVoucherActive = voucherViews.some(v => v.view === activeView) || activeView === 'saleEntry' || activeView === 'purchaseEntry';
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -133,13 +129,30 @@ const VoucherEntryDropdown: React.FC<{
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    const hasP = (key: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[key]);
+
+    const voucherViews: {view: VoucherEntryView | 'billing' | 'purchases', label: string, p: keyof UserPermissions}[] = [
+        { view: 'billing', label: 'Sale Entry', p: 'canVoucherSale' },
+        { view: 'purchases', label: 'Purchase Entry', p: 'canVoucherPurchase' },
+        { view: 'saleReturn', label: 'Sale Return', p: 'canVoucherSaleReturn' },
+        { view: 'purchaseReturn', label: 'Purchase Return', p: 'canVoucherPurchaseReturn' },
+        { view: 'journalEntry', label: 'Journal Entry', p: 'canVoucherJournal' },
+        { view: 'debitNote', label: 'Debit Note', p: 'canVoucherNotes' },
+        { view: 'creditNote', label: 'Credit Note', p: 'canVoucherNotes' },
+    ];
+    
+    const availableViews = voucherViews.filter(v => hasP(v.p));
+    if (availableViews.length === 0) return null;
+
+    const isVoucherActive = availableViews.some(v => v.view === activeView);
+
     return (
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-bold transition-all duration-200 uppercase tracking-tighter ${
                     isVoucherActive
-                        ? 'bg-indigo-600 text-white shadow-md'
+                        ? 'bg-indigo-600 text-white shadow-lg'
                         : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                 }`}
             >
@@ -147,8 +160,8 @@ const VoucherEntryDropdown: React.FC<{
                 <span className="hidden sm:inline">Voucher Entry</span>
             </button>
             {isOpen && (
-                <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
-                    {voucherViews.map(item => (
+                <div className="absolute left-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-2xl py-2 z-50 ring-1 ring-black ring-opacity-5 animate-fade-in border dark:border-slate-700">
+                    {availableViews.map(item => (
                         <a
                             key={item.view}
                             href="#"
@@ -157,9 +170,9 @@ const VoucherEntryDropdown: React.FC<{
                                 setActiveView(item.view as AppView);
                                 setIsOpen(false);
                             }}
-                            className={`block px-4 py-2 text-sm ${
+                            className={`block px-4 py-2 text-xs font-black uppercase tracking-widest ${
                                 activeView === item.view
-                                    ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200'
+                                    ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 border-l-4 border-indigo-600'
                                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                             }`}
                         >
@@ -175,13 +188,11 @@ const VoucherEntryDropdown: React.FC<{
 const GstReportsDropdown: React.FC<{
   activeView: AppView;
   setActiveView: (view: AppView) => void;
-  t: any;
-}> = ({ activeView, setActiveView, t }) => {
+  userPermissions?: UserPermissions;
+  isOperator: boolean;
+}> = ({ activeView, setActiveView, userPermissions, isOperator }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const gstReportViews: GstReportView[] = ['gstr3b', 'hsnSales', 'hsnPurchase', 'gstWiseSales'];
-  const isGstActive = gstReportViews.includes(activeView as GstReportView);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -190,10 +201,13 @@ const GstReportsDropdown: React.FC<{
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  if (isOperator && !userPermissions?.canReportGst) return null;
+
+  const gstReportViews: GstReportView[] = ['gstr3b', 'hsnSales', 'hsnPurchase', 'gstWiseSales'];
+  const isGstActive = gstReportViews.includes(activeView as GstReportView);
 
   const reportLabels: Record<GstReportView, string> = {
     gstr3b: 'GSTR 3B Report',
@@ -206,9 +220,9 @@ const GstReportsDropdown: React.FC<{
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-bold transition-all duration-200 uppercase tracking-tighter ${
           isGstActive
-            ? 'bg-indigo-600 text-white shadow-md'
+            ? 'bg-indigo-600 text-white shadow-lg'
             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
         }`}
       >
@@ -216,7 +230,7 @@ const GstReportsDropdown: React.FC<{
         <span className="hidden sm:inline">GST Reports</span>
       </button>
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
+        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-2xl py-2 z-50 ring-1 ring-black ring-opacity-5 animate-fade-in border dark:border-slate-700">
           {gstReportViews.map(view => (
             <a
               key={view}
@@ -226,9 +240,9 @@ const GstReportsDropdown: React.FC<{
                 setActiveView(view);
                 setIsOpen(false);
               }}
-              className={`block px-4 py-2 text-sm ${
+              className={`block px-4 py-2 text-xs font-black uppercase tracking-widest ${
                 activeView === view
-                  ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200'
+                  ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 border-l-4 border-indigo-600'
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
@@ -246,14 +260,11 @@ const ReportsDropdown: React.FC<{
   setActiveView: (view: AppView) => void;
   t: any;
   isSuperAdmin: boolean;
-}> = ({ activeView, setActiveView, t, isSuperAdmin }) => {
+  userPermissions?: UserPermissions;
+  isOperator: boolean;
+}> = ({ activeView, setActiveView, t, isSuperAdmin, userPermissions, isOperator }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const reportViews: ReportView[] = ['dashboard', 'daybook', 'suppliersLedger', 'customerLedger', 'salesReport', 'salesmanReport', 'companyWiseSale', 'companyWiseBillWiseProfit', 'chequePrint'];
-  if (isSuperAdmin) reportViews.push('subscriptionAdmin');
-
-  const isReportsActive = reportViews.includes(activeView as ReportView);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -262,31 +273,37 @@ const ReportsDropdown: React.FC<{
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-  
-  const reportLabels: Record<ReportView, string> = {
-    dashboard: t.reports.dashboard,
-    daybook: t.reports.daybook,
-    suppliersLedger: t.reports.suppliersLedger,
-    customerLedger: t.reports.customerLedger,
-    salesReport: t.reports.salesReport,
-    salesmanReport: t.reports.salesmanReport,
-    companyWiseSale: t.reports.companyWiseSale,
-    companyWiseBillWiseProfit: t.reports.companyWiseBillWiseProfit,
-    chequePrint: t.reports.chequePrint,
-    subscriptionAdmin: 'Subscription Admin',
-  };
+
+  const hasP = (key: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[key]);
+
+  const reportViews: {view: ReportView, label: string, p?: keyof UserPermissions}[] = [
+    { view: 'dashboard', label: t.reports.dashboard, p: 'canReportDashboard' },
+    { view: 'daybook', label: t.reports.daybook, p: 'canReportDaybook' },
+    { view: 'suppliersLedger', label: t.reports.suppliersLedger, p: 'canReportSupplierLedger' },
+    { view: 'customerLedger', label: t.reports.customerLedger, p: 'canReportCustomerLedger' },
+    { view: 'salesReport', label: t.reports.salesReport, p: 'canReportSales' },
+    { view: 'salesmanReport', label: t.reports.salesmanReport, p: 'canReportSalesman' },
+    { view: 'companyWiseSale', label: t.reports.companyWiseSale, p: 'canReportCompanySales' },
+    { view: 'companyWiseBillWiseProfit', label: t.reports.companyWiseBillWiseProfit, p: 'canReportProfit' },
+    { view: 'chequePrint', label: t.reports.chequePrint, p: 'canReportCheque' },
+  ];
+
+  const availableReports = reportViews.filter(rv => !rv.p || hasP(rv.p));
+  if (isSuperAdmin) availableReports.push({ view: 'subscriptionAdmin', label: 'Subscription Admin' });
+
+  if (availableReports.length === 0) return null;
+
+  const isReportsActive = availableReports.some(rv => rv.view === activeView);
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+        className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-bold transition-all duration-200 uppercase tracking-tighter ${
           isReportsActive
-            ? 'bg-indigo-600 text-white shadow-md'
+            ? 'bg-indigo-600 text-white shadow-lg'
             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
         }`}
       >
@@ -294,23 +311,23 @@ const ReportsDropdown: React.FC<{
         <span className="hidden sm:inline">{t.nav.reports}</span>
       </button>
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg py-1 z-50 ring-1 ring-black ring-opacity-5">
-          {reportViews.map(view => (
+        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-2xl py-2 z-50 ring-1 ring-black ring-opacity-5 animate-fade-in border dark:border-slate-700">
+          {availableReports.map(rv => (
              <a
-              key={view}
+              key={rv.view}
               href="#"
               onClick={(e) => {
                 e.preventDefault();
-                setActiveView(view);
+                setActiveView(rv.view);
                 setIsOpen(false);
               }}
-              className={`block px-4 py-2 text-sm ${
-                activeView === view 
-                ? 'bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-200' 
+              className={`block px-4 py-2 text-xs font-black uppercase tracking-widest ${
+                activeView === rv.view 
+                ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 border-l-4 border-indigo-600' 
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
-              {reportLabels[view]}
+              {rv.label}
             </a>
           ))}
         </div>
@@ -328,71 +345,78 @@ const Header: React.FC<HeaderProps> = ({ activeView, setActiveView, onOpenSettin
   const hasPermission = (perm: keyof UserPermissions) => !isOperator || (userPermissions && userPermissions[perm]);
 
   return (
-    <header className="bg-white dark:bg-slate-800 shadow-md sticky top-0 z-40">
+    <header className="bg-white dark:bg-slate-800 shadow-xl border-b dark:border-slate-700 sticky top-0 z-40 backdrop-blur-sm bg-opacity-95">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <div className="flex items-center">
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-               <CloudIcon className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
-               <span className="hidden lg:flex items-center gap-2">
-                Cloud-TAG 
-                {isPremium && <span className="bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm font-extrabold uppercase tracking-tighter">PRO</span>}
-               </span>
+        <div className="flex items-center justify-between h-18">
+          <div className="flex items-center py-2">
+            <h1 className="text-xl font-black text-slate-800 dark:text-slate-200 flex items-center gap-2 cursor-pointer group" onClick={() => setActiveView('dashboard')}>
+               <div className="p-1.5 bg-indigo-600 rounded-lg shadow-indigo-500/50 shadow-lg group-hover:scale-110 transition-transform">
+                <CloudIcon className="h-7 w-7 text-white" />
+               </div>
+               <div className="flex flex-col leading-none">
+                <span className="tracking-tighter text-lg">Cloud-TAG</span>
+                {isPremium && <span className="text-[8px] bg-amber-400 text-amber-900 px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter w-fit mt-0.5">PRO EDITION</span>}
+               </div>
             </h1>
             
-            {/* Counter/Cashier ID Visual */}
-            <div className="ml-6 hidden md:flex items-center gap-2 bg-slate-100 dark:bg-slate-900/50 px-3 py-1.5 rounded-full border dark:border-slate-700">
+            <div className="ml-6 hidden lg:flex items-center gap-2 bg-slate-50 dark:bg-slate-900/50 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 shadow-inner">
                 <UserCircleIcon className={`h-4 w-4 ${isOperator ? 'text-emerald-500' : 'text-indigo-500'}`} />
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    {isOperator ? `Cashier: ${user.displayName || 'Operator'}` : 'Admin Counter'}
-                </span>
+                <div className="flex flex-col">
+                    <span className="text-[8px] font-black uppercase text-slate-400">Current Session</span>
+                    <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-widest truncate max-w-[100px]">
+                        {isOperator ? `${user.displayName || 'Staff'}` : 'Admin'}
+                    </span>
+                </div>
             </div>
           </div>
           
           <div className="flex items-center space-x-2 sm:space-x-4">
-             <nav className="hidden sm:flex space-x-2">
-              {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
-              {hasPermission('canPurchase') && <VoucherEntryDropdown activeView={activeView} setActiveView={setActiveView} />}
+             <nav className="hidden sm:flex space-x-1">
+              <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} userPermissions={userPermissions} isOperator={isOperator} />
+              <VoucherEntryDropdown activeView={activeView} setActiveView={setActiveView} userPermissions={userPermissions} isOperator={isOperator} />
               {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
-              {hasPermission('canPayment') && <GstReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} />}
-              {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
+              <GstReportsDropdown activeView={activeView} setActiveView={setActiveView} userPermissions={userPermissions} isOperator={isOperator} />
+              <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} userPermissions={userPermissions} isOperator={isOperator} />
             </nav>
 
-            {isSuperAdmin && (
-                <button
-                    onClick={() => setActiveView('subscriptionAdmin')}
-                    className={`p-2 rounded-full transition-colors ${activeView === 'subscriptionAdmin' ? 'bg-indigo-600 text-white shadow' : 'text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}
-                    title="Subscription Management"
-                >
-                    <AdjustmentsIcon className="h-6 w-6" />
-                </button>
-            )}
+            <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block mx-2"></div>
 
-            {!isOperator && (
-             <button
-              onClick={onOpenSettings}
-              className="p-2 rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              aria-label="Open Settings"
-              title={t.nav.settings}
-            >
-              <SettingsIcon className="h-6 w-6" />
-            </button>
-            )}
-            <button
-              onClick={onLogout}
-              className="px-3 py-2 rounded-md text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-            >
-             {t.nav.logout}
-            </button>
+            <div className="flex items-center gap-2">
+                {isSuperAdmin && (
+                    <button
+                        onClick={() => setActiveView('subscriptionAdmin')}
+                        className={`p-2.5 rounded-xl transition-all ${activeView === 'subscriptionAdmin' ? 'bg-amber-100 text-amber-700 shadow-inner' : 'text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`}
+                        title="Global Admin Control"
+                    >
+                        <AdjustmentsIcon className="h-5 w-5" />
+                    </button>
+                )}
+
+                {!isOperator && (
+                <button
+                    onClick={onOpenSettings}
+                    className="p-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-600"
+                    aria-label="Open Settings"
+                    title={t.nav.settings}
+                >
+                    <SettingsIcon className="h-5 w-5" />
+                </button>
+                )}
+                <button
+                onClick={onLogout}
+                className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all border border-transparent hover:border-rose-100 dark:hover:border-rose-900/50"
+                >
+                {t.nav.logout}
+                </button>
+            </div>
           </div>
         </div>
-         <nav className="sm:hidden flex justify-around p-2 border-t dark:border-slate-700">
-            {hasPermission('canPurchase') && <MasterDataDropdown activeView={activeView} setActiveView={setActiveView} />}
-            {hasPermission('canPurchase') && <VoucherEntryDropdown activeView={activeView} setActiveView={setActiveView} />}
-            {hasPermission('canInventory') && <NavButton label={t.nav.inventory} view="inventory" activeView={activeView} onClick={setActiveView} icon={<ArchiveIcon className="h-5 w-5" />} />}
-            {hasPermission('canReports') && <ReportsDropdown activeView={activeView} setActiveView={setActiveView} t={t} isSuperAdmin={isSuperAdmin} />}
-        </nav>
       </div>
+      <style>{`
+        .h-18 { height: 4.5rem; }
+        @keyframes fade-in { 0% { opacity: 0; transform: translateY(-5px); } 100% { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
+      `}</style>
     </header>
   );
 };
