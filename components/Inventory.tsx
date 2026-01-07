@@ -1,8 +1,9 @@
+
 import React, { useState, useMemo, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import type { Product, Purchase, Bill, SystemConfig, GstRate, Batch, Company, PurchaseReturn, SaleReturn } from '../types';
 import Card from './common/Card';
 import Modal from './common/Modal';
-import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, SearchIcon, XIcon, SwitchHorizontalIcon } from './icons/Icons';
+import { DownloadIcon, TrashIcon, PlusIcon, PencilIcon, ArchiveIcon, BarcodeIcon, PrinterIcon, InformationCircleIcon, SearchIcon, XIcon, SwitchHorizontalIcon, GlobeIcon } from './icons/Icons';
 import { getTranslation } from '../utils/translationHelper';
 
 const normalizeCode = (str: string = "") => str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
@@ -278,8 +279,15 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
         return rows.sort((a, b) => a.productName.localeCompare(b.productName));
     }, [products, selectedCompany]);
 
+    const totalPeriodValuation = useMemo(() => detailedStockData.reduce((sum, r) => sum + r.valuation, 0), [detailedStockData]);
+
     return (
-        <Card title="Company Stock Ledger">
+        <Card title={
+            <div className="flex justify-between items-center w-full">
+                <span className="flex items-center gap-2"><GlobeIcon className="h-5 w-5 text-indigo-500" /> Company Stock Ledger</span>
+                <span className="text-xs bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full font-black uppercase">Net Valuation: ₹{totalPeriodValuation.toLocaleString()}</span>
+            </div>
+        }>
             <div className="flex flex-col md:flex-row gap-4 mb-6 items-end">
                 <div className="w-full md:w-1/3"><label className="block text-xs font-bold text-slate-500 uppercase mb-1 tracking-widest">Select Company</label><select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className={inputStyle}>{companies.map(c => <option key={c} value={c}>{c === 'All' ? 'All Companies' : c}</option>)}</select></div>
                 <button onClick={() => exportToCsv('company_wise_stock', detailedStockData)} className="w-full md:w-auto bg-emerald-600 text-white px-6 py-2 rounded-lg font-black uppercase text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 shadow-md transition-all"><DownloadIcon className="h-5 w-5" /> Export Excel</button>
@@ -292,6 +300,12 @@ const CompanyWiseStockView: React.FC<{ products: Product[], purchases: Purchase[
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                         {detailedStockData.map((row, idx) => (<tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"><td className="px-4 py-3"><div className="font-bold text-slate-800 dark:text-slate-200">{row.productName}</div><div className="text-[10px] text-slate-400 uppercase">{row.company}</div></td><td className="px-4 py-3"><div className="font-mono text-slate-700 dark:text-slate-300">{row.batchNumber}</div><div className="text-[10px] text-slate-500 italic">{row.expiryDate}</div></td><td className="px-4 py-3 text-center font-medium text-slate-500">{formatStock(row.opening, row.unitsPerStrip)}</td><td className="px-4 py-3 text-center font-black text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900/40">{formatStock(row.closing, row.unitsPerStrip)}</td><td className="px-4 py-3 text-right font-black text-slate-700 dark:text-slate-300">₹{row.valuation.toFixed(2)}</td></tr>))}
                     </tbody>
+                    <tfoot className="bg-slate-50 dark:bg-slate-900/50">
+                        <tr>
+                            <td colSpan={4} className="px-4 py-4 text-right font-black text-slate-500 uppercase text-[10px]">Grand Total Valuation:</td>
+                            <td className="px-4 py-4 text-right font-black text-indigo-600 text-lg">₹{totalPeriodValuation.toLocaleString()}</td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </Card>
@@ -343,12 +357,11 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
         const pName = selectedProduct.name.toLowerCase().trim();
         const pCompany = selectedProduct.company.toLowerCase().trim();
 
-        // 1. Add Batch Opening Stocks
         selectedProduct.batches?.forEach(b => {
             if (b.openingStock && b.openingStock > 0) {
                 txs.push({
                     id: `opening_${b.id}`,
-                    date: new Date(0), // Placeholder for starting
+                    date: new Date(0), 
                     type: 'OPENING',
                     particulars: `Opening Stock (Batch: ${b.batchNumber})`,
                     batch: b.batchNumber,
@@ -358,7 +371,6 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             }
         });
 
-        // 2. Add Purchases
         purchases?.forEach(pur => pur.items.forEach(item => {
             const iBarcode = normalizeCode(item.barcode || "");
             const isMatch = item.productId === selectedProduct.id || 
@@ -378,7 +390,6 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             }
         }));
 
-        // 3. Add Sales
         bills?.forEach(bill => bill.items.forEach(item => {
              if (item.productId === selectedProduct.id) {
                  txs.push({
@@ -393,7 +404,6 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
              }
         }));
 
-        // 4. Add Purchase Returns (Stock reduction)
         purchaseReturns?.forEach(ret => ret.items.forEach(item => {
             if (item.productId === selectedProduct.id) {
                 const returnUnits = item.quantity * (item.unitsPerStrip || unitsPerStrip);
@@ -409,7 +419,6 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
             }
         }));
 
-        // 5. Add Sale Returns (Stock addition)
         saleReturns?.forEach(sr => sr.items.forEach(item => {
             if (item.productId === selectedProduct.id) {
                 txs.push({
@@ -507,7 +516,6 @@ const SelectedItemStockView: React.FC<{ products: Product[], purchases: Purchase
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800 text-slate-300">
-                                    {/* Sub-Header style line for Opening Balance */}
                                     <tr className="bg-slate-900/50 border-b border-slate-800">
                                         <td colSpan={5} className="px-6 py-4 text-right">
                                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Opening Balance (Master):</span>
