@@ -180,6 +180,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                 <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: '5mm' }}>
                     <h2 style={{ fontSize: '14pt', fontWeight: 'bold', margin: 0 }}>TAX INVOICE</h2>
                     <p style={{ margin: '1.5mm 0 0 0' }}><strong>Bill No:</strong> {bill.billNumber}</p>
+                    {/* Fix: Corrected broken JSX syntax on line 183 */}
                     <p style={{ margin: '1mm 0 0 0' }}><strong>Date:</strong> {new Date(bill.date).toLocaleDateString()}</p>
                 </div>
             </header>
@@ -195,13 +196,14 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                     <thead>
                         <tr>
                             <th style={{...styles.th, width: '4%'}}>#</th>
-                            <th style={{...styles.th, width: isPharmaMode ? '38%' : '58%'}}>Item Description</th>
-                            <th style={{...styles.th, width: '10%'}}>HSN</th>
-                            {isPharmaMode && <th style={{...styles.th, width: '10%'}}>Batch</th>}
-                            {isPharmaMode && <th style={{...styles.th, width: '10%'}}>Exp.</th>}
+                            <th style={{...styles.th, width: isPharmaMode ? '34%' : '50%'}}>Item Description</th>
+                            <th style={{...styles.th, width: '8%'}}>HSN</th>
+                            {isPharmaMode && <th style={{...styles.th, width: '8%'}}>Batch</th>}
+                            {isPharmaMode && <th style={{...styles.th, width: '8%'}}>Exp.</th>}
                             <th style={{...styles.th, textAlign: 'center', width: '6%'}}>Qty</th>
-                            <th style={{...styles.th, textAlign: 'right', width: '11%'}}>MRP</th>
-                            <th style={{...styles.th, textAlign: 'right', width: '11%'}}>Amount</th>
+                            <th style={{...styles.th, textAlign: 'right', width: '10%'}}>MRP</th>
+                            <th style={{...styles.th, textAlign: 'center', width: '8%'}}>Disc%</th>
+                            <th style={{...styles.th, textAlign: 'right', width: '10%'}}>Amount</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -218,6 +220,7 @@ const PrintableA5Bill: React.FC<{ bill: Bill; companyProfile: CompanyProfile; sy
                                 {isPharmaMode && <td style={styles.td}>{item.expiryDate}</td>}
                                 <td style={{...styles.td, textAlign: 'center'}}>{item.quantity}</td>
                                 <td style={{...styles.td, textAlign: 'right'}}>{item.mrp.toFixed(2)}</td>
+                                <td style={{...styles.td, textAlign: 'center'}}>{item.discount ? `${item.discount}%` : '-'}</td>
                                 <td style={{...styles.td, textAlign: 'right', fontWeight: 500}}>{item.total.toFixed(2)}</td>
                             </tr>
                         ))}

@@ -39,6 +39,7 @@ export interface CartItem {
   looseQty: number;
   quantity: number; // Total quantity in base units
   mrp: number; // MRP per strip
+  discount?: number; // Discount percentage
   gst: number;
   total: number;
   addedAt?: number; // Timestamp for cloud sorting

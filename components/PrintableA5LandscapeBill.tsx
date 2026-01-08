@@ -18,7 +18,7 @@ const toWords = (num: number): string => {
         if (n < 20) return a[n];
         if (n < 100) return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '');
         if (n < 1000) return a[Math.floor(n / 100)] + ' hundred' + (n % 100 !== 0 ? ' and ' + convert(n % 100) : '');
-        if (n < 100000) return convert(Math.floor(n / 1000)) + ' thousand' + (n % 1000 !== 0 ? ' ' + convert(n % 100) : '');
+        if (n < 100000) return convert(Math.floor(n / 1000)) + ' thousand' + (n % 1000 !== 0 ? ' ' + convert(n % 1000) : '');
         if (n < 10000000) return convert(Math.floor(n / 100000)) + ' lakh' + (n % 100000 !== 0 ? ' ' + convert(n % 100000) : '');
         return convert(Math.floor(n / 10000000)) + ' crore' + (n % 10000000 !== 0 ? ' ' + convert(n % 10000000) : '');
     };
@@ -127,24 +127,25 @@ const PrintableA5LandscapeBill: React.FC<{ bill: Bill; companyProfile: CompanyPr
                 </div>
             </div>
 
-            {/* Items Table - Fixed no empty lines logic */}
+            {/* Items Table */}
             <div style={{...styles.section, flexGrow: 1, overflow: 'hidden', borderBottom: 'none'}}>
                 <table style={styles.table}>
                     <thead>
                         <tr>
                             <th style={{...styles.th, width: '3%'}}>Sr.</th>
-                            <th style={{...styles.th, width: '30%', textAlign: 'left'}}>Description</th>
-                            <th style={{...styles.th, width: '10%'}}>HSN Code</th>
-                            <th style={{...styles.th, width: '5%'}}>Qty</th>
-                            <th style={{...styles.th, width: '5%'}}>UOM</th>
-                            <th style={{...styles.th, width: '8%'}}>MRP</th>
+                            <th style={{...styles.th, width: '28%', textAlign: 'left'}}>Description</th>
+                            <th style={{...styles.th, width: '8%'}}>HSN Code</th>
+                            <th style={{...styles.th, width: '4%'}}>Qty</th>
+                            <th style={{...styles.th, width: '4%'}}>UOM</th>
+                            <th style={{...styles.th, width: '7%'}}>MRP</th>
+                            <th style={{...styles.th, width: '5%'}}>D%</th>
                             <th style={{...styles.th, width: '8%'}}>Rate</th>
-                            <th style={{...styles.th, width: '10%'}}>Taxable Val</th>
-                            <th style={{...styles.th, width: '4%'}}>C%</th>
+                            <th style={{...styles.th, width: '9%'}}>Taxable Val</th>
+                            <th style={{...styles.th, width: '3%'}}>C%</th>
                             <th style={{...styles.th, width: '6%'}}>CGST Amt</th>
-                            <th style={{...styles.th, width: '4%'}}>S%</th>
+                            <th style={{...styles.th, width: '3%'}}>S%</th>
                             <th style={{...styles.th, width: '6%'}}>SGST Amt</th>
-                            <th style={{...styles.th, width: '10%'}}>Total</th>
+                            <th style={{...styles.th, width: '8%'}}>Total</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -159,6 +160,7 @@ const PrintableA5LandscapeBill: React.FC<{ bill: Bill; companyProfile: CompanyPr
                                     <td style={{...styles.td, textAlign: 'center'}}>{item.quantity}</td>
                                     <td style={{...styles.td, textAlign: 'center'}}>PCS</td>
                                     <td style={{...styles.td, textAlign: 'right'}}>{item.mrp.toFixed(2)}</td>
+                                    <td style={{...styles.td, textAlign: 'center'}}>{item.discount ? `${item.discount}%` : '-'}</td>
                                     <td style={{...styles.td, textAlign: 'right'}}>{(taxable / item.quantity).toFixed(2)}</td>
                                     <td style={{...styles.td, textAlign: 'right'}}>{taxable.toFixed(2)}</td>
                                     <td style={{...styles.td, textAlign: 'center'}}>{(item.gst / 2)}</td>
@@ -182,7 +184,7 @@ const PrintableA5LandscapeBill: React.FC<{ bill: Bill; companyProfile: CompanyPr
                             <p style={{margin: '1mm 0 0 0'}}>Goods once sold will not be taken back or exchanged.</p>
                         </div>
                         <div style={{marginTop: '1mm'}}>
-                            <p style={{fontWeight: 'bold', margin: 0, fontSize: '7.5pt'}}>{systemConfig.bankDetails || 'HDFC A/C NO 50200081513801 IFSC CODE HDFC0001016'}</p>
+                            <p style={{fontWeight: 'bold', margin: 0, fontSize: '7.5pt'}}>{systemConfig.bankDetails || 'BANK DETAILS NOT CONFIGURED'}</p>
                             <p style={{fontSize: '8.5pt', fontWeight: 'bold', marginTop: '1mm'}}>Rs.{toWords(bill.grandTotal)}</p>
                         </div>
                     </div>
@@ -208,7 +210,7 @@ const PrintableA5LandscapeBill: React.FC<{ bill: Bill; companyProfile: CompanyPr
             {/* Bottom Branding / Remarks Row */}
             <div style={{display: 'flex', justifyContent: 'space-between', padding: '1mm 0', fontSize: '7.5pt', borderTop: '0.2pt solid black', marginTop: '1mm'}}>
                 <div style={{width: '30%'}}>M.Soft India@9890072651</div>
-                <div style={{width: '40%', textAlign: 'center', fontWeight: 'bold'}}>Subject to Nanded. Jurisdiction (E. & OE)</div>
+                <div style={{width: '40%', textAlign: 'center', fontWeight: 'bold'}}>Subject to Local Jurisdiction (E. & OE)</div>
                 <div style={{width: '30%', textAlign: 'right'}}>For {companyProfile.name}</div>
             </div>
         </div>

@@ -235,6 +235,7 @@ interface BillingProps {
 }
 
 const inputStyle = "bg-yellow-100 text-slate-900 placeholder-slate-500 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500";
+const cartInputStyle = "w-full text-center p-1.5 bg-yellow-100 text-slate-900 border-2 border-slate-200 rounded font-bold focus:ring-2 focus:ring-indigo-500 outline-none";
 
 const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], customers, salesmen, onGenerateBill, companyProfile, systemConfig, user, editingBill, onUpdateBill, onCancelEdit, onAddCustomer, onAddSalesman, onUpdateConfig, isSubscriptionExpired, cart, onAddToCart, onRemoveFromCart, onUpdateCartItem }) => {
   const isPharmaMode = systemConfig.softwareMode === 'Pharma';
@@ -261,6 +262,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
+  const cartItemDiscInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Credit'>('Cash');
   const [showScanner, setShowScanner] = useState(!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false);
@@ -379,7 +381,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
             await onUpdateCartItem(existingItem.batchId, { 
                 looseQty: newLQty, 
                 quantity: newLQty, 
-                total: newLQty * (existingItem.mrp) 
+                total: newLQty * (existingItem.mrp) * (1 - (existingItem.discount || 0) / 100) 
             }); 
         } 
         else { 
@@ -390,7 +392,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                 stripQty: newStripQty, 
                 looseQty: newLooseQty, 
                 quantity: newTotalUnits, 
-                total: newTotalUnits * (existingItem.mrp / unitsPerStrip) 
+                total: newTotalUnits * (existingItem.mrp / unitsPerStrip) * (1 - (existingItem.discount || 0) / 100) 
             }); 
         } 
         lastAddedBatchIdRef.current = existingItem.batchId;
@@ -408,6 +410,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
             looseQty: 1, 
             quantity: 1, 
             mrp: sellingPrice, 
+            discount: 0,
             gst: product.gst, 
             total: unitPrice, 
             addedAt: Date.now(),
@@ -824,7 +827,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                   )}
                 </div>
                 {isPharmaMode && (
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="Dr. Name" className={`${inputStyle} w-full p-2.5`} /></div>
+                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={setDoctorName} placeholder="Dr. Name" className={`${inputStyle} w-full p-2.5`} /></div>
                 )}
                 {systemConfig.enableSalesman && (
                     <div>
@@ -859,6 +862,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                         <th className="px-4 py-4 text-center">STRI</th>
                         <th className="px-4 py-4 text-center">TAB.</th>
                         <th className="px-4 py-4 text-right">M.R.P./S</th>
+                        <th className="px-4 py-4 text-center">DISC%</th>
                         <th className="px-4 py-4 text-right">AMOUNT</th>
                         <th className="px-4 py-4 text-center"></th>
                       </tr>
@@ -867,6 +871,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                         <th className="px-4 py-4">{t.billing.product}</th>
                         <th className="px-4 py-4 text-center">{t.billing.qty}</th>
                         <th className="px-4 py-4 text-right">{t.billing.mrp}</th>
+                        <th className="px-4 py-4 text-center">DISC%</th>
                         <th className="px-4 py-4 text-right">{t.billing.amount}</th>
                         <th className="px-4 py-4 text-center"></th>
                       </tr>
@@ -876,6 +881,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                     {cart.map(item => {
                         const product = products.find(p => p.id === item.productId);
                         const unitPrice = item.mrp / (item.unitsPerStrip || 1);
+                        const discFactor = (1 - (item.discount || 0) / 100);
                         return (
                       <tr key={item.batchId} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                         <td className="px-4 py-3.5">
@@ -897,8 +903,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                 <input ref={el => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="number" value={item.stripQty || ''} onChange={e => {
                                     const sQty = parseInt(e.target.value) || 0;
                                     const totalUnits = (sQty * (item.unitsPerStrip || 1)) + (item.looseQty || 0);
-                                    onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * unitPrice });
-                                }} className="w-14 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                                    onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * unitPrice * discFactor });
+                                }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14`} />
                               </div>
                             </td>
                             <td className="px-4 py-3.5">
@@ -906,8 +912,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                 <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.looseQty || ''} onChange={e => {
                                     const lQty = parseInt(e.target.value) || 0;
                                     const totalUnits = ((item.stripQty || 0) * (item.unitsPerStrip || 1)) + lQty;
-                                    onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice });
-                                }} className="w-14 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                                    onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice * discFactor });
+                                }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14`} />
                               </div>
                             </td>
                             <td className="px-4 py-3.5 text-right font-medium">
@@ -915,9 +921,17 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                   <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
                                       const newMrp = parseFloat(e.target.value) || 0;
                                       const uPrice = newMrp / (item.unitsPerStrip || 1);
-                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * uPrice });
-                                  }} className="w-20 text-right p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * uPrice * discFactor });
+                                  }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-20 text-right`} />
                               ) : `₹${item.mrp.toFixed(2)}`}
+                            </td>
+                            <td className="px-4 py-3.5">
+                                <div className="flex flex-col items-center">
+                                    <input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
+                                        const disc = parseFloat(e.target.value) || 0;
+                                        onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * unitPrice * (1 - disc / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
+                                </div>
                             </td>
                           </>
                         ) : (
@@ -926,21 +940,34 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                <div className="flex items-center justify-center">
                                    <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.quantity || ''} onChange={e => {
                                        const qty = parseInt(e.target.value) || 0;
-                                       onUpdateCartItem(item.batchId, { quantity: qty, looseQty: qty, total: qty * unitPrice });
-                                   }} className="w-16 text-center p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                                       onUpdateCartItem(item.batchId, { quantity: qty, looseQty: qty, total: qty * unitPrice * discFactor });
+                                   }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-16`} />
                                </div>
                             </td>
                             <td className="px-4 py-3.5 text-right font-medium">
                               {isMrpEditable ? (
                                   <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
                                       const newMrp = parseFloat(e.target.value) || 0;
-                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * newMrp });
-                                  }} className="w-20 text-right p-1.5 bg-yellow-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded font-bold" />
+                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * newMrp * discFactor });
+                                  }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-20 text-right`} />
                               ) : `₹${item.mrp.toFixed(2)}`}
+                            </td>
+                            <td className="px-4 py-3.5">
+                                <div className="flex flex-col items-center">
+                                    <input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
+                                        const disc = parseFloat(e.target.value) || 0;
+                                        onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * item.mrp * (1 - disc / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
+                                </div>
                             </td>
                           </>
                         )}
-                        <td className="px-4 py-3.5 text-right font-black text-slate-900 dark:text-white">₹{item.total.toFixed(2)}</td>
+                        <td className="px-4 py-3.5 text-right font-black text-slate-900 dark:text-white">
+                            <div className="flex flex-col items-end">
+                                <span>₹{item.total.toFixed(2)}</span>
+                                {item.discount > 0 && <span className="text-[9px] text-emerald-600">Saved ₹{(item.quantity * (item.mrp / (item.unitsPerStrip || 1)) * (item.discount / 100)).toFixed(2)}</span>}
+                            </div>
+                        </td>
                         <td className="px-4 py-3.5 text-center">
                           <button onClick={() => onRemoveFromCart(item.batchId)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"><TrashIcon className="h-5 w-5" /></button>
                         </td>

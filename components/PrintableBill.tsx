@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import type { Bill, CompanyProfile, SystemConfig } from '../types';
 
@@ -198,7 +199,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile, sys
                     <th style={{ ...styles.th, width: '25mm' }}>HSN/SAC</th>
                     <th style={{ ...styles.th, width: '25mm' }}>Quantity</th>
                     <th style={{ ...styles.th, width: '25mm' }}>Rate</th>
-                    <th style={{ ...styles.th, width: '15mm' }}>per</th>
+                    <th style={{ ...styles.th, width: '20mm' }}>Disc %</th>
                     <th style={{ ...styles.th, width: '30mm', borderRight: 0 }}>Amount</th>
                 </tr>
             </thead>
@@ -210,7 +211,7 @@ const PrintableBill: React.FC<PrintableBillProps> = ({ bill, companyProfile, sys
                         <td style={{ ...styles.td, textAlign: 'center' }}>{item.hsnCode}</td>
                         <td style={{ ...styles.td, textAlign: 'center', fontWeight: 'bold' }}>{item.quantity} Nos</td>
                         <td style={{ ...styles.td, textAlign: 'right' }}>{item.mrp.toFixed(2)}</td>
-                        <td style={{ ...styles.td, textAlign: 'center' }}>Nos</td>
+                        <td style={{ ...styles.td, textAlign: 'center' }}>{item.discount ? `${item.discount}%` : '-'}</td>
                         <td style={{ ...styles.td, textAlign: 'right', borderRight: 0, fontWeight: 'bold' }}>{item.total.toFixed(2)}</td>
                     </tr>
                 ))}
