@@ -731,6 +731,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                         placeholder="Point hand-scanner here for high-speed industrial QR data..." 
                         value={qrInput} 
                         onChange={e => handleQrInputChange(e.target.value)} 
+                        onFocus={e => e.currentTarget.select()}
+                        onMouseUp={e => e.preventDefault()}
                         className={`${inputStyle} w-full p-3 pl-11 text-sm shadow-inner font-mono`}
                     />
                     <div className="absolute left-3 top-3 text-indigo-400">
