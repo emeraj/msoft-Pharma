@@ -304,7 +304,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       return (isNegative ? '-' : '') + (result || '0 U');
   };
 
-  // Initial and Persistent Focus Enforcement for high-speed scanning
+  // Initial focus on component mount
   useEffect(() => {
     qrInputRef.current?.focus();
   }, []);
@@ -318,12 +318,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
   
   useEffect(() => {
-    // Check if we should skip focus (Sequential Scanning Mode)
+    // Check if we should skip focus (Sequential Scanning Mode or Manual Search jump)
     if (skipCartFocusRef.current) {
         skipCartFocusRef.current = false;
         lastAddedBatchIdRef.current = null;
-        // High priority focus back to QR Entry
-        qrInputRef.current?.focus();
+        // Selection is handled in the QR change handler via refs
         return;
     }
 
@@ -450,15 +449,28 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                     handleAddToCartLocal(product, batch);
                     setScanResultFeedback({ name: product.name, batch: batch.batchNumber });
                     setTimeout(() => setScanResultFeedback(null), 3000);
-                    // Critical: Clear and return focus
+                    
+                    // JUMP TO SEARCH AND HIGHLIGHT TEXT (Ctrl+A effect)
+                    setSearchTerm(product.name);
                     setQrInput('');
-                    qrInputRef.current?.focus();
+                    // Use double requestAnimationFrame or slight timeout for robust selection after render
+                    setTimeout(() => {
+                        if (searchInputRef.current) {
+                            searchInputRef.current.focus();
+                            searchInputRef.current.setSelectionRange(0, searchInputRef.current.value.length);
+                        }
+                    }, 20);
                 }
             } else {
-                // Not in master, clear QR and set search to help operator find it manually
+                // Not in master, jump to search anyway so they can see what was scanned
                 setSearchTerm(extractedPartNo);
                 setQrInput('');
-                qrInputRef.current?.focus();
+                setTimeout(() => {
+                    if (searchInputRef.current) {
+                        searchInputRef.current.focus();
+                        searchInputRef.current.setSelectionRange(0, searchInputRef.current.value.length);
+                    }
+                }, 20);
             }
         }
     }
@@ -710,7 +722,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                     <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
                        <GlobeIcon className="h-3 w-3" /> Quick Part QR Entry (Index 30, Len 17)
                     </label>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">Always Focused for Scanner</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Jumps to search after scan</span>
                 </div>
                 <div className="relative">
                     <input 
@@ -719,12 +731,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                         placeholder="Point hand-scanner here for high-speed industrial QR data..." 
                         value={qrInput} 
                         onChange={e => handleQrInputChange(e.target.value)} 
-                        onBlur={() => {
-                            // Enforce focus unless an overlay is open
-                            if (!showOrderSuccessModal && !isPrinterModalOpen && !showTextScanner && !substituteTarget && !isAddCustomerModalOpen && !isAddSalesmanModalOpen) {
-                                setTimeout(() => qrInputRef.current?.focus(), 10);
-                            }
-                        }}
                         className={`${inputStyle} w-full p-3 pl-11 text-sm shadow-inner font-mono`}
                     />
                     <div className="absolute left-3 top-3 text-indigo-400">
@@ -740,7 +746,23 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
               
               <div className="relative">
                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Manual Product Search</label>
-                <input ref={searchInputRef} type="text" placeholder={isPharmaMode ? t.billing.searchPlaceholderPharma : t.billing.searchPlaceholderRetail} value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} onKeyDown={handleSearchKeyDown} className={`${inputStyle} w-full p-4 text-lg shadow-inner h-14`} />
+                <input 
+                    ref={searchInputRef} 
+                    type="text" 
+                    placeholder={isPharmaMode ? t.billing.searchPlaceholderPharma : t.billing.searchPlaceholderRetail} 
+                    value={searchTerm} 
+                    onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} 
+                    onKeyDown={handleSearchKeyDown} 
+                    onFocus={e => {
+                        // Crucial: Select all text when field gains focus (mimics Ctrl+A)
+                        e.currentTarget.select();
+                    }}
+                    onMouseUp={e => {
+                        // Prevent the default browser behavior of clearing selection on mouseup
+                        e.preventDefault();
+                    }}
+                    className={`${inputStyle} w-full p-4 text-lg shadow-inner h-14`} 
+                />
                 <SearchIcon className="absolute right-4 top-10 h-6 w-6 text-slate-400" />
                 
                 {filteredProducts.length > 0 && (
