@@ -126,13 +126,7 @@ const Auth: React.FC = () => {
       </div>
       <footer className="bg-white dark:bg-slate-800 border-t dark:border-slate-700 py-4">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-600 dark:text-slate-400">
-          <p>
-            Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span>
-            <span className="mx-2">|</span>
-            Contact: <a href="tel:9890072651" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">9890072651</a>
-            <span className="mx-2">|</span>
-            Visit: <a href="http://msoftindia.com" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800 dark:hover:text-slate-200 transition-colors">msoftindia.com</a>
-          </p>
+          <p>Developed by: M. Soft India | Contact: 9890072651 | Visit: msoftindia.com</p>
         </div>
       </footer>
     </div>

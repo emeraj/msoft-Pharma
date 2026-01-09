@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy, setDoc, getDoc, writeBatch, increment, serverTimestamp } from 'firebase/firestore';
@@ -13,6 +14,7 @@ import Auth from './components/Auth';
 import PaymentEntry from './components/PaymentEntry';
 import SuppliersLedger from './components/SuppliersLedger';
 import SupplierMaster from './components/SupplierMaster';
+// Fix: Added missing import for CustomerLedger
 import CustomerLedger from './components/CustomerLedger';
 import LedgerMaster from './components/LedgerMaster';
 import BatchMaster from './components/BatchMaster';
@@ -196,7 +198,7 @@ function App() {
                     const iBarcode = normalizeCode(item.barcode || "");
                     const isMatch = (item.productId === product.id) || 
                                    (pBarcode !== "" && iBarcode === pBarcode) ||
-                                   (pBarcode === "" && iBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
+                                   (pBarcode === "" && item.productName.toLowerCase().trim() === pName && item.company.toLowerCase().trim() === pCompany);
                     
                     if (isMatch && normalizeCode(item.batchNumber) === bNum) {
                         const conversion = item.unitsPerStrip || unitsPerStrip;
@@ -287,8 +289,8 @@ function App() {
       await setDoc(itemRef, sanitizeForFirestore(itemToSave), { merge: true });
   };
   const handleRemoveFromCartCloud = async (batchId: string) => { if (!dataOwnerId) return; await deleteDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId)); };
-  const handleUpdateCartItemCloud = async (batchId: string, updates: Partial<CartItem>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId), sanitizeForFirestore(updates)); };
-  const handleClearCartCloud = async () => { if (!dataOwnerId) return; const batch = writeBatch(db); cloudCart.forEach(item => { batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)); }); await batch.commit(); };
+  const handleClearCartCloud = async (batchId: string, updates: Partial<CartItem>) => { if (!dataOwnerId) return; await updateDoc(doc(db, `users/${dataOwnerId}/tempCart`, batchId), sanitizeForFirestore(updates)); };
+  const handleClearCartCloudFull = async () => { if (!dataOwnerId) return; const batch = writeBatch(db); cloudCart.forEach(item => { batch.delete(doc(db, `users/${dataOwnerId}/tempCart`, item.batchId)); }); await batch.commit(); };
 
   const handleEditBill = (bill: Bill) => { setCloudCart([]); bill.items.forEach(item => handleAddToCartCloud(item)); setEditingBill(bill); setActiveView('billing'); };
   
@@ -503,7 +505,7 @@ function App() {
         <main className="max-w-7xl mx-auto py-6">
           {/* Voucher Entry Views */}
           {(activeView === 'billing' || activeView === 'saleEntry') && (
-            <Billing products={products} bills={bills} customers={customers} salesmen={salesmen} companyProfile={companyProfile} systemConfig={systemConfig} onGenerateBill={handleGenerateBill} onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingBill={editingBill} onUpdateBill={async (id, data) => { if (!dataOwnerId) return null; await updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(data)); return { id, ...data } as Bill; }} onCancelEdit={() => { setEditingBill(null); handleClearCartCloud(); setActiveView('billing'); }} onUpdateConfig={handleUpdateConfig} cart={cloudCart} onAddToCart={handleAddToCartCloud} onRemoveFromCart={handleRemoveFromCartCloud} onUpdateCartItem={handleUpdateCartItemCloud} />
+            <Billing products={products} bills={bills} customers={customers} salesmen={salesmen} companyProfile={companyProfile} systemConfig={systemConfig} onGenerateBill={handleGenerateBill} onAddCustomer={async (c) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/customers`), sanitizeForFirestore({ ...c, balance: c.openingBalance || 0 })); return { id: r.id, ...c, balance: c.openingBalance || 0 }; }} onAddSalesman={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/salesmen`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingBill={editingBill} onUpdateBill={async (id, data) => { if (!dataOwnerId) return null; await updateDoc(doc(db, `users/${dataOwnerId}/bills`, id), sanitizeForFirestore(data)); return { id, ...data } as Bill; }} onCancelEdit={() => { setEditingBill(null); handleClearCartCloudFull(); setActiveView('billing'); }} onUpdateConfig={handleUpdateConfig} cart={cloudCart} onAddToCart={handleAddToCartCloud} onRemoveFromCart={handleRemoveFromCartCloud} onUpdateCartItem={handleClearCartCloud} />
           )}
           {(activeView === 'purchases' || activeView === 'purchaseEntry') && (
              <Purchases products={products} purchases={purchases} companies={companies} suppliers={suppliers} systemConfig={systemConfig} gstRates={gstRates} onAddPurchase={handleAddPurchase} onUpdatePurchase={(id, data) => updateDoc(doc(db, `users/${dataOwnerId}/purchases`, id), sanitizeForFirestore(data) as any)} onDeletePurchase={handleDeletePurchase} onAddSupplier={async (s) => { const r = await addDoc(collection(db, `users/${dataOwnerId}/suppliers`), sanitizeForFirestore(s)); return { id: r.id, ...s }; }} editingPurchase={editingPurchase} onCancelEdit={() => setEditingPurchase(null)} onUpdateConfig={handleUpdateConfig} />
@@ -533,7 +535,7 @@ function App() {
       </div>
       <footer className="bg-white dark:bg-slate-800 border-t dark:border-slate-700 py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-600 dark:text-slate-400">
-          <p>Developed by: <span className="font-semibold text-indigo-600 dark:text-indigo-400">M. Soft India</span> | 9890072651 | msoftindia.com</p>
+          <p>Developed by: M. Soft India | Contact: 9890072651 | Visit: msoftindia.com</p>
         </div>
       </footer>
       <SettingsModal 
@@ -548,7 +550,7 @@ function App() {
         gstRates={gstRates} 
         onAddGstRate={(r) => addDoc(collection(db, `users/${dataOwnerId}/gstRates`), sanitizeForFirestore({ rate: r }))} 
         onUpdateGstRate={(id, r) => updateDoc(doc(db, `users/${dataOwnerId}/gstRates`, id), sanitizeForFirestore({ rate: r }))} 
-        onDeleteGstRate={(id) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))} 
+        onDeleteGstRate={(id, rateValue) => deleteDoc(doc(db, `users/${dataOwnerId}/gstRates`, id))} 
       />
     </div>
   );
