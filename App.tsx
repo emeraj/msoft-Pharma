@@ -535,7 +535,7 @@ function App() {
       </div>
       <footer className="bg-white dark:bg-slate-800 border-t dark:border-slate-700 py-4 mt-auto">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center text-sm text-slate-600 dark:text-slate-400">
-          <p>Developed by: M. Soft India | Contact: 9890072651 | Visit: msoftindia.com</p>
+          <p>Developed by: M. Soft India | Contact: 9890072651 | Visit: https://msoftindia.com</p>
         </div>
       </footer>
       <SettingsModal 
