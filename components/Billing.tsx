@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
 import type { Product, Batch, CartItem, Bill, CompanyProfile, SystemConfig, PrinterProfile, Customer, Salesman, Purchase } from '../types';
@@ -48,7 +49,6 @@ const UpgradeAiModal: React.FC<{ isOpen: boolean; onClose: () => void; featureNa
     );
 };
 
-/* Fix: Added missing SubstituteModal component to show alternative products during billing */
 interface SubstituteModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -61,11 +61,7 @@ interface SubstituteModalProps {
 
 const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClose, target, substitutes, onAdd, getLiveBatchStock, formatStock }) => {
     if (!isOpen || !target) return null;
-
-    const flattenedSubstitutes = substitutes.flatMap(sub => 
-        sub.batches.map(batch => ({ sub, batch }))
-    );
-
+    const flattenedSubstitutes = substitutes.flatMap(sub => sub.batches.map(batch => ({ sub, batch })));
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={`Alternatives for ${target.name}`} maxWidth="max-w-4xl">
             <div className="space-y-4">
@@ -73,58 +69,25 @@ const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClose, targ
                     <p className="text-[10px] font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest mb-1">Active Composition</p>
                     <p className="font-bold text-slate-800 dark:text-white italic">{target.composition || 'Not Specified'}</p>
                 </div>
-
                 <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <table className="w-full text-sm text-left">
                         <thead className="bg-[#1e293b] text-slate-300 uppercase text-[10px] font-black tracking-widest">
-                            <tr>
-                                <th className="px-4 py-3">Product / Company</th>
-                                <th className="px-4 py-3">Batch Details</th>
-                                <th className="px-4 py-3 text-right">Price</th>
-                                <th className="px-4 py-3 text-center">Action</th>
-                            </tr>
+                            <tr><th className="px-4 py-3">Product / Company</th><th className="px-4 py-3">Batch Details</th><th className="px-4 py-3 text-right">Price</th><th className="px-4 py-3 text-center">Action</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                             {flattenedSubstitutes.length > 0 ? flattenedSubstitutes.map(({ sub, batch }) => {
                                 const liveStock = getLiveBatchStock(sub, batch);
                                 return (
                                     <tr key={`${sub.id}-${batch.id}`} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
-                                        <td className="px-4 py-3">
-                                            <div className="font-bold text-slate-800 dark:text-slate-100 uppercase text-xs">{sub.name}</div>
-                                            <div className="text-[10px] text-slate-400 uppercase font-medium">{sub.company}</div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="font-mono text-xs text-slate-600 dark:text-slate-400">B: {batch.batchNumber}</div>
-                                            <div className="text-[10px] text-slate-500">Exp: {batch.expiryDate}</div>
-                                            <div className={`text-[10px] font-black mt-0.5 ${liveStock > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                                                Stock: {formatStock(liveStock, sub.unitsPerStrip)}
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-white">
-                                            ₹{(batch.saleRate || batch.mrp).toFixed(2)}
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <button 
-                                                onClick={() => { onAdd(sub, batch); onClose(); }} 
-                                                className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-md transition-all active:scale-95"
-                                            >
-                                                Add to Cart
-                                            </button>
-                                        </td>
+                                        <td className="px-4 py-3"><div className="font-bold text-slate-800 dark:text-slate-100 uppercase text-xs">{sub.name}</div><div className="text-[10px] text-slate-400 uppercase font-medium">{sub.company}</div></td>
+                                        <td className="px-4 py-3"><div className="font-mono text-xs text-slate-600 dark:text-slate-400">B: {batch.batchNumber}</div><div className="text-[10px] text-slate-500">Exp: {batch.expiryDate}</div><div className={`text-[10px] font-black mt-0.5 ${liveStock > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>Stock: {formatStock(liveStock, sub.unitsPerStrip)}</div></td>
+                                        <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-white">₹{(batch.saleRate || batch.mrp).toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-center"><button onClick={() => { onAdd(sub, batch); onClose(); }} className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-md transition-all active:scale-95">Add to Cart</button></td>
                                     </tr>
                                 );
-                            }) : (
-                                <tr>
-                                    <td colSpan={4} className="px-4 py-10 text-center text-slate-500 italic font-medium">
-                                        No alternative products found with the same composition in stock.
-                                    </td>
-                                </tr>
-                            )}
+                            }) : (<tr><td colSpan={4} className="px-4 py-10 text-center text-slate-500 italic font-medium">No alternative products found with the same composition in stock.</td></tr>)}
                         </tbody>
                     </table>
-                </div>
-                <div className="flex justify-end pt-4 border-t dark:border-slate-700">
-                    <button onClick={onClose} className="px-6 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-white font-bold rounded-xl hover:bg-slate-200 transition-colors">Close</button>
                 </div>
             </div>
         </Modal>
@@ -182,23 +145,22 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
-  const cartItemMrpInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
-  const cartItemDiscInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
 
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'Credit'>('Cash');
   const [showScanner, setShowScanner] = useState(!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false);
   const [isPrinterModalOpen, setPrinterModalOpen] = useState(false);
   const [billToPrint, setBillToPrint] = useState<Bill | null>(null);
   const [shouldResetAfterPrint, setShouldResetAfterPrint] = useState(false);
-  const [activeIndices, setActiveIndices] = useState<{ product: number; batch: number }>({ product: -1, batch: -1 });
+  
+  // High Speed Navigation Indices
+  const [activeProductIdx, setActiveProductIdx] = useState(-1);
+  const [activeCustomerIdx, setActiveCustomerIdx] = useState(-1);
+
   const [showOrderSuccessModal, setShowOrderSuccessModal] = useState(false);
   const [lastSavedBill, setLastSavedBill] = useState<Bill | null>(null);
-
-  const [showTextScanner, setShowTextScanner] = useState(false);
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [substituteTarget, setSubstituteTarget] = useState<Product | null>(null);
   const [scanResultFeedback, setScanResultFeedback] = useState<{name: string, batch?: string} | null>(null);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const getLiveBatchStock = useCallback((product: Product, batch: Batch): number => {
     const dbStock = batch.stock || 0;
@@ -246,19 +208,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     }
   }, [cart, isPharmaMode]);
 
-  useEffect(() => {
-    if (editingBill) {
-      setCustomerName(editingBill.customerName);
-      const existingCust = customers.find(c => c.id === editingBill.customerId || c.name === editingBill.customerName);
-      setSelectedCustomer(existingCust || null);
-      setDoctorName(editingBill.doctorName || '');
-      setPaymentMode(editingBill.paymentMode || 'Cash');
-      setSelectedSalesmanId(editingBill.salesmanId || '');
-    } else {
-      setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId('');
-    }
-  }, [editingBill, customers]);
-
   const handleAddToCartLocal = async (product: Product, batch: Batch) => { 
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
     if (isPharmaMode) { 
@@ -287,14 +236,14 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
         lastAddedBatchIdRef.current = newItem.batchId; 
         await onAddToCart(newItem); 
     } 
-    setSearchTerm(''); setSubstituteTarget(null); searchInputRef.current?.focus();
+    setSearchTerm(''); setSubstituteTarget(null); setActiveProductIdx(-1);
+    searchInputRef.current?.focus();
   };
 
   const handleBarcodeScan = (code: string) => {
     const product = products.find(p => p.barcode === code);
     if (product) {
-        const batchesWithStock = product.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(product, b) }));
-        const batch = batchesWithStock.sort((a, b) => b.liveStock - a.liveStock)[0];
+        const batch = [...product.batches].sort((a, b) => getLiveBatchStock(product, b) - getLiveBatchStock(product, a))[0];
         if (batch) handleAddToCartLocal(product, batch);
     }
   };
@@ -309,25 +258,78 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                 skipCartFocusRef.current = true;
                 const batch = [...product.batches].sort((a, b) => getLiveBatchStock(product, b) - getLiveBatchStock(product, a))[0];
                 if (batch) handleAddToCartLocal(product, batch);
-                setScanResultFeedback({ name: product.name, batch: batch?.batchNumber });
-                setTimeout(() => setScanResultFeedback(null), 3000);
-                setSearchTerm(product.name); setQrInput('');
+                setSearchTerm(''); setQrInput('');
                 setTimeout(() => { if (searchInputRef.current) { searchInputRef.current.focus(); searchInputRef.current.select(); } }, 20);
             }
         }
     }
   };
 
+  const filteredProducts = useMemo(() => {
+    if (!searchTerm) return [];
+    const term = normalizeCode(searchTerm);
+    return products.filter(p => normalizeCode(p.name).includes(term) || (p.barcode && normalizeCode(p.barcode).includes(term))).slice(0, 10);
+  }, [searchTerm, products]);
+
+  const filteredCustomers = useMemo(() => {
+      if (!customerName || selectedCustomer) return [];
+      return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5);
+  }, [customerName, selectedCustomer, customers]);
+
+  const handleProductKeyDown = (e: React.KeyboardEvent) => {
+      if (filteredProducts.length === 0) return;
+      if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setActiveProductIdx(prev => (prev < filteredProducts.length - 1 ? prev + 1 : prev));
+      } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setActiveProductIdx(prev => (prev > 0 ? prev - 1 : prev));
+      } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const targetIdx = activeProductIdx >= 0 ? activeProductIdx : 0;
+          const p = filteredProducts[targetIdx];
+          if (p) {
+              const batch = [...p.batches].sort((a,b) => getLiveBatchStock(p, b) - getLiveBatchStock(p, a))[0];
+              if (batch) handleAddToCartLocal(p, batch);
+          }
+      } else if (e.key === 'Escape') {
+          setSearchTerm('');
+          setActiveProductIdx(-1);
+      }
+  };
+
+  const handleCustomerKeyDown = (e: React.KeyboardEvent) => {
+      if (filteredCustomers.length === 0 && !customerName) return;
+      // Index totalItems+1 to account for "New Master Entry" option
+      const totalOptions = filteredCustomers.length + 1;
+      
+      if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setActiveCustomerIdx(prev => (prev < totalOptions - 1 ? prev + 1 : prev));
+      } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setActiveCustomerIdx(prev => (prev > 0 ? prev - 1 : prev));
+      } else if (e.key === 'Enter') {
+          e.preventDefault();
+          if (activeCustomerIdx >= 0 && activeCustomerIdx < filteredCustomers.length) {
+              const c = filteredCustomers[activeCustomerIdx];
+              setSelectedCustomer(c); setCustomerName(c.name); setShowCustomerSuggestions(false);
+          } else if (activeCustomerIdx === filteredCustomers.length || (filteredCustomers.length === 0 && customerName)) {
+              setAddCustomerModalOpen(true);
+          }
+      } else if (e.key === 'Escape') {
+          setShowCustomerSuggestions(false);
+          setActiveCustomerIdx(-1);
+      }
+  };
+
   const handleSaveBill = async (shouldPrint: boolean) => {
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
     if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
-    
-    // MANDATORY CUSTOMER FOR CREDIT
     if (paymentMode === 'Credit') {
         const isWalkIn = !customerName.trim() || customerName.toLowerCase().includes('walk-in') || customerName.toLowerCase().includes('patient') || customerName.toLowerCase().includes('customer');
         if (isWalkIn) { alert("Customer is MANDATORY for CREDIT transactions. Please select or add a specific ledger."); return; }
     }
-
     const billData: Omit<Bill, 'id' | 'billNumber'> = {
       date: new Date().toISOString(),
       customerName: customerName.trim() || (isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer),
@@ -343,9 +345,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       operatorId: auth.currentUser?.uid,
       operatorName: auth.currentUser?.displayName || 'Counter Staff'
     };
-
     const savedBill = isEditing ? await onUpdateBill!(editingBill!.id, billData, editingBill!) : await onGenerateBill(billData);
-
     if (savedBill) {
       setLastSavedBill(savedBill);
       setShowOrderSuccessModal(true);
@@ -355,7 +355,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
 
   const resetBilling = () => {
     setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId('');
-    setSearchTerm(''); setQrInput('');
+    setSearchTerm(''); setQrInput(''); setActiveProductIdx(-1); setActiveCustomerIdx(-1);
     if (systemConfig.enableQuickPartQR) qrInputRef.current?.focus(); else searchInputRef.current?.focus();
   };
 
@@ -372,17 +372,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
         }
       }
   };
-
-  const filteredProducts = useMemo(() => {
-    if (!searchTerm) return [];
-    const term = normalizeCode(searchTerm);
-    return products.filter(p => normalizeCode(p.name).includes(term) || (p.barcode && normalizeCode(p.barcode).includes(term))).slice(0, 10);
-  }, [searchTerm, products]);
-
-  const filteredCustomers = useMemo(() => {
-      if (!customerName || selectedCustomer) return [];
-      return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5);
-  }, [customerName, selectedCustomer, customers]);
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -403,7 +392,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
             <div className="space-y-6">
               {showScanner && <div className="animate-fade-in"><EmbeddedScanner onScanSuccess={handleBarcodeScan} onClose={() => setShowScanner(false)} /></div>}
 
-              {/* INDUSTRIAL QR ENTRY */}
               {systemConfig.enableQuickPartQR && (
                   <div className="bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
                     <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5"><GlobeIcon className="h-3.5 w-3.5" /> High-Speed QR Scanner Port (Index 30)</label>
@@ -414,42 +402,38 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                   </div>
               )}
 
-              {/* BILLING STEPS SECTION */}
               <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-                
-                {/* STEP 1: BILLING TYPE */}
                 <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
                         <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Step 1: Select Billing Type First</label>
                         {paymentMode === 'Credit' && <span className="text-[9px] font-black text-rose-500 uppercase animate-pulse">! Specific Customer Mandatory</span>}
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={() => setPaymentMode('Cash')} className={`flex-1 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex flex-col items-center gap-2 ${paymentMode === 'Cash' ? 'bg-indigo-600 text-white shadow-lg ring-4 ring-indigo-500/20' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'}`}>
-                            <CashIcon className="h-6 w-6" /> <span>CASH SALE</span>
-                        </button>
-                        <button onClick={() => setPaymentMode('Credit')} className={`flex-1 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex flex-col items-center gap-2 ${paymentMode === 'Credit' ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-500/20' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'}`}>
-                            <SwitchHorizontalIcon className="h-6 w-6" /> <span>CREDIT SALE</span>
-                        </button>
+                        <button onClick={() => setPaymentMode('Cash')} className={`flex-1 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex flex-col items-center gap-2 ${paymentMode === 'Cash' ? 'bg-indigo-600 text-white shadow-lg ring-4 ring-indigo-500/20' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'}`}><CashIcon className="h-6 w-6" /> <span>CASH SALE</span></button>
+                        <button onClick={() => setPaymentMode('Credit')} className={`flex-1 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex flex-col items-center gap-2 ${paymentMode === 'Credit' ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-500/20' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'}`}><SwitchHorizontalIcon className="h-6 w-6" /> <span>CREDIT SALE</span></button>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* STEP 2: CUSTOMER */}
                     <div className="relative">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Step 2: {isPharmaMode ? 'Patient' : 'Customer'} Name {paymentMode === 'Credit' && <span className="text-rose-500">*</span>}</label>
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Step 2: Customer Name {paymentMode === 'Credit' && <span className="text-rose-500">*</span>}</label>
                         <div className="relative">
-                            <input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); setShowCustomerSuggestions(true); }} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`${inputStyle} w-full p-3 pl-11 ${paymentMode === 'Credit' ? 'border-rose-300 ring-rose-500/10' : ''}`} />
+                            <input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); setShowCustomerSuggestions(true); setActiveCustomerIdx(-1); }} onKeyDown={handleCustomerKeyDown} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`${inputStyle} w-full p-3 pl-11 ${paymentMode === 'Credit' ? 'border-rose-300 ring-rose-500/10' : ''}`} />
                             <UserCircleIcon className={`absolute left-3 top-3 h-6 w-6 ${paymentMode === 'Credit' ? 'text-rose-400' : 'text-slate-400'}`} />
                         </div>
-                        {showCustomerSuggestions && filteredCustomers.length > 0 && (
+                        {showCustomerSuggestions && (filteredCustomers.length > 0 || customerName) && (
                             <ul className="absolute z-40 w-full mt-1 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-2xl overflow-hidden animate-fade-in">
-                                {filteredCustomers.map(c => <li key={c.id} onClick={() => { setSelectedCustomer(c); setCustomerName(c.name); setShowCustomerSuggestions(false); }} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b last:border-b-0 dark:border-slate-700 font-bold text-sm">{c.name} ({c.phone || 'No Ph'})</li>)}
+                                {filteredCustomers.map((c, idx) => (
+                                    <li key={c.id} onClick={() => { setSelectedCustomer(c); setCustomerName(c.name); setShowCustomerSuggestions(false); }} className={`px-4 py-3 cursor-pointer border-b last:border-b-0 dark:border-slate-700 font-bold text-sm transition-colors ${idx === activeCustomerIdx ? 'bg-indigo-600 text-white' : 'hover:bg-indigo-50 dark:hover:bg-slate-700'}`}>
+                                        {c.name} ({c.phone || 'No Ph'})
+                                    </li>
+                                ))}
+                                <li onClick={() => setAddCustomerModalOpen(true)} className={`px-4 py-3 cursor-pointer text-[10px] font-black uppercase tracking-widest transition-colors ${activeCustomerIdx === filteredCustomers.length ? 'bg-indigo-600 text-white' : 'text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100'}`}>
+                                    + Register New Ledger Master
+                                </li>
                             </ul>
                         )}
-                        {customerName && !selectedCustomer && <button onClick={() => setAddCustomerModalOpen(true)} className="mt-1.5 text-[10px] font-black text-indigo-600 uppercase hover:underline flex items-center gap-1"><PlusIcon className="h-3 w-3" /> New Ledger Master</button>}
                     </div>
-
-                    {/* STEP 3: SALESMAN */}
                     <div>
                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Step 3: Assign Salesman</label>
                         <div className="flex gap-2">
@@ -460,17 +444,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                 </select>
                                 <div className="absolute right-3 top-3.5 pointer-events-none text-slate-400"><SwitchHorizontalIcon className="h-4 w-4 rotate-90" /></div>
                             </div>
-                            <button onClick={() => setAddSalesmanModalOpen(true)} className="px-4 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-600 hover:text-indigo-600 transition-colors shadow-sm" title="Add Salesman"><PlusIcon className="h-6 w-6" /></button>
+                            <button onClick={() => setAddSalesmanModalOpen(true)} className="px-4 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg border border-slate-200 dark:border-slate-600 hover:text-indigo-600 transition-colors shadow-sm"><PlusIcon className="h-6 w-6" /></button>
                         </div>
                     </div>
-
-                    {isPharmaMode && (
-                        <div className="md:col-span-2"><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Doctor Name</label><input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="Dr. Signature..." className={`${inputStyle} w-full p-3`} /></div>
-                    )}
                 </div>
               </div>
 
-              {/* STEP 4: MANUAL SEARCH & CART */}
               <div className="mt-10">
                 <div className="flex items-center justify-between mb-4 px-1">
                     <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2"><ReceiptIcon className="h-5 w-5 text-indigo-500" /> {t.billing.cartItems}</h3>
@@ -483,28 +462,30 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                         <span className="text-[9px] font-bold text-slate-400 uppercase">Step 4: Add Products</span>
                     </div>
                     <div className="relative">
-                        <input ref={searchInputRef} type="text" placeholder="Type product name or barcode..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} onFocus={e => e.currentTarget.select()} className={`${inputStyle} w-full p-5 text-xl shadow-2xl h-16 border-2 border-indigo-100 group-focus-within:border-indigo-500 transition-all`} />
+                        <input ref={searchInputRef} type="text" placeholder="Type product name or barcode..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setActiveProductIdx(-1); }} onKeyDown={handleProductKeyDown} onFocus={e => e.currentTarget.select()} className={`${inputStyle} w-full p-5 text-xl shadow-2xl h-16 border-2 border-indigo-100 group-focus-within:border-indigo-500 transition-all`} />
                         <SearchIcon className="absolute right-5 top-5 h-7 w-7 text-indigo-400 animate-pulse" />
                         
                         {filteredProducts.length > 0 && (
                         <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border-2 border-indigo-500 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden animate-fade-in">
                             {filteredProducts.map((product, pIdx) => {
-                                const productBatches = [...product.batches].sort((a,b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime());
+                                const isActiveRow = pIdx === activeProductIdx;
                                 return (
-                            <div key={product.id} className={`border-b last:border-b-0 dark:border-slate-700 ${activeIndices.product === pIdx ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : ''}`}>
+                            <div key={product.id} className={`border-b last:border-b-0 dark:border-slate-700 ${isActiveRow ? 'bg-indigo-600 text-white' : ''}`}>
                                 <div className="p-4 flex justify-between items-start">
-                                    <div><h4 className="font-black text-lg text-slate-800 dark:text-slate-100">{product.name}</h4><p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company} | Barcode: {product.barcode || 'N/A'}</p></div>
-                                    <button onClick={() => setSubstituteTarget(product)} className="text-[10px] font-black bg-teal-100 text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-200 uppercase tracking-widest border border-teal-200 shadow-sm">Alternatives</button>
+                                    <div>
+                                        <h4 className={`font-black text-lg ${isActiveRow ? 'text-white' : 'text-slate-800 dark:text-slate-100'}`}>{product.name}</h4>
+                                        <p className={`text-[10px] uppercase font-black tracking-widest ${isActiveRow ? 'text-indigo-100' : 'text-slate-500'}`}>{product.company} | Barcode: {product.barcode || 'N/A'}</p>
+                                    </div>
+                                    <button onClick={() => setSubstituteTarget(product)} className={`text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-widest border shadow-sm ${isActiveRow ? 'bg-white text-indigo-600 border-white' : 'bg-teal-100 text-teal-700 border-teal-200'}`}>Alternatives</button>
                                 </div>
-                                <div className="flex overflow-x-auto p-4 pt-0 gap-3 no-scrollbar pb-6">
-                                {productBatches.map((batch, bIdx) => {
+                                <div className="flex overflow-x-auto p-4 pt-0 gap-3 no-scrollbar pb-4">
+                                {product.batches.map((batch) => {
                                     const liveStock = getLiveBatchStock(product, batch);
-                                    const isActive = activeIndices.product === pIdx && activeIndices.batch === bIdx;
                                     return (
-                                    <button key={batch.id} onClick={() => handleAddToCartLocal(product, batch)} className={`flex-shrink-0 p-3 rounded-xl border-2 text-left transition-all min-w-[160px] ${isActive ? 'border-indigo-600 bg-indigo-600 text-white shadow-xl scale-105' : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-indigo-300'}`}>
-                                        <div className="text-[10px] font-black uppercase tracking-tighter opacity-80 mb-1">Batch: {batch.batchNumber}</div>
+                                    <button key={batch.id} onClick={() => handleAddToCartLocal(product, batch)} className={`flex-shrink-0 p-3 rounded-xl border-2 text-left transition-all min-w-[150px] ${isActiveRow ? 'border-white bg-white/10 text-white' : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-indigo-300'}`}>
+                                        <div className="text-[10px] font-black uppercase tracking-tighter opacity-80 mb-1">B: {batch.batchNumber}</div>
                                         <div className="font-black text-lg">₹{(batch.saleRate || batch.mrp).toFixed(2)}</div>
-                                        <div className="flex justify-between items-center mt-2"><span className={`text-[11px] font-black ${isActive ? 'text-white' : (liveStock > 0 ? 'text-emerald-600' : 'text-rose-500')}`}>{formatStock(liveStock, product.unitsPerStrip)}</span><span className={`text-[9px] font-bold opacity-60 ${isActive ? 'text-indigo-100' : ''}`}>EXP: {batch.expiryDate}</span></div>
+                                        <div className="flex justify-between items-center mt-2"><span className={`text-[11px] font-black ${isActiveRow ? 'text-white' : (liveStock > 0 ? 'text-emerald-600' : 'text-rose-500')}`}>{formatStock(liveStock, product.unitsPerStrip)}</span><span className={`text-[9px] font-bold opacity-60`}>EXP: {batch.expiryDate}</span></div>
                                     </button>
                                     );
                                 })}
@@ -527,7 +508,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                             <td className="px-4 py-3.5"><div className="font-bold text-slate-800 dark:text-slate-100 uppercase text-xs">{item.productName}</div><div className="text-[10px] text-slate-400 font-mono">B: {item.batchNumber} | EXP: {item.expiryDate}</div></td>
                             <td className="px-4 py-3.5"><div className="flex items-center justify-center"><input ref={el => cartItemTabInputRefs.current.set(item.batchId, el)} type="number" value={item.quantity || ''} onChange={e => { const q = parseInt(e.target.value) || 0; onUpdateCartItem(item.batchId, { quantity: q, total: q * (item.mrp / (item.unitsPerStrip || 1)) * (1 - (item.discount || 0) / 100) }); }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-16`} /></div></td>
                             <td className="px-4 py-3.5 text-right font-medium">{isMrpEditable ? <input type="number" value={item.mrp || ''} onChange={e => { const m = parseFloat(e.target.value) || 0; onUpdateCartItem(item.batchId, { mrp: m, total: item.quantity * (m / (item.unitsPerStrip || 1)) * (1 - (item.discount || 0) / 100) }); }} className={`${cartInputStyle} w-20 text-right`} /> : `₹${item.mrp.toFixed(2)}`}</td>
-                            <td className="px-4 py-3.5"><div className="flex justify-center"><input type="number" value={item.discount || ''} onChange={e => { const d = parseFloat(e.target.value) || 0; onUpdateCartItem(item.batchId, { discount: d, total: item.quantity * (mrp / (item.unitsPerStrip || 1)) * (1 - d / 100) }); }} className={`${cartInputStyle} w-14`} placeholder="0" /></div></td>
+                            <td className="px-4 py-3.5"><div className="flex justify-center"><input type="number" value={item.discount || ''} onChange={e => { const d = parseFloat(e.target.value) || 0; onUpdateCartItem(item.batchId, { discount: d, total: item.quantity * (item.mrp / (item.unitsPerStrip || 1)) * (1 - d / 100) }); }} className={`${cartInputStyle} w-14`} placeholder="0" /></div></td>
                             <td className="px-4 py-3.5 text-right font-black text-slate-900 dark:text-white">₹{item.total.toFixed(2)}</td>
                             <td className="px-4 py-3.5 text-center"><button onClick={() => onRemoveFromCart(item.batchId)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"><TrashIcon className="h-5 w-5" /></button></td>
                         </tr>
@@ -551,12 +532,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
               <div className="space-y-3">
                 <button onClick={() => handleSaveBill(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-xl shadow-xl flex items-center justify-center gap-3 transition-all transform active:scale-95"><PrinterIcon className="h-7 w-7" /> {isEditing ? 'UPDATE & PRINT' : 'SAVE & PRINT'}</button>
                 <button onClick={() => handleSaveBill(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-xl font-bold">{isEditing ? 'UPDATE ONLY' : 'SAVE ONLY'}</button>
-                {isEditing && <button onClick={onCancelEdit} className="w-full py-2 text-slate-500 font-bold hover:underline">Exit Edit Mode</button>}
               </div>
               <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 flex items-center gap-3">
-                    <div className={`p-2 bg-white dark:bg-slate-800 rounded shadow-sm ${paymentMode === 'Cash' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {paymentMode === 'Cash' ? <CashIcon className="h-5 w-5" /> : <SwitchHorizontalIcon className="h-5 w-5" />}
-                    </div>
+                    <div className={`p-2 bg-white dark:bg-slate-800 rounded shadow-sm ${paymentMode === 'Cash' ? 'text-emerald-600' : 'text-rose-600'}`}>{paymentMode === 'Cash' ? <CashIcon className="h-5 w-5" /> : <SwitchHorizontalIcon className="h-5 w-5" />}</div>
                     <div><p className="text-[10px] font-black uppercase opacity-60">Status</p><p className="font-black text-xs uppercase">{paymentMode} SESSION ACTIVE</p></div>
               </div>
             </div>
@@ -565,11 +543,10 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       </div>
 
       <Modal isOpen={isAddCustomerModalOpen} onClose={() => setAddCustomerModalOpen(false)} title="New Ledger Registry">
-         <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const nc = await onAddCustomer({ name: fd.get('name') as string, phone: fd.get('phone') as string, address: fd.get('address') as string, openingBalance: parseFloat(fd.get('openingBalance') as string) || 0 }); if (nc) { setSelectedCustomer(nc); setCustomerName(nc.name); setAddCustomerModalOpen(false); } }} className="space-y-4">
+         <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const nc = await onAddCustomer({ name: fd.get('name') as string, phone: fd.get('phone') as string, address: fd.get('address') as string, openingBalance: parseFloat(fd.get('openingBalance') as string) || 0 }); if (nc) { setSelectedCustomer(nc); setCustomerName(nc.name); setAddCustomerModalOpen(false); setActiveCustomerIdx(-1); } }} className="space-y-4">
              <div><label className="block text-xs font-bold uppercase mb-1">Full Name*</label><input name="name" className={inputStyle + " w-full p-2.5"} required autoFocus /></div>
              <div><label className="block text-xs font-bold uppercase mb-1">Phone</label><input name="phone" className={inputStyle + " w-full p-2.5"} /></div>
              <div><label className="block text-xs font-bold uppercase mb-1">Address</label><input name="address" className={inputStyle + " w-full p-2.5"} /></div>
-             <div><label className="block text-xs font-bold uppercase mb-1">Opening Balance (Dr)</label><input type="number" name="openingBalance" defaultValue="0" className={inputStyle + " w-full p-2.5"} /></div>
              <div className="flex justify-end gap-3 pt-6"><button type="button" onClick={() => setAddCustomerModalOpen(false)} className="px-5 py-2 bg-slate-200 rounded-lg">Cancel</button><button type="submit" className="px-8 py-2 bg-indigo-600 text-white rounded-lg font-black">REGISTER</button></div>
          </form>
       </Modal>
