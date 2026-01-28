@@ -263,6 +263,7 @@ export interface SystemConfig {
   barcodeScannerOpenByDefault?: boolean;
   maintainCustomerLedger?: boolean;
   enableSalesman?: boolean;
+  enableQuickPartQR?: boolean;
   chequeLayout?: ChequeLayout;
   aiInvoiceUsageCount?: number;
   aiInvoiceQuota?: number; // Configurable limit for AI usage

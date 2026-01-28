@@ -71,6 +71,7 @@ const defaultConfig: SystemConfig = {
   barcodeScannerOpenByDefault: true,
   maintainCustomerLedger: false,
   enableSalesman: false,
+  enableQuickPartQR: false,
   aiInvoiceQuota: 5,
   subscription: {
     isPremium: false,

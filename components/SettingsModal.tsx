@@ -225,6 +225,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <h4 className="text-lg font-black text-slate-800 dark:text-slate-100 border-b-2 border-indigo-500 pb-1 w-fit">Billing Settings</h4>
                         <ToggleRow label="MRP Editable (Y/N)" value={!!config.mrpEditable} onChange={(v) => setConfig({...config, mrpEditable: v})} />
                         <ToggleRow label="Maintain Customer Ledger?" value={!!config.maintainCustomerLedger} onChange={(v) => setConfig({...config, maintainCustomerLedger: v})} />
+                        <ToggleRow label="Quick Part QR Entry" description="Enable specialized input for high-speed industrial QR scanning (Index 30)." value={!!config.enableQuickPartQR} onChange={(v) => setConfig({...config, enableQuickPartQR: v})} />
                     </div>
                     <div className="flex justify-end pt-8 border-t dark:border-slate-700">
                         <button onClick={() => { onSystemConfigChange(config); onClose(); }} className="px-10 py-4 bg-indigo-600 text-white font-black rounded-xl shadow-xl hover:bg-indigo-700 uppercase tracking-widest text-sm">Save Configuration</button>

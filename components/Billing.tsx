@@ -61,24 +61,46 @@ const TextScannerModal: React.FC<{
 
     useEffect(() => {
         if (isOpen) {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
-                .then(setStream)
-                .catch(err => {
-                    console.error("Camera error:", err);
-                    alert("Unable to access camera. Please check permissions.");
-                });
-        } else {
+            navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+            })
+            .then(s => setStream(s))
+            .catch(err => {
+                console.error("Camera error:", err);
+                alert("Unable to access camera. Please check permissions.");
+            });
+        }
+        
+        return () => {
             if (stream) {
                 stream.getTracks().forEach(t => t.stop());
                 setStream(null);
             }
-        }
+        };
     }, [isOpen]);
 
     useEffect(() => {
-        if (videoRef.current && stream) {
-            videoRef.current.srcObject = stream;
+        let isMounted = true;
+        const video = videoRef.current;
+        
+        if (video && stream) {
+            video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                if (isMounted) {
+                    video.play().catch(e => {
+                        console.debug("Video play handled:", e.message);
+                    });
+                }
+            };
         }
+
+        return () => {
+            isMounted = false;
+            if (video) {
+                video.pause();
+                video.srcObject = null;
+            }
+        };
     }, [stream]);
 
     const handleCapture = () => {
@@ -103,7 +125,7 @@ const TextScannerModal: React.FC<{
         <Modal isOpen={isOpen} onClose={onClose} title="AI Product Details Scanner" maxWidth="max-w-xl">
             <div className="space-y-4">
                 <div className="relative aspect-video bg-black rounded-xl overflow-hidden border-4 border-indigo-600 shadow-2xl">
-                    <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="w-2/3 h-1/2 border-4 border-red-500 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center">
                             <div className="text-[10px] text-white bg-red-500 px-3 py-0.5 rounded-full absolute -top-3 font-bold uppercase tracking-widest whitespace-nowrap">
@@ -196,7 +218,7 @@ const SubstituteModal: React.FC<{
                             )
                         })
                     ) : (
-                        <div className="py-16 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                        <div className="py-16 text-center bg-slate-50 dark:bg-slate-900/50 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
                             <div className="bg-white dark:bg-slate-800 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
                                 <InformationCircleIcon className="h-8 w-8 text-slate-300" />
                             </div>
@@ -257,7 +279,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   const searchInputRef = useRef<HTMLInputElement>(null);
   const qrInputRef = useRef<HTMLInputElement>(null);
   const lastAddedBatchIdRef = useRef<string | null>(null);
-  const skipCartFocusRef = useRef(false); // Ref to skip auto-focusing quantity field
+  const skipCartFocusRef = useRef(false); 
   
   const cartItemStripInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
   const cartItemTabInputRefs = useRef<Map<string, HTMLInputElement | null>>(new Map());
@@ -306,10 +328,29 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       return (isNegative ? '-' : '') + (result || '0 U');
   };
 
-  // Initial focus on component mount
+  /**
+   * QR Industrial Parser
+   * Splits string by /
+   * Reads array index 3
+   * Removes extra spaces
+   */
+  const parseIndustrialQR = (val: string): string | null => {
+      if (val.includes('/')) {
+          const parts = val.split('/');
+          if (parts.length >= 4) {
+              return parts[3].trim();
+          }
+      }
+      return null;
+  };
+
   useEffect(() => {
-    qrInputRef.current?.focus();
-  }, []);
+    if (systemConfig.enableQuickPartQR) {
+        qrInputRef.current?.focus();
+    } else {
+        searchInputRef.current?.focus();
+    }
+  }, [systemConfig.enableQuickPartQR]);
 
   useEffect(() => {
     if (!isPharmaMode && systemConfig.barcodeScannerOpenByDefault !== false) {
@@ -320,11 +361,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   useEffect(() => { if (cart.length > 0 && startTimeRef.current === null) { startTimeRef.current = Date.now(); } else if (cart.length === 0) { startTimeRef.current = null; } }, [cart.length]);
   
   useEffect(() => {
-    // Check if we should skip focus (Sequential Scanning Mode or Manual Search jump)
     if (skipCartFocusRef.current) {
         skipCartFocusRef.current = false;
         lastAddedBatchIdRef.current = null;
-        // Selection is handled in the QR change handler via refs
         return;
     }
 
@@ -437,36 +476,22 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
   };
 
   const handleQrInputChange = (val: string) => {
-    setQrInput(val);
-    // Industrial QR format precision parsing: substring(xpart, 30, 17)
-    if (val.length >= 47) {
-        const extractedPartNo = val.substring(30, 30 + 17).trim();
-        if (extractedPartNo) {
-            const product = products.find(p => normalizeCode(p.barcode || "") === normalizeCode(extractedPartNo));
-            if (product) {
-                const batchesWithStock = product.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(product, b) }));
-                const batch = [...batchesWithStock].sort((a, b) => b.liveStock - a.liveStock)[0];
-                if (batch) {
-                    // Set skip focus ref to true before adding to cart
-                    skipCartFocusRef.current = true;
-                    handleAddToCartLocal(product, batch);
-                    setScanResultFeedback({ name: product.name, batch: batch.batchNumber });
-                    setTimeout(() => setScanResultFeedback(null), 3000);
-                    
-                    // JUMP TO SEARCH AND HIGHLIGHT TEXT (Ctrl+A effect)
-                    setSearchTerm(product.name);
-                    setQrInput('');
-                    // Use double requestAnimationFrame or slight timeout for robust selection after render
-                    setTimeout(() => {
-                        if (searchInputRef.current) {
-                            searchInputRef.current.focus();
-                            searchInputRef.current.setSelectionRange(0, searchInputRef.current.value.length);
-                        }
-                    }, 20);
-                }
-            } else {
-                // Not in master, jump to search anyway so they can see what was scanned
-                setSearchTerm(extractedPartNo);
+    const parsedId = parseIndustrialQR(val);
+    const searchVal = parsedId !== null ? parsedId : val;
+
+    setQrInput(searchVal);
+    if (searchVal.length >= 8) {
+        const product = products.find(p => normalizeCode(p.barcode || "") === normalizeCode(searchVal));
+        if (product) {
+            const batchesWithStock = product.batches.map(b => ({ ...b, liveStock: getLiveBatchStock(product, b) }));
+            const batch = [...batchesWithStock].sort((a, b) => b.liveStock - a.liveStock)[0];
+            if (batch) {
+                skipCartFocusRef.current = true;
+                handleAddToCartLocal(product, batch);
+                setScanResultFeedback({ name: product.name, batch: batch.batchNumber });
+                setTimeout(() => setScanResultFeedback(null), 3000);
+                
+                setSearchTerm(product.name);
                 setQrInput('');
                 setTimeout(() => {
                     if (searchInputRef.current) {
@@ -514,7 +539,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
         const normCode = dCode !== "Unknown" ? normalizeCode(dCode) : "";
         const normName = dName !== "Unknown" ? normalizeCode(dName) : "";
         const normBatch = dBatch !== "Unknown" ? normalizeCode(dBatch) : "";
-        let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode) === normCode);
+        let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode || "") === normCode);
         if (!bestMatch && normName !== "") {
             bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
         }
@@ -546,6 +571,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
     if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
     
+    // MANDATORY CUSTOMER CHECK FOR CREDIT
+    if (paymentMode === 'Credit') {
+        const isWalkIn = !customerName.trim() || 
+                         customerName.toLowerCase().includes('walk-in') || 
+                         customerName.toLowerCase().includes('patient') || 
+                         customerName.toLowerCase().includes('customer');
+                         
+        if (isWalkIn) {
+            alert("A specific customer/ledger record is mandatory for CREDIT transactions. Please select or add a customer.");
+            return;
+        }
+    }
+
     const currentOperator = auth.currentUser;
 
     const subTotal = cart.reduce((sum, item) => sum + (item.total / (1 + item.gst / 100)), 0);
@@ -600,7 +638,11 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId('');
     startTimeRef.current = null;
     setQrInput('');
-    qrInputRef.current?.focus();
+    if (systemConfig.enableQuickPartQR) {
+        qrInputRef.current?.focus();
+    } else {
+        searchInputRef.current?.focus();
+    }
   };
 
   const handlePrinterSelection = async (printer: PrinterProfile) => {
@@ -648,9 +690,9 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5);
   }, [customerName, selectedCustomer, customers]);
 
-  const subTotal = cart.reduce((sum, item) => sum + (item.total / (1 + item.gst / 100)), 0);
-  const totalGst = cart.reduce((sum, item) => sum + (item.total - (item.total / (1 + item.gst / 100))), 0);
-  const grandTotal = Math.round(subTotal + totalGst);
+  const subTotalTotal = cart.reduce((sum, item) => sum + (item.total / (1 + item.gst / 100)), 0);
+  const totalGstTotal = cart.reduce((sum, item) => sum + (item.total - (item.total / (1 + item.gst / 100))), 0);
+  const grandTotalTotal = Math.round(subTotalTotal + totalGstTotal);
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
     if (filteredProducts.length === 0) return;
@@ -719,35 +761,31 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                 </div>
               )}
 
-              {/* High-Speed Industrial QR Extraction Input */}
-              <div className="relative group">
-                <div className="flex justify-between items-end mb-1">
-                    <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
-                       <GlobeIcon className="h-3 w-3" /> Quick Part QR Entry (Index 30, Len 17)
-                    </label>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">Jumps to search after scan</span>
-                </div>
-                <div className="relative">
-                    <input 
-                        ref={qrInputRef}
-                        type="text" 
-                        placeholder="Point hand-scanner here for high-speed industrial QR data..." 
-                        value={qrInput} 
-                        onChange={e => handleQrInputChange(e.target.value)} 
-                        onFocus={e => e.currentTarget.select()}
-                        onMouseUp={e => e.preventDefault()}
-                        className={`${inputStyle} w-full p-3 pl-11 text-sm shadow-inner font-mono`}
-                    />
-                    <div className="absolute left-3 top-3 text-indigo-400">
-                        <BarcodeIcon className="h-5 w-5" />
+              {systemConfig.enableQuickPartQR && (
+                  <div className="relative group">
+                    <div className="flex justify-between items-end mb-1">
+                        <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
+                           <GlobeIcon className="h-3 w-3" /> Quick Part QR Entry
+                        </label>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase">Industrial Scanning Mode</span>
                     </div>
-                    {qrInput.length > 0 && qrInput.length < 47 && (
-                        <div className="absolute right-3 top-3 text-[10px] font-bold text-indigo-400 uppercase animate-pulse">
-                           READING... {qrInput.length}/47
+                    <div className="relative">
+                        <input 
+                            ref={qrInputRef}
+                            type="text" 
+                            placeholder="Hand-scanner ready..." 
+                            value={qrInput} 
+                            onChange={e => handleQrInputChange(e.target.value)} 
+                            onFocus={e => e.currentTarget.select()}
+                            onMouseUp={e => e.preventDefault()}
+                            className={`${inputStyle} w-full p-3 pl-11 text-sm shadow-inner font-mono`}
+                        />
+                        <div className="absolute left-3 top-3 text-indigo-400">
+                            <BarcodeIcon className="h-5 w-5" />
                         </div>
-                    )}
-                </div>
-              </div>
+                    </div>
+                  </div>
+              )}
               
               <div className="relative">
                 <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Manual Product Search</label>
@@ -758,14 +796,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                     value={searchTerm} 
                     onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} 
                     onKeyDown={handleSearchKeyDown} 
-                    onFocus={e => {
-                        // Crucial: Select all text when field gains focus (mimics Ctrl+A)
-                        e.currentTarget.select();
-                    }}
-                    onMouseUp={e => {
-                        // Prevent the default browser behavior of clearing selection on mouseup
-                        e.preventDefault();
-                    }}
+                    onFocus={e => e.currentTarget.select()}
+                    onMouseUp={e => e.preventDefault()}
                     className={`${inputStyle} w-full p-4 text-lg shadow-inner h-14`} 
                 />
                 <SearchIcon className="absolute right-4 top-10 h-6 w-6 text-slate-400" />
@@ -779,7 +811,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                         <div className="p-3 flex justify-between items-start">
                             <div>
                                 <h4 className="font-bold text-slate-800 dark:text-slate-100">{product.name}</h4>
-                                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company} | Pack: 1 * {product.unitsPerStrip || 1}</p>
+                                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company} | Barcode: {product.barcode || 'N/A'}</p>
                             </div>
                             <button onClick={() => setSubstituteTarget(product)} className="text-[10px] font-black bg-teal-100 text-teal-700 px-2 py-1 rounded hover:bg-teal-200 uppercase tracking-tighter">Alternatives</button>
                         </div>
@@ -805,12 +837,39 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                 )}
               </div>
 
+              {/* PAYMENT MODE BEFORE CUSTOMER NAME */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-3">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Select Billing Type First</label>
+                    {paymentMode === 'Credit' && (
+                        <span className="text-[9px] font-black text-rose-500 uppercase animate-pulse">! Customer Identity Mandatory</span>
+                    )}
+                </div>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setPaymentMode('Cash')} 
+                        className={`flex-1 py-3 rounded-lg font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-2 ${paymentMode === 'Cash' ? 'bg-indigo-600 text-white shadow-lg ring-4 ring-indigo-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                    >
+                        <CashIcon className="h-4 w-4" /> CASH SALE
+                    </button>
+                    <button 
+                        onClick={() => setPaymentMode('Credit')} 
+                        className={`flex-1 py-3 rounded-lg font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-2 ${paymentMode === 'Credit' ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                    >
+                        <SwitchHorizontalIcon className="h-4 w-4" /> CREDIT SALE
+                    </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="relative">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{isPharmaMode ? t.billing.patientName : t.billing.customerName}</label>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">
+                    {isPharmaMode ? t.billing.patientName : t.billing.customerName}
+                    {paymentMode === 'Credit' && <span className="text-rose-500 ml-1 font-black">*</span>}
+                  </label>
                   <div className="relative">
-                    <input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); setShowCustomerSuggestions(true); }} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`${inputStyle} w-full p-2.5`} />
-                    <UserCircleIcon className="absolute right-3 top-2.5 h-5 w-5 text-slate-400" />
+                    <input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); setShowCustomerSuggestions(true); }} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`${inputStyle} w-full p-2.5 ${paymentMode === 'Credit' ? 'border-rose-300 ring-rose-500/10' : ''}`} />
+                    <UserCircleIcon className={`absolute right-3 top-2.5 h-5 w-5 ${paymentMode === 'Credit' ? 'text-rose-400' : 'text-slate-400'}`} />
                   </div>
                   {showCustomerSuggestions && filteredCustomers.length > 0 && (
                     <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-xl">
@@ -823,15 +882,15 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                     </ul>
                   )}
                   {customerName && !selectedCustomer && (
-                      <button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 text-[10px] font-black text-indigo-600 uppercase hover:underline">+ New Master Record</button>
+                      <button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 text-[10px] font-black text-indigo-600 uppercase hover:underline">+ Register Customer Ledger</button>
                   )}
                 </div>
                 {isPharmaMode && (
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={setDoctorName} placeholder="Dr. Name" className={`${inputStyle} w-full p-2.5`} /></div>
+                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="Dr. Name" className={`${inputStyle} w-full p-2.5`} /></div>
                 )}
                 {systemConfig.enableSalesman && (
-                    <div>
-                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Salesman</label>
+                    <div className="md:col-span-2 lg:col-span-1">
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Salesman / Agent</label>
                         <div className="flex gap-2">
                             <select value={selectedSalesmanId} onChange={e => setSelectedSalesmanId(e.target.value)} className={`${inputStyle} flex-grow p-2.5 appearance-none`}>
                                 <option value="">-- No Salesman --</option>
@@ -879,7 +938,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                     {cart.map(item => {
-                        const product = products.find(p => p.id === item.productId);
                         const unitPrice = item.mrp / (item.unitsPerStrip || 1);
                         const discFactor = (1 - (item.discount || 0) / 100);
                         return (
@@ -904,7 +962,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                     const sQty = parseInt(e.target.value) || 0;
                                     const totalUnits = (sQty * (item.unitsPerStrip || 1)) + (item.looseQty || 0);
                                     onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * unitPrice * discFactor });
-                                }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14`} />
+                                }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14`} />
                               </div>
                             </td>
                             <td className="px-4 py-3.5">
@@ -913,7 +971,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                     const lQty = parseInt(e.target.value) || 0;
                                     const totalUnits = ((item.stripQty || 0) * (item.unitsPerStrip || 1)) + lQty;
                                     onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice * discFactor });
-                                }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14`} />
+                                }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14`} />
                               </div>
                             </td>
                             <td className="px-4 py-3.5 text-right font-medium">
@@ -922,7 +980,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                       const newMrp = parseFloat(e.target.value) || 0;
                                       const uPrice = newMrp / (item.unitsPerStrip || 1);
                                       onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * uPrice * discFactor });
-                                  }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-20 text-right`} />
+                                  }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-20 text-right`} />
                               ) : `₹${item.mrp.toFixed(2)}`}
                             </td>
                             <td className="px-4 py-3.5">
@@ -930,7 +988,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                     <input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
                                         const disc = parseFloat(e.target.value) || 0;
                                         onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * unitPrice * (1 - disc / 100) });
-                                    }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
                                 </div>
                             </td>
                           </>
@@ -941,7 +999,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                    <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.quantity || ''} onChange={e => {
                                        const qty = parseInt(e.target.value) || 0;
                                        onUpdateCartItem(item.batchId, { quantity: qty, looseQty: qty, total: qty * unitPrice * discFactor });
-                                   }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-16`} />
+                                   }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-16`} />
                                </div>
                             </td>
                             <td className="px-4 py-3.5 text-right font-medium">
@@ -949,7 +1007,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                   <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
                                       const newMrp = parseFloat(e.target.value) || 0;
                                       onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * newMrp * discFactor });
-                                  }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-20 text-right`} />
+                                  }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-20 text-right`} />
                               ) : `₹${item.mrp.toFixed(2)}`}
                             </td>
                             <td className="px-4 py-3.5">
@@ -957,7 +1015,7 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                                     <input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
                                         const disc = parseFloat(e.target.value) || 0;
                                         onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * item.mrp * (1 - disc / 100) });
-                                    }} onFocus={e => e.currentTarget.select()} onMouseUp={e => e.preventDefault()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
                                 </div>
                             </td>
                           </>
@@ -976,41 +1034,25 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                   </tbody>
                 </table>
               </div>
-              {isPharmaMode && cart.length > 0 && (
-                <div className="mt-4 flex gap-4 text-[10px] font-black uppercase text-slate-400 px-2 tracking-widest">
-                  <span>* STRI = Strips</span>
-                  <span>* TAB = Tablets/Units</span>
-                  <span>* M.R.P./S = Price Per Pack</span>
-                </div>
-              )}
             </div>
           </Card>
         </div>
 
         <div className="lg:col-span-1 space-y-6">
-          <Card title="Payment & Order Summary">
+          <Card title="Order Summary">
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => setPaymentMode('Cash')} className={`py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-sm flex flex-col items-center gap-2 ${paymentMode === 'Cash' ? 'bg-indigo-600 text-white ring-4 ring-indigo-500/20' : 'bg-slate-50 dark:bg-slate-700 text-slate-500 hover:bg-slate-100'}`}>
-                    <CashIcon className="h-6 w-6" /> CASH
-                </button>
-                <button onClick={() => setPaymentMode('Credit')} className={`py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-sm flex flex-col items-center gap-2 ${paymentMode === 'Credit' ? 'bg-rose-600 text-white ring-4 ring-rose-500/20' : 'bg-slate-50 dark:bg-slate-700 text-slate-500 hover:bg-slate-100'}`}>
-                    <SwitchHorizontalIcon className="h-6 w-6" /> CREDIT
-                </button>
-              </div>
-
               <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-2">
                   <span>{t.billing.subtotal}</span>
-                  <span className="font-bold">₹{subTotal.toFixed(2)}</span>
+                  <span className="font-bold">₹{subTotalTotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-4">
                   <span>{t.billing.totalGst}</span>
-                  <span className="font-bold">₹{totalGst.toFixed(2)}</span>
+                  <span className="font-bold">₹{totalGstTotal.toFixed(2)}</span>
                 </div>
                 <div className="border-t dark:border-slate-700 pt-4 flex justify-between items-end">
                   <span className="text-lg font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">{t.billing.grandTotal}</span>
-                  <span className="text-4xl font-black text-indigo-600 dark:text-indigo-400">₹{grandTotal.toFixed(2)}</span>
+                  <span className="text-4xl font-black text-indigo-600 dark:text-indigo-400">₹{grandTotalTotal.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -1021,31 +1063,26 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                 <button onClick={() => handleSaveBill(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-xl font-bold transition-all transform active:scale-95">
                    {isEditing ? t.billing.updateOnly : t.billing.saveOnly}
                 </button>
-                {isEditing && (
-                  <button onClick={onCancelEdit} className="w-full py-2 text-slate-500 font-bold hover:underline">{t.billing.cancelEdit}</button>
-                )}
-              </div>
-              
-              <div className="pt-4 flex items-center justify-center gap-2 opacity-50 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                 <CloudIcon className="h-4 w-4" /> 256-bit Cloud Sync Active
               </div>
             </div>
           </Card>
-          
-          <Card title="Quick Insight">
+
+          <Card title="Billing Highlights">
              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg text-indigo-600"><ChartBarIcon className="h-5 w-5" /></div>
+                <div className={`p-4 rounded-xl border flex items-center gap-3 ${paymentMode === 'Cash' ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-rose-50 border-rose-100 text-rose-700'}`}>
+                    <div className="p-2 bg-white rounded-lg shadow-sm">
+                        {paymentMode === 'Cash' ? <CashIcon className="h-5 w-5" /> : <SwitchHorizontalIcon className="h-5 w-5" />}
+                    </div>
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase">Cart Avg.</p>
-                        <p className="font-bold text-slate-800 dark:text-slate-200">₹{cart.length > 0 ? (grandTotal / cart.length).toFixed(2) : '0.00'}</p>
+                        <p className="text-[10px] font-black uppercase opacity-60">Selected Mode</p>
+                        <p className="font-black text-sm uppercase tracking-widest">{paymentMode} TRANSACTION</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg text-emerald-600"><CheckCircleIcon className="h-5 w-5" /></div>
+                <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border dark:border-slate-800 flex items-center gap-3">
+                    <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-indigo-600"><ReceiptIcon className="h-5 w-5" /></div>
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase">GST Compliance</p>
-                        <p className="font-bold text-slate-800 dark:text-slate-200">Ready for GSTR-1</p>
+                        <p className="text-[10px] font-black text-slate-400 uppercase">Items in Cart</p>
+                        <p className="font-bold text-slate-800 dark:text-slate-200">{cart.length} Products</p>
                     </div>
                 </div>
              </div>
