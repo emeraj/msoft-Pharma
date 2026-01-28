@@ -330,9 +330,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
 
   /**
    * QR Industrial Parser
-   * Splits string by /
-   * Reads array index 3
-   * Removes extra spaces
    */
   const parseIndustrialQR = (val: string): string | null => {
       if (val.includes('/')) {
@@ -462,6 +459,8 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     } 
     setSearchTerm(''); 
     setSubstituteTarget(null);
+    // After adding, focus the search bar for next item entry
+    searchInputRef.current?.focus();
   };
 
   const handleBarcodeScan = (code: string) => {
@@ -519,46 +518,29 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     try {
         const base64Data = imageData.split(',')[1];
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-        const prompt = `Strictly analyze this product label image. Extract with high precision: 1. Brand Name / Commercial Name. 2. Technical Code / SKU / Part Number / Barcode string. 3. Batch Number. 4. Expiry Date (YYYY-MM or MM/YY). Return ONLY valid JSON: { "name": "...", "technicalCode": "...", "batch": "...", "expiry": "..." }.`;
+        const prompt = `Strictly analyze this product label image. Extract: 1. Brand Name. 2. Part Number/Barcode. 3. Batch Number. 4. Expiry. Return JSON.`;
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: [{ parts: [{ inlineData: { mimeType: 'image/png', data: base64Data } }, { text: prompt }] }],
-            config: { 
-                responseMimeType: "application/json",
-                responseSchema: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, technicalCode: { type: Type.STRING }, batch: { type: Type.STRING }, expiry: { type: Type.STRING } } }
-            }
+            config: { responseMimeType: "application/json" }
         });
         if (!response.text) throw new Error("No response from AI");
         const detected = JSON.parse(response.text);
         const { name: dName, technicalCode: dCode, batch: dBatch } = detected;
-        if ((!dName || dName === "Unknown") && (!dCode || dCode === "Unknown")) {
-            alert("Could not identify product.");
-            setIsOcrProcessing(false);
-            return;
-        }
-        const normCode = dCode !== "Unknown" ? normalizeCode(dCode) : "";
-        const normName = dName !== "Unknown" ? normalizeCode(dName) : "";
-        const normBatch = dBatch !== "Unknown" ? normalizeCode(dBatch) : "";
+        
+        const normCode = dCode ? normalizeCode(dCode) : "";
+        const normName = dName ? normalizeCode(dName) : "";
         let bestMatch = products.find(p => normCode !== "" && normalizeCode(p.barcode || "") === normCode);
         if (!bestMatch && normName !== "") {
-            bestMatch = products.find(p => normalizeCode(p.name).includes(normName) || normName.includes(normalizeCode(p.name)));
+            bestMatch = products.find(p => normalizeCode(p.name).includes(normName));
         }
         if (bestMatch) {
-            let targetBatch = dBatch !== "Unknown" ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normBatch) : undefined;
+            let targetBatch = dBatch ? bestMatch.batches.find(b => normalizeCode(b.batchNumber) === normalizeCode(dBatch)) : undefined;
             if (!targetBatch) targetBatch = [...bestMatch.batches].sort((a, b) => getLiveBatchStock(bestMatch, b) - getLiveBatchStock(bestMatch, a))[0];
             if (targetBatch) {
                 await handleAddToCartLocal(bestMatch, targetBatch);
-                setScanResultFeedback({ name: bestMatch.name, batch: targetBatch.batchNumber });
-                setTimeout(() => setScanResultFeedback(null), 3000);
-                setShowTextScanner(false);
-            } else {
-                alert(`Found ${bestMatch.name} but no batches available.`);
                 setShowTextScanner(false);
             }
-        } else {
-            setSearchTerm(dCode !== "Unknown" ? dCode : dName);
-            setShowTextScanner(false);
-            alert(`Detected "${dCode !== "Unknown" ? dCode : dName}" but not in inventory.`);
         }
     } catch (e) {
         alert("Scan failed.");
@@ -571,28 +553,13 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
     if (isSubscriptionExpired) { alert("Subscription Expired!"); return; }
     if (cart.length === 0) { alert(t.billing.cartEmpty); return; }
     
-    // MANDATORY CUSTOMER CHECK FOR CREDIT
     if (paymentMode === 'Credit') {
-        const isWalkIn = !customerName.trim() || 
-                         customerName.toLowerCase().includes('walk-in') || 
-                         customerName.toLowerCase().includes('patient') || 
-                         customerName.toLowerCase().includes('customer');
-                         
+        const isWalkIn = !customerName.trim() || customerName.toLowerCase().includes('walk-in');
         if (isWalkIn) {
-            alert("A specific customer/ledger record is mandatory for CREDIT transactions. Please select or add a customer.");
+            alert("Customer record is mandatory for CREDIT transactions.");
             return;
         }
     }
-
-    const currentOperator = auth.currentUser;
-
-    const subTotal = cart.reduce((sum, item) => sum + (item.total / (1 + item.gst / 100)), 0);
-    const totalGst = cart.reduce((sum, item) => sum + (item.total - (item.total / (1 + item.gst / 100))), 0);
-    const grandTotalRaw = subTotal + totalGst;
-    const grandTotal = Math.round(grandTotalRaw);
-    const roundOff = grandTotal - grandTotalRaw;
-
-    const salesman = salesmen?.find(s => s.id === selectedSalesmanId);
 
     const billData: Omit<Bill, 'id' | 'billNumber'> = {
       date: new Date().toISOString(),
@@ -600,29 +567,19 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       customerId: selectedCustomer?.id,
       doctorName: isPharmaMode ? doctorName.trim() : undefined,
       salesmanId: selectedSalesmanId || undefined,
-      salesmanName: salesman?.name,
       items: cart,
-      subTotal,
-      totalGst,
-      grandTotal,
-      roundOff,
+      subTotal: cart.reduce((s, i) => s + (i.total / (1 + i.gst / 100)), 0),
+      totalGst: cart.reduce((s, i) => s + (i.total - (i.total / (1 + i.gst / 100))), 0),
+      grandTotal: Math.round(cart.reduce((s, i) => s + i.total, 0)),
       paymentMode,
-      operatorId: currentOperator?.uid,
-      operatorName: currentOperator?.displayName || 'Counter Staff'
+      operatorId: auth.currentUser?.uid,
+      operatorName: auth.currentUser?.displayName || 'Staff'
     };
 
-    let savedBill: Bill | null = null;
-    if (isEditing && editingBill) {
-      if (!onUpdateBill) return;
-      savedBill = await onUpdateBill(editingBill.id, billData, editingBill);
-      if (onCancelEdit) onCancelEdit();
-    } else {
-      savedBill = await onGenerateBill(billData);
-    }
+    const savedBill = isEditing ? await onUpdateBill!(editingBill!.id, billData, editingBill!) : await onGenerateBill(billData);
 
     if (savedBill) {
       setLastSavedBill(savedBill);
-      if (startTimeRef.current) { setOrderSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000)); }
       setShowOrderSuccessModal(true);
       if (shouldPrint) {
         setBillToPrint(savedBill);
@@ -636,44 +593,20 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
 
   const resetBilling = () => {
     setCustomerName(''); setSelectedCustomer(null); setDoctorName(''); setPaymentMode('Cash'); setSelectedSalesmanId('');
-    startTimeRef.current = null;
-    setQrInput('');
-    if (systemConfig.enableQuickPartQR) {
-        qrInputRef.current?.focus();
-    } else {
-        searchInputRef.current?.focus();
-    }
+    setSearchTerm(''); setQrInput('');
+    searchInputRef.current?.focus();
   };
 
   const handlePrinterSelection = async (printer: PrinterProfile) => {
       if (billToPrint) {
-        if (printer.connectionType === 'bluetooth' && printer.id === 'web-bluetooth-bt-printer') {
-             const success = await BluetoothHelper.connect();
-             if (success) {
-                 const bytes = BluetoothHelper.generateEscPos(billToPrint, companyProfile, isPharmaMode);
-                 await BluetoothHelper.printRaw(bytes);
-                 if (shouldResetAfterPrint) resetBilling();
-                 setBillToPrint(null);
-                 return;
-             }
-        }
-
         const printWindow = window.open('', '_blank');
         if (printWindow) {
             const printRoot = document.createElement('div');
             printWindow.document.body.appendChild(printRoot);
             const root = ReactDOM.createRoot(printRoot);
-            if (printer.format === 'Thermal') {
-                root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-            } else if (printer.format === 'A5') {
-                if (printer.orientation === 'Landscape') {
-                    root.render(<PrintableA5LandscapeBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-                } else {
-                    root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-                }
-            } else {
-                root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
-            }
+            if (printer.format === 'Thermal') root.render(<ThermalPrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            else if (printer.format === 'A5') root.render(<PrintableA5Bill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
+            else root.render(<PrintableBill bill={billToPrint} companyProfile={companyProfile} systemConfig={systemConfig} />);
             setTimeout(() => { printWindow.print(); printWindow.close(); if (shouldResetAfterPrint) resetBilling(); setBillToPrint(null); }, 500);
         }
       }
@@ -690,19 +623,12 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       return customers.filter(c => c.name.toLowerCase().includes(customerName.toLowerCase())).slice(0, 5);
   }, [customerName, selectedCustomer, customers]);
 
-  const subTotalTotal = cart.reduce((sum, item) => sum + (item.total / (1 + item.gst / 100)), 0);
-  const totalGstTotal = cart.reduce((sum, item) => sum + (item.total - (item.total / (1 + item.gst / 100))), 0);
-  const grandTotalTotal = Math.round(subTotalTotal + totalGstTotal);
-
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
     if (filteredProducts.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActiveIndices(prev => {
-        if (prev.product < filteredProducts.length - 1) {
-          const nextPIdx = prev.product + 1;
-          return { product: nextPIdx, batch: 0 };
-        }
+        if (prev.product < filteredProducts.length - 1) return { product: prev.product + 1, batch: 0 };
         return prev;
       });
     } else if (e.key === 'ArrowUp') {
@@ -715,17 +641,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
         }
         return prev;
       });
-    } else if (e.key === 'ArrowRight') {
-        const currentProduct = filteredProducts[activeIndices.product];
-        if (currentProduct && activeIndices.batch < currentProduct.batches.length - 1) {
-            e.preventDefault();
-            setActiveIndices(prev => ({ ...prev, batch: prev.batch + 1 }));
-        }
-    } else if (e.key === 'ArrowLeft') {
-        if (activeIndices.batch > 0) {
-            e.preventDefault();
-            setActiveIndices(prev => ({ ...prev, batch: prev.batch - 1 }));
-        }
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const p = filteredProducts[activeIndices.product];
@@ -754,391 +669,235 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
                </div>
             </div>
           }>
-            <div className="space-y-4">
-              {showScanner && (
-                <div className="animate-fade-in mb-4">
-                    <EmbeddedScanner onScanSuccess={handleBarcodeScan} onClose={() => setShowScanner(false)} />
-                </div>
-              )}
+            <div className="space-y-6">
+              {showScanner && <div className="animate-fade-in"><EmbeddedScanner onScanSuccess={handleBarcodeScan} onClose={() => setShowScanner(false)} /></div>}
 
-              {systemConfig.enableQuickPartQR && (
-                  <div className="relative group">
-                    <div className="flex justify-between items-end mb-1">
-                        <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
-                           <GlobeIcon className="h-3 w-3" /> Quick Part QR Entry
-                        </label>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase">Industrial Scanning Mode</span>
-                    </div>
-                    <div className="relative">
-                        <input 
-                            ref={qrInputRef}
-                            type="text" 
-                            placeholder="Hand-scanner ready..." 
-                            value={qrInput} 
-                            onChange={e => handleQrInputChange(e.target.value)} 
-                            onFocus={e => e.currentTarget.select()}
-                            onMouseUp={e => e.preventDefault()}
-                            className={`${inputStyle} w-full p-3 pl-11 text-sm shadow-inner font-mono`}
-                        />
-                        <div className="absolute left-3 top-3 text-indigo-400">
-                            <BarcodeIcon className="h-5 w-5" />
-                        </div>
-                    </div>
-                  </div>
-              )}
-              
-              <div className="relative">
-                <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Manual Product Search</label>
-                <input 
-                    ref={searchInputRef} 
-                    type="text" 
-                    placeholder={isPharmaMode ? t.billing.searchPlaceholderPharma : t.billing.searchPlaceholderRetail} 
-                    value={searchTerm} 
-                    onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} 
-                    onKeyDown={handleSearchKeyDown} 
-                    onFocus={e => e.currentTarget.select()}
-                    onMouseUp={e => e.preventDefault()}
-                    className={`${inputStyle} w-full p-4 text-lg shadow-inner h-14`} 
-                />
-                <SearchIcon className="absolute right-4 top-10 h-6 w-6 text-slate-400" />
+              {/* PAYMENT & CUSTOMER SECTION (Payment First) */}
+              <div className="bg-slate-50 dark:bg-slate-900/50 p-5 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-4">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Step 1: Select Billing Type</label>
+                    {paymentMode === 'Credit' && <span className="text-[9px] font-black text-rose-500 uppercase animate-pulse">! Specific Customer Mandatory</span>}
+                </div>
                 
-                {filteredProducts.length > 0 && (
-                  <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-                    {filteredProducts.map((product, pIdx) => {
-                        const productBatches = [...product.batches].sort((a,b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime());
-                        return (
-                      <div key={product.id} className={`border-b last:border-b-0 dark:border-slate-700 ${activeIndices.product === pIdx ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : ''}`}>
-                        <div className="p-3 flex justify-between items-start">
-                            <div>
-                                <h4 className="font-bold text-slate-800 dark:text-slate-100">{product.name}</h4>
-                                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company} | Barcode: {product.barcode || 'N/A'}</p>
-                            </div>
-                            <button onClick={() => setSubstituteTarget(product)} className="text-[10px] font-black bg-teal-100 text-teal-700 px-2 py-1 rounded hover:bg-teal-200 uppercase tracking-tighter">Alternatives</button>
-                        </div>
-                        <div className="flex overflow-x-auto p-2 pt-0 gap-2 no-scrollbar">
-                          {productBatches.map((batch, bIdx) => {
-                            const liveStock = getLiveBatchStock(product, batch);
-                            const isActive = activeIndices.product === pIdx && activeIndices.batch === bIdx;
-                            return (
-                              <button key={batch.id} onClick={() => handleAddToCartLocal(product, batch)} className={`flex-shrink-0 p-2 rounded-lg border-2 text-left transition-all min-w-[140px] ${isActive ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg scale-105' : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-indigo-300'}`}>
-                                <div className="text-[10px] font-black uppercase tracking-tighter opacity-80">Batch: {batch.batchNumber}</div>
-                                <div className="font-bold text-sm">₹{(batch.saleRate || batch.mrp).toFixed(2)}</div>
-                                <div className="flex justify-between items-center mt-1">
-                                    <span className={`text-[10px] font-black ${isActive ? 'text-white' : (liveStock > 0 ? 'text-emerald-600' : 'text-rose-500')}`}>{formatStock(liveStock, product.unitsPerStrip)}</span>
-                                    <span className={`text-[9px] font-medium opacity-60 ${isActive ? 'text-indigo-100' : ''}`}>EXP: {batch.expiryDate}</span>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )})}
-                  </div>
-                )}
-              </div>
-
-              {/* PAYMENT MODE BEFORE CUSTOMER NAME */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-                <div className="flex items-center justify-between mb-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Select Billing Type First</label>
-                    {paymentMode === 'Credit' && (
-                        <span className="text-[9px] font-black text-rose-500 uppercase animate-pulse">! Customer Identity Mandatory</span>
-                    )}
-                </div>
-                <div className="flex gap-2">
+                <div className="flex gap-3 mb-6">
                     <button 
                         onClick={() => setPaymentMode('Cash')} 
-                        className={`flex-1 py-3 rounded-lg font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-2 ${paymentMode === 'Cash' ? 'bg-indigo-600 text-white shadow-lg ring-4 ring-indigo-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                        className={`flex-1 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex flex-col items-center gap-2 ${paymentMode === 'Cash' ? 'bg-indigo-600 text-white shadow-lg ring-4 ring-indigo-500/20' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'}`}
                     >
-                        <CashIcon className="h-4 w-4" /> CASH SALE
+                        <CashIcon className="h-5 w-5" /> <span>CASH SALE</span>
                     </button>
                     <button 
                         onClick={() => setPaymentMode('Credit')} 
-                        className={`flex-1 py-3 rounded-lg font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-2 ${paymentMode === 'Credit' ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-500/20' : 'bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'}`}
+                        className={`flex-1 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all flex flex-col items-center gap-2 ${paymentMode === 'Credit' ? 'bg-rose-600 text-white shadow-lg ring-4 ring-rose-500/20' : 'bg-white dark:bg-slate-800 text-slate-400 border border-slate-200 dark:border-slate-700'}`}
                     >
-                        <SwitchHorizontalIcon className="h-4 w-4" /> CREDIT SALE
+                        <SwitchHorizontalIcon className="h-5 w-5" /> <span>CREDIT SALE</span>
                     </button>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="relative">
-                  <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">
-                    {isPharmaMode ? t.billing.patientName : t.billing.customerName}
-                    {paymentMode === 'Credit' && <span className="text-rose-500 ml-1 font-black">*</span>}
-                  </label>
-                  <div className="relative">
-                    <input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); setShowCustomerSuggestions(true); }} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`${inputStyle} w-full p-2.5 ${paymentMode === 'Credit' ? 'border-rose-300 ring-rose-500/10' : ''}`} />
-                    <UserCircleIcon className={`absolute right-3 top-2.5 h-5 w-5 ${paymentMode === 'Credit' ? 'text-rose-400' : 'text-slate-400'}`} />
-                  </div>
-                  {showCustomerSuggestions && filteredCustomers.length > 0 && (
-                    <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-xl">
-                      {filteredCustomers.map(c => (
-                        <li key={c.id} onClick={() => { setSelectedCustomer(c); setCustomerName(c.name); setShowCustomerSuggestions(false); }} className="px-4 py-2 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b last:border-b-0 dark:border-slate-700">
-                          <div className="font-bold text-slate-800 dark:text-slate-200">{c.name}</div>
-                          <div className="text-[10px] text-slate-500">{c.phone || 'No phone'}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {customerName && !selectedCustomer && (
-                      <button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 text-[10px] font-black text-indigo-600 uppercase hover:underline">+ Register Customer Ledger</button>
-                  )}
-                </div>
-                {isPharmaMode && (
-                    <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="Dr. Name" className={`${inputStyle} w-full p-2.5`} /></div>
-                )}
-                {systemConfig.enableSalesman && (
-                    <div className="md:col-span-2 lg:col-span-1">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">Salesman / Agent</label>
-                        <div className="flex gap-2">
-                            <select value={selectedSalesmanId} onChange={e => setSelectedSalesmanId(e.target.value)} className={`${inputStyle} flex-grow p-2.5 appearance-none`}>
-                                <option value="">-- No Salesman --</option>
-                                {salesmen?.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                            <button onClick={() => setAddSalesmanModalOpen(true)} className="p-2.5 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 hover:text-indigo-600"><PlusIcon className="h-5 w-5" /></button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="relative">
+                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">
+                            {isPharmaMode ? t.billing.patientName : t.billing.customerName} {paymentMode === 'Credit' && <span className="text-rose-500">*</span>}
+                        </label>
+                        <div className="relative">
+                            <input type="text" value={customerName} onChange={e => { setCustomerName(e.target.value); setSelectedCustomer(null); setShowCustomerSuggestions(true); }} placeholder={isPharmaMode ? t.billing.walkInPatient : t.billing.walkInCustomer} className={`${inputStyle} w-full p-3 ${paymentMode === 'Credit' ? 'border-rose-300' : ''}`} />
+                            <UserCircleIcon className={`absolute right-3 top-3 h-5 w-5 ${paymentMode === 'Credit' ? 'text-rose-400' : 'text-slate-400'}`} />
                         </div>
+                        {showCustomerSuggestions && filteredCustomers.length > 0 && (
+                            <ul className="absolute z-30 w-full mt-1 bg-white dark:bg-slate-800 border dark:border-slate-700 rounded-lg shadow-xl overflow-hidden">
+                                {filteredCustomers.map(c => <li key={c.id} onClick={() => { setSelectedCustomer(c); setCustomerName(c.name); setShowCustomerSuggestions(false); }} className="px-4 py-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b last:border-b-0 dark:border-slate-700 font-bold">{c.name}</li>)}
+                            </ul>
+                        )}
+                        {customerName && !selectedCustomer && <button onClick={() => setAddCustomerModalOpen(true)} className="mt-1 text-[10px] font-black text-indigo-600 uppercase hover:underline">+ New Ledger Record</button>}
                     </div>
-                )}
+                    {isPharmaMode && <div><label className="block text-[10px] font-black text-slate-500 uppercase mb-1 tracking-widest">{t.billing.doctorName}</label><input type="text" value={doctorName} onChange={e => setDoctorName(e.target.value)} placeholder="Dr. Name" className={`${inputStyle} w-full p-3`} /></div>}
+                </div>
               </div>
-            </div>
 
-            <div className="mt-8">
-              <div className="flex items-center justify-between mb-4">
-                 <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
-                    <ReceiptIcon className="h-5 w-5 text-indigo-500" /> {t.billing.cartItems}
-                 </h3>
-                 <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded font-bold">{cart.length} ITEMS</span>
-              </div>
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                <table className="w-full text-[13px] text-left">
-                  <thead className="bg-[#1e293b] text-slate-300 uppercase text-[10px] font-black tracking-widest">
-                    {isPharmaMode ? (
-                      <tr>
-                        <th className="px-4 py-4">PRODUCT</th>
-                        <th className="px-4 py-4 text-center">PACK</th>
-                        <th className="px-4 py-4 text-center">BATCH</th>
-                        <th className="px-4 py-4 text-center">STRI</th>
-                        <th className="px-4 py-4 text-center">TAB.</th>
-                        <th className="px-4 py-4 text-right">M.R.P./S</th>
-                        <th className="px-4 py-4 text-center">DISC%</th>
-                        <th className="px-4 py-4 text-right">AMOUNT</th>
-                        <th className="px-4 py-4 text-center"></th>
-                      </tr>
-                    ) : (
-                      <tr>
-                        <th className="px-4 py-4">{t.billing.product}</th>
-                        <th className="px-4 py-4 text-center">{t.billing.qty}</th>
-                        <th className="px-4 py-4 text-right">{t.billing.mrp}</th>
-                        <th className="px-4 py-4 text-center">DISC%</th>
-                        <th className="px-4 py-4 text-right">{t.billing.amount}</th>
-                        <th className="px-4 py-4 text-center"></th>
-                      </tr>
-                    )}
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
-                    {cart.map(item => {
-                        const unitPrice = item.mrp / (item.unitsPerStrip || 1);
-                        const discFactor = (1 - (item.discount || 0) / 100);
-                        return (
-                      <tr key={item.batchId} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
-                        <td className="px-4 py-3.5">
-                          <div className="font-bold text-slate-800 dark:text-slate-100">{item.productName}</div>
-                          <div className="text-[10px] text-slate-500">GST {item.gst}%</div>
-                        </td>
+              {/* MANUAL PRODUCT SEARCH (Now above Cart) */}
+              <div className="mt-10">
+                <div className="flex items-center justify-between mb-4 px-1">
+                    <h3 className="text-sm font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest flex items-center gap-2">
+                        <ReceiptIcon className="h-5 w-5 text-indigo-500" /> {t.billing.cartItems}
+                    </h3>
+                    <div className="flex gap-2 text-[10px] font-black uppercase text-slate-400">
+                        <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{cart.length} ITEMS</span>
+                    </div>
+                </div>
+
+                <div className="relative mb-4 group">
+                    <div className="flex justify-between items-end mb-1">
+                        <label className="block text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em]">Quick Product Entry (Manual Search)</label>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase">Step 2: Add Items</span>
+                    </div>
+                    <div className="relative">
+                        <input 
+                            ref={searchInputRef} 
+                            type="text" 
+                            placeholder="Type product name, company, or part number here..." 
+                            value={searchTerm} 
+                            onChange={e => { setSearchTerm(e.target.value); setActiveIndices({ product: 0, batch: 0 }); }} 
+                            onKeyDown={handleSearchKeyDown} 
+                            onFocus={e => e.currentTarget.select()}
+                            className={`${inputStyle} w-full p-5 text-xl shadow-2xl h-16 border-2 border-indigo-100 dark:border-indigo-900/50 group-focus-within:border-indigo-500 transition-all`} 
+                        />
+                        <SearchIcon className="absolute right-5 top-5 h-7 w-7 text-indigo-400 animate-pulse" />
                         
-                        {isPharmaMode ? (
-                          <>
-                            <td className="px-4 py-3.5 text-center font-medium text-slate-600 dark:text-slate-400">
-                              1 * {item.unitsPerStrip || 1}
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              <div className="font-mono text-xs font-bold text-indigo-600">{item.batchNumber}</div>
-                              <div className="text-[9px] text-slate-400">EXP: {item.expiryDate}</div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="flex flex-col items-center">
-                                <input ref={el => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="number" value={item.stripQty || ''} onChange={e => {
-                                    const sQty = parseInt(e.target.value) || 0;
-                                    const totalUnits = (sQty * (item.unitsPerStrip || 1)) + (item.looseQty || 0);
-                                    onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * unitPrice * discFactor });
-                                }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14`} />
-                              </div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              <div className="flex flex-col items-center">
-                                <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.looseQty || ''} onChange={e => {
-                                    const lQty = parseInt(e.target.value) || 0;
-                                    const totalUnits = ((item.stripQty || 0) * (item.unitsPerStrip || 1)) + lQty;
-                                    onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * unitPrice * discFactor });
-                                }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14`} />
-                              </div>
-                            </td>
-                            <td className="px-4 py-3.5 text-right font-medium">
-                              {isMrpEditable ? (
-                                  <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
-                                      const newMrp = parseFloat(e.target.value) || 0;
-                                      const uPrice = newMrp / (item.unitsPerStrip || 1);
-                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * uPrice * discFactor });
-                                  }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-20 text-right`} />
-                              ) : `₹${item.mrp.toFixed(2)}`}
-                            </td>
-                            <td className="px-4 py-3.5">
-                                <div className="flex flex-col items-center">
-                                    <input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
-                                        const disc = parseFloat(e.target.value) || 0;
-                                        onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * unitPrice * (1 - disc / 100) });
-                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
+                        {filteredProducts.length > 0 && (
+                        <div className="absolute z-50 w-full mt-2 bg-white dark:bg-slate-800 border-2 border-indigo-500 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden animate-fade-in">
+                            {filteredProducts.map((product, pIdx) => {
+                                const productBatches = [...product.batches].sort((a,b) => getExpiryDate(a.expiryDate).getTime() - getExpiryDate(b.expiryDate).getTime());
+                                return (
+                            <div key={product.id} className={`border-b last:border-b-0 dark:border-slate-700 ${activeIndices.product === pIdx ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : ''}`}>
+                                <div className="p-4 flex justify-between items-start">
+                                    <div>
+                                        <h4 className="font-black text-lg text-slate-800 dark:text-slate-100">{product.name}</h4>
+                                        <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{product.company} | Barcode: {product.barcode || 'N/A'}</p>
+                                    </div>
+                                    <button onClick={() => setSubstituteTarget(product)} className="text-[10px] font-black bg-teal-100 text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-200 uppercase tracking-widest border border-teal-200">Alternatives</button>
                                 </div>
-                            </td>
-                          </>
+                                <div className="flex overflow-x-auto p-4 pt-0 gap-3 no-scrollbar pb-6">
+                                {productBatches.map((batch, bIdx) => {
+                                    const liveStock = getLiveBatchStock(product, batch);
+                                    const isActive = activeIndices.product === pIdx && activeIndices.batch === bIdx;
+                                    return (
+                                    <button key={batch.id} onClick={() => handleAddToCartLocal(product, batch)} className={`flex-shrink-0 p-3 rounded-xl border-2 text-left transition-all min-w-[160px] ${isActive ? 'border-indigo-600 bg-indigo-600 text-white shadow-xl scale-105' : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-indigo-300'}`}>
+                                        <div className="text-[10px] font-black uppercase tracking-tighter opacity-80 mb-1">B: {batch.batchNumber}</div>
+                                        <div className="font-black text-lg">₹{(batch.saleRate || batch.mrp).toFixed(2)}</div>
+                                        <div className="flex justify-between items-center mt-2">
+                                            <span className={`text-[11px] font-black ${isActive ? 'text-white' : (liveStock > 0 ? 'text-emerald-600' : 'text-rose-500')}`}>{formatStock(liveStock, product.unitsPerStrip)}</span>
+                                            <span className={`text-[9px] font-bold opacity-60 ${isActive ? 'text-indigo-100' : ''}`}>EXP: {batch.expiryDate}</span>
+                                        </div>
+                                    </button>
+                                    );
+                                })}
+                                </div>
+                            </div>
+                            )})}
+                        </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <table className="w-full text-[13px] text-left">
+                    <thead className="bg-[#1e293b] text-slate-300 uppercase text-[10px] font-black tracking-widest">
+                        {isPharmaMode ? (
+                        <tr>
+                            <th className="px-4 py-4">PRODUCT</th>
+                            <th className="px-4 py-4 text-center">PACK</th>
+                            <th className="px-4 py-4 text-center">BATCH</th>
+                            <th className="px-4 py-4 text-center">STRI</th>
+                            <th className="px-4 py-4 text-center">TAB.</th>
+                            <th className="px-4 py-4 text-right">PRICE</th>
+                            <th className="px-4 py-4 text-center">DISC%</th>
+                            <th className="px-4 py-4 text-right">AMOUNT</th>
+                            <th className="px-4 py-4 text-center"></th>
+                        </tr>
                         ) : (
-                          <>
+                        <tr>
+                            <th className="px-4 py-4">{t.billing.product}</th>
+                            <th className="px-4 py-4 text-center">{t.billing.qty}</th>
+                            <th className="px-4 py-4 text-right">{t.billing.mrp}</th>
+                            <th className="px-4 py-4 text-center">DISC%</th>
+                            <th className="px-4 py-4 text-right">{t.billing.amount}</th>
+                            <th className="px-4 py-4 text-center"></th>
+                        </tr>
+                        )}
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                        {cart.map(item => (
+                        <tr key={item.batchId} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group">
                             <td className="px-4 py-3.5">
-                               <div className="flex items-center justify-center">
-                                   <input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.quantity || ''} onChange={e => {
-                                       const qty = parseInt(e.target.value) || 0;
-                                       onUpdateCartItem(item.batchId, { quantity: qty, looseQty: qty, total: qty * unitPrice * discFactor });
-                                   }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-16`} />
-                               </div>
+                            <div className="font-bold text-slate-800 dark:text-slate-100">{item.productName}</div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-tighter">B: {item.batchNumber} | GST {item.gst}%</div>
                             </td>
-                            <td className="px-4 py-3.5 text-right font-medium">
-                              {isMrpEditable ? (
-                                  <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
-                                      const newMrp = parseFloat(e.target.value) || 0;
-                                      onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * newMrp * discFactor });
-                                  }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-20 text-right`} />
-                              ) : `₹${item.mrp.toFixed(2)}`}
-                            </td>
-                            <td className="px-4 py-3.5">
-                                <div className="flex flex-col items-center">
-                                    <input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
+                            {isPharmaMode ? (
+                            <>
+                                <td className="px-4 py-3.5 text-center font-medium text-slate-600 dark:text-slate-400">1 * {item.unitsPerStrip || 1}</td>
+                                <td className="px-4 py-3.5 text-center"><div className="font-mono text-[11px] font-black text-indigo-600">{item.batchNumber}</div><div className="text-[9px] text-slate-400">EXP: {item.expiryDate}</div></td>
+                                <td className="px-4 py-3.5"><div className="flex flex-col items-center"><input ref={el => { cartItemStripInputRefs.current.set(item.batchId, el); }} type="number" value={item.stripQty || ''} onChange={e => {
+                                        const sQty = parseInt(e.target.value) || 0;
+                                        const totalUnits = (sQty * (item.unitsPerStrip || 1)) + (item.looseQty || 0);
+                                        onUpdateCartItem(item.batchId, { stripQty: sQty, quantity: totalUnits, total: totalUnits * (item.mrp / (item.unitsPerStrip || 1)) * (1 - (item.discount || 0) / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14`} /></div></td>
+                                <td className="px-4 py-3.5"><div className="flex flex-col items-center"><input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.looseQty || ''} onChange={e => {
+                                        const lQty = parseInt(e.target.value) || 0;
+                                        const totalUnits = ((item.stripQty || 0) * (item.unitsPerStrip || 1)) + lQty;
+                                        onUpdateCartItem(item.batchId, { looseQty: lQty, quantity: totalUnits, total: totalUnits * (item.mrp / (item.unitsPerStrip || 1)) * (1 - (item.discount || 0) / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14`} /></div></td>
+                                <td className="px-4 py-3.5 text-right font-medium">{isMrpEditable ? <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
+                                        const newMrp = parseFloat(e.target.value) || 0;
+                                        onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * (newMrp / (item.unitsPerStrip || 1)) * (1 - (item.discount || 0) / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-20 text-right`} /> : `₹${item.mrp.toFixed(2)}`}</td>
+                                <td className="px-4 py-3.5"><div className="flex flex-col items-center"><input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
+                                        const disc = parseFloat(e.target.value) || 0;
+                                        onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * (item.mrp / (item.unitsPerStrip || 1)) * (1 - disc / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" /></div></td>
+                            </>
+                            ) : (
+                            <>
+                                <td className="px-4 py-3.5"><div className="flex items-center justify-center"><input ref={el => { cartItemTabInputRefs.current.set(item.batchId, el); }} type="number" value={item.quantity || ''} onChange={e => {
+                                        const qty = parseInt(e.target.value) || 0;
+                                        onUpdateCartItem(item.batchId, { quantity: qty, looseQty: qty, total: qty * item.mrp * (1 - (item.discount || 0) / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-16`} /></div></td>
+                                <td className="px-4 py-3.5 text-right font-medium">{isMrpEditable ? <input ref={el => { cartItemMrpInputRefs.current.set(item.batchId, el); }} type="number" value={item.mrp || ''} onChange={e => {
+                                        const newMrp = parseFloat(e.target.value) || 0;
+                                        onUpdateCartItem(item.batchId, { mrp: newMrp, total: item.quantity * newMrp * (1 - (item.discount || 0) / 100) });
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-20 text-right`} /> : `₹${item.mrp.toFixed(2)}`}</td>
+                                <td className="px-4 py-3.5"><div className="flex flex-col items-center"><input ref={el => { cartItemDiscInputRefs.current.set(item.batchId, el); }} type="number" step="0.01" value={item.discount || ''} onChange={e => {
                                         const disc = parseFloat(e.target.value) || 0;
                                         onUpdateCartItem(item.batchId, { discount: disc, total: item.quantity * item.mrp * (1 - disc / 100) });
-                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" />
-                                </div>
-                            </td>
-                          </>
-                        )}
-                        <td className="px-4 py-3.5 text-right font-black text-slate-900 dark:text-white">
-                            <div className="flex flex-col items-end">
-                                <span>₹{item.total.toFixed(2)}</span>
-                                {item.discount > 0 && <span className="text-[9px] text-emerald-600">Saved ₹{(item.quantity * (item.mrp / (item.unitsPerStrip || 1)) * (item.discount / 100)).toFixed(2)}</span>}
-                            </div>
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          <button onClick={() => onRemoveFromCart(item.batchId)} className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-lg transition-colors"><TrashIcon className="h-5 w-5" /></button>
-                        </td>
-                      </tr>
-                    )})}
-                  </tbody>
-                </table>
+                                    }} onFocus={e => e.currentTarget.select()} className={`${cartInputStyle} w-14 border-indigo-200`} placeholder="0" /></div></td>
+                            </>
+                            )}
+                            <td className="px-4 py-3.5 text-right font-black text-slate-900 dark:text-white">₹{item.total.toFixed(2)}</td>
+                            <td className="px-4 py-3.5 text-center"><button onClick={() => onRemoveFromCart(item.batchId)} className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><TrashIcon className="h-5 w-5" /></button></td>
+                        </tr>
+                        ))}
+                    </tbody>
+                    </table>
+                </div>
               </div>
             </div>
           </Card>
         </div>
 
         <div className="lg:col-span-1 space-y-6">
-          <Card title="Order Summary">
+          <Card title="Summary & Checkout">
             <div className="space-y-6">
               <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
-                <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-2">
-                  <span>{t.billing.subtotal}</span>
-                  <span className="font-bold">₹{subTotalTotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-slate-600 dark:text-slate-400 mb-4">
-                  <span>{t.billing.totalGst}</span>
-                  <span className="font-bold">₹{totalGstTotal.toFixed(2)}</span>
-                </div>
-                <div className="border-t dark:border-slate-700 pt-4 flex justify-between items-end">
-                  <span className="text-lg font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter">{t.billing.grandTotal}</span>
-                  <span className="text-4xl font-black text-indigo-600 dark:text-indigo-400">₹{grandTotalTotal.toFixed(2)}</span>
-                </div>
+                <div className="flex justify-between text-sm text-slate-600 mb-2"><span>{t.billing.subtotal}</span><span className="font-bold">₹{cart.reduce((s,i) => s + (i.total / (1 + i.gst / 100)), 0).toFixed(2)}</span></div>
+                <div className="flex justify-between text-sm text-slate-600 mb-4"><span>{t.billing.totalGst}</span><span className="font-bold">₹{cart.reduce((s,i) => s + (i.total - (i.total / (1 + i.gst / 100))), 0).toFixed(2)}</span></div>
+                <div className="border-t pt-4 flex justify-between items-end"><span className="text-lg font-black uppercase tracking-tighter">{t.billing.grandTotal}</span><span className="text-4xl font-black text-indigo-600">₹{Math.round(cart.reduce((s,i) => s + i.total, 0)).toFixed(2)}</span></div>
               </div>
-
               <div className="space-y-3">
-                <button onClick={() => handleSaveBill(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-3">
-                  <PrinterIcon className="h-7 w-7" /> {isEditing ? t.billing.updateAndPrint : t.billing.saveAndPrint}
-                </button>
-                <button onClick={() => handleSaveBill(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-xl font-bold transition-all transform active:scale-95">
-                   {isEditing ? t.billing.updateOnly : t.billing.saveOnly}
-                </button>
+                <button onClick={() => handleSaveBill(true)} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-5 rounded-2xl font-black text-xl shadow-xl transition-all transform active:scale-95 flex items-center justify-center gap-3"><PrinterIcon className="h-7 w-7" /> {isEditing ? t.billing.updateAndPrint : t.billing.saveAndPrint}</button>
+                <button onClick={() => handleSaveBill(false)} className="w-full bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-xl font-bold transition-all transform active:scale-95">{isEditing ? t.billing.updateOnly : t.billing.saveOnly}</button>
               </div>
             </div>
-          </Card>
-
-          <Card title="Billing Highlights">
-             <div className="space-y-4">
-                <div className={`p-4 rounded-xl border flex items-center gap-3 ${paymentMode === 'Cash' ? 'bg-indigo-50 border-indigo-100 text-indigo-700' : 'bg-rose-50 border-rose-100 text-rose-700'}`}>
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                        {paymentMode === 'Cash' ? <CashIcon className="h-5 w-5" /> : <SwitchHorizontalIcon className="h-5 w-5" />}
-                    </div>
-                    <div>
-                        <p className="text-[10px] font-black uppercase opacity-60">Selected Mode</p>
-                        <p className="font-black text-sm uppercase tracking-widest">{paymentMode} TRANSACTION</p>
-                    </div>
-                </div>
-                <div className="p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border dark:border-slate-800 flex items-center gap-3">
-                    <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-indigo-600"><ReceiptIcon className="h-5 w-5" /></div>
-                    <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase">Items in Cart</p>
-                        <p className="font-bold text-slate-800 dark:text-slate-200">{cart.length} Products</p>
-                    </div>
-                </div>
-             </div>
           </Card>
         </div>
       </div>
 
-      <Modal isOpen={isAddCustomerModalOpen} onClose={() => setAddCustomerModalOpen(false)} title="New Customer Master">
-         <form onSubmit={async (e) => {
-             e.preventDefault();
-             const formData = new FormData(e.currentTarget);
-             const name = formData.get('name') as string;
-             const phone = formData.get('phone') as string;
-             const address = formData.get('address') as string;
-             const opBal = parseFloat(formData.get('openingBalance') as string) || 0;
-             const newCust = await onAddCustomer({ name, phone, address, openingBalance: opBal });
-             if (newCust) { setSelectedCustomer(newCust); setCustomerName(newCust.name); setAddCustomerModalOpen(false); }
-         }} className="space-y-4">
-             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name*</label><input name="name" className={inputStyle + " w-full"} required autoFocus /></div>
-             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone Number</label><input name="phone" className={inputStyle + " w-full"} /></div>
-             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Address</label><input name="address" className={inputStyle + " w-full"} /></div>
-             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Opening Balance (Dr)</label><input name="openingBalance" type="number" step="0.01" defaultValue="0" className={inputStyle + " w-full"} /></div>
-             <div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setAddCustomerModalOpen(false)} className="px-4 py-2 bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">Save Master</button></div>
+      <Modal isOpen={isAddCustomerModalOpen} onClose={() => setAddCustomerModalOpen(false)} title="New Customer Entry">
+         <form onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); const nc = await onAddCustomer({ name: fd.get('name') as string, phone: fd.get('phone') as string, address: fd.get('address') as string, openingBalance: parseFloat(fd.get('openingBalance') as string) || 0 }); if (nc) { setSelectedCustomer(nc); setCustomerName(nc.name); setAddCustomerModalOpen(false); } }} className="space-y-4">
+             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name*</label><input name="name" className={inputStyle + " w-full p-2"} required /></div>
+             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone</label><input name="phone" className={inputStyle + " w-full p-2"} /></div>
+             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Address</label><input name="address" className={inputStyle + " w-full p-2"} /></div>
+             <div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setAddCustomerModalOpen(false)} className="px-4 py-2 bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">Save</button></div>
          </form>
-      </Modal>
-
-      <Modal isOpen={isAddSalesmanModalOpen} onClose={() => setAddSalesmanModalOpen(false)} title="New Salesman Master">
-        <form onSubmit={async (e) => {
-            e.preventDefault();
-            const name = (new FormData(e.currentTarget)).get('name') as string;
-            if (onAddSalesman) {
-                const ns = await onAddSalesman({ name });
-                if (ns) { setSelectedSalesmanId(ns.id); setAddSalesmanModalOpen(false); }
-            }
-        }} className="space-y-4">
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Salesman Name*</label><input name="name" className={inputStyle + " w-full"} required autoFocus /></div>
-            <div className="flex justify-end gap-2 pt-4"><button type="button" onClick={() => setAddSalesmanModalOpen(false)} className="px-4 py-2 bg-slate-100 rounded-lg">Cancel</button><button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold">Save</button></div>
-        </form>
       </Modal>
 
       <PrinterSelectionModal isOpen={isPrinterModalOpen} onClose={() => { setPrinterModalOpen(false); setBillToPrint(null); if (shouldResetAfterPrint) resetBilling(); }} systemConfig={systemConfig} onUpdateConfig={onUpdateConfig} onSelectPrinter={handlePrinterSelection} />
       
-      <Modal isOpen={showOrderSuccessModal} onClose={() => setShowOrderSuccessModal(false)} title="Invoice Generated!" maxWidth="max-w-md">
+      <Modal isOpen={showOrderSuccessModal} onClose={() => setShowOrderSuccessModal(false)} title="Invoice Finalized!" maxWidth="max-w-md">
           <div className="text-center py-4">
-              <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-600 shadow-inner">
-                <CheckCircleIcon className="h-12 w-12" />
-              </div>
-              <h4 className="text-2xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tighter">Order Success</h4>
-              <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium">Bill #{lastSavedBill?.billNumber} finalized in {orderSeconds}s</p>
+              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6 text-emerald-600"><CheckCircleIcon className="h-12 w-12" /></div>
+              <h4 className="text-2xl font-black uppercase tracking-tighter">Order Success</h4>
               <div className="mt-8 flex flex-col gap-3">
-                  <button onClick={() => { if (lastSavedBill) { setBillToPrint(lastSavedBill); setPrinterModalOpen(true); setShowOrderSuccessModal(false); } }} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg hover:bg-indigo-700 flex items-center justify-center gap-2">
-                    <PrinterIcon className="h-6 w-6" /> PRINT INVOICE
-                  </button>
-                  <button onClick={() => { setShowOrderSuccessModal(false); resetBilling(); }} className="w-full py-3 text-slate-500 font-bold hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-all">
-                    START NEW SALE
-                  </button>
+                  <button onClick={() => { if (lastSavedBill) { setBillToPrint(lastSavedBill); setPrinterModalOpen(true); setShowOrderSuccessModal(false); } }} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg">PRINT INVOICE</button>
+                  <button onClick={() => { setShowOrderSuccessModal(false); resetBilling(); }} className="w-full py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">START NEW SALE</button>
               </div>
           </div>
       </Modal>
@@ -1146,16 +905,6 @@ const Billing: React.FC<BillingProps> = ({ products, bills, purchases = [], cust
       <TextScannerModal isOpen={showTextScanner} onClose={() => setShowTextScanner(false)} onScan={handleTextScan} isProcessing={isOcrProcessing} />
       <SubstituteModal isOpen={!!substituteTarget} onClose={() => setSubstituteTarget(null)} target={substituteTarget} substitutes={products.filter(p => p.id !== substituteTarget?.id && normalizeCode(p.composition || '') === normalizeCode(substituteTarget?.composition || ''))} onAdd={handleAddToCartLocal} getLiveBatchStock={getLiveBatchStock} formatStock={formatStock} />
       <UpgradeAiModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} featureName="AI Product Scanner" />
-
-      {scanResultFeedback && (
-          <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-2xl shadow-2xl z-[60] flex items-center gap-4 animate-bounce border-2 border-indigo-500">
-              <div className="bg-emerald-500 p-1.5 rounded-full"><CheckCircleIcon className="h-5 w-5 text-white" /></div>
-              <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Added to Cart</p>
-                  <p className="font-bold">{scanResultFeedback.name}</p>
-              </div>
-          </div>
-      )}
     </div>
   );
 };
